@@ -336,75 +336,95 @@ router.post("/admin/import-drive", async (req: Request, res: Response) => {
       return;
     }
 
-    const MAX_FILES = 20;
-    const CONCURRENCY = 5;
+    const MAX_FILES = 10;
     const toProcess = files.slice(0, MAX_FILES);
     const results: { file: string; titulo: string; status: string; id?: string; error?: string }[] = [];
     let imported = 0;
     let skipped = 0;
 
     const { identifyFromImages } = await import("../lib/gemini");
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-    const processFile = async (file: { id: string; name: string; mimeType: string }) => {
+    // Step 1: fetch all thumbnails in parallel
+    const thumbData = await Promise.all(toProcess.map(async (file) => {
       try {
         const thumbnailUrl = `https://drive.google.com/thumbnail?id=${file.id}&sz=w400`;
-        const driveViewUrl = `https://drive.google.com/file/d/${file.id}/view`;
-
-        // Fetch thumbnail with 15s timeout
         const controller = new AbortController();
-        const thumbTimer = setTimeout(() => controller.abort(), 15000);
-        let thumbRes: Response;
+        const t = setTimeout(() => controller.abort(), 15000);
         try {
-          thumbRes = await fetch(thumbnailUrl, { signal: controller.signal });
-        } finally {
-          clearTimeout(thumbTimer);
-        }
-        if (!thumbRes.ok) {
-          return { file: file.name, titulo: "", status: "skipped", error: "Thumbnail inacessível" };
-        }
-        const thumbBuffer = await thumbRes.arrayBuffer();
-        const base64 = Buffer.from(thumbBuffer).toString("base64");
-        const contentType = thumbRes.headers.get("content-type") || "image/jpeg";
-        const dataUrl = `data:${contentType};base64,${base64}`;
-
-        // Identify with Gemini
-        const identified = await (identifyFromImages as (imgs: string[]) => Promise<ComicResultData>)([dataUrl]);
-        const titulo = identified.titulo || file.name.replace(/\.pdf$/i, "");
-
-        // Insert into collection
-        const { data: inserted, error: insertErr } = await supabase
-          .from("gibis")
-          .insert({
-            titulo,
-            revista: identified.revista || null,
-            editora: identified.editora || null,
-            ano: identified.ano || null,
-            personagens: identified.personagens || [],
-            descricao: identified.descricao || null,
-            imagem_url: thumbnailUrl,
-            drive_url: driveViewUrl,
-            status: importStatus === "approved" ? "approved" : "pending",
-          })
-          .select()
-          .single();
-
-        if (insertErr) {
-          return { file: file.name, titulo, status: "error", error: insertErr.message };
-        }
-        return { file: file.name, titulo, status: "ok", id: (inserted as { id: string }).id };
+          const r = await fetch(thumbnailUrl, { signal: controller.signal });
+          if (!r.ok) return { file, ok: false, error: "Thumbnail inacessível" };
+          const buf = await r.arrayBuffer();
+          const base64 = Buffer.from(buf).toString("base64");
+          const mime = r.headers.get("content-type") || "image/jpeg";
+          return { file, ok: true, dataUrl: `data:${mime};base64,${base64}` };
+        } finally { clearTimeout(t); }
       } catch (err) {
-        return { file: file.name, titulo: "", status: "error", error: err instanceof Error ? err.message : "Erro desconhecido" };
+        return { file, ok: false, error: err instanceof Error ? err.message : "Erro ao buscar thumbnail" };
       }
-    };
+    }));
 
-    // Process in parallel batches
-    for (let i = 0; i < toProcess.length; i += CONCURRENCY) {
-      const batch = toProcess.slice(i, i + CONCURRENCY);
-      const batchResults = await Promise.all(batch.map(processFile));
-      for (const r of batchResults) {
-        results.push(r);
-        if (r.status === "ok") imported++; else skipped++;
+    // Step 2: call Gemini sequentially with retry on 429
+    for (const thumb of thumbData) {
+      if (!thumb.ok || !("dataUrl" in thumb)) {
+        results.push({ file: thumb.file.name, titulo: "", status: "skipped", error: (thumb as { error?: string }).error });
+        skipped++;
+        continue;
       }
+
+      const thumbnailUrl = `https://drive.google.com/thumbnail?id=${thumb.file.id}&sz=w400`;
+      const driveViewUrl = `https://drive.google.com/file/d/${thumb.file.id}/view`;
+      let identified: ComicResultData | null = null;
+      let lastErr = "";
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          identified = await (identifyFromImages as (imgs: string[]) => Promise<ComicResultData>)([thumb.dataUrl]);
+          break;
+        } catch (err) {
+          lastErr = err instanceof Error ? err.message : "Erro Gemini";
+          if (lastErr.includes("429") || lastErr.toLowerCase().includes("quota")) {
+            await sleep(12000); // wait 12s before retry
+          } else {
+            break;
+          }
+        }
+      }
+
+      if (!identified) {
+        results.push({ file: thumb.file.name, titulo: "", status: "error", error: lastErr || "Falha no Gemini" });
+        skipped++;
+        await sleep(2000);
+        continue;
+      }
+
+      const titulo = identified.titulo || thumb.file.name.replace(/\.pdf$/i, "");
+      const { data: inserted, error: insertErr } = await supabase
+        .from("gibis")
+        .insert({
+          titulo,
+          revista: identified.revista || null,
+          editora: identified.editora || null,
+          ano: identified.ano || null,
+          personagens: identified.personagens || [],
+          descricao: identified.descricao || null,
+          imagem_url: thumbnailUrl,
+          drive_url: driveViewUrl,
+          status: importStatus === "approved" ? "approved" : "pending",
+        })
+        .select()
+        .single();
+
+      if (insertErr) {
+        results.push({ file: thumb.file.name, titulo, status: "error", error: insertErr.message });
+        skipped++;
+      } else {
+        results.push({ file: thumb.file.name, titulo, status: "ok", id: (inserted as { id: string }).id });
+        imported++;
+      }
+
+      // Small delay between Gemini calls to stay under free-tier rate limit
+      await sleep(1500);
     }
 
     const message = files.length > MAX_FILES

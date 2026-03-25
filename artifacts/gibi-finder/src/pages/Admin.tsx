@@ -463,7 +463,7 @@ export default function Admin() {
                 <p>📋 <strong>Pré-requisitos:</strong></p>
                 <p>1. A pasta deve ser pública ("qualquer pessoa com o link pode ver")</p>
                 <p>2. <code className="bg-black text-white px-1">GOOGLE_DRIVE_API_KEY</code> deve estar configurada nas variáveis de ambiente</p>
-                <p>3. Máximo de 20 PDFs por importação</p>
+                <p>3. Máximo de 10 PDFs por rodada (rode múltiplas vezes para importar mais)</p>
               </div>
 
               <div>
