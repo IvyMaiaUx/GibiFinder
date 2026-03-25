@@ -763,4 +763,33 @@ router.post("/feedback", async (req: Request, res: Response) => {
   } catch { res.json({ success: true, id: feedbackId }); }
 });
 
+// ── PDF Proxy ─────────────────────────────────────────────────────────────────
+router.get("/pdf/:fileId", async (req: Request, res: Response) => {
+  const { fileId } = req.params;
+  const apiKey = process.env["GOOGLE_DRIVE_API_KEY"];
+  if (!apiKey) { res.status(500).json({ error: "API key não configurada" }); return; }
+
+  const driveUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${apiKey}`;
+  try {
+    const upstream = await fetch(driveUrl);
+    if (!upstream.ok) {
+      res.status(upstream.status).json({ error: `Drive respondeu ${upstream.status}` });
+      return;
+    }
+    const contentType = upstream.headers.get("content-type") || "application/pdf";
+    const contentLength = upstream.headers.get("content-length");
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", "inline");
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    if (contentLength) res.setHeader("Content-Length", contentLength);
+
+    const buffer = await upstream.arrayBuffer();
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error("PDF proxy error:", err);
+    res.status(500).json({ error: "Falha ao buscar PDF" });
+  }
+});
+
 export default router;
+

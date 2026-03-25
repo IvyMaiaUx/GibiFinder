@@ -1,9 +1,17 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { motion, AnimatePresence } from "framer-motion";
-import { Plus, BookOpen, Search, X, Check, Loader2, Clock, Filter, ChevronDown, BookOpenCheck, ExternalLink } from "lucide-react";
+import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
+import { Plus, BookOpen, Search, X, Check, Loader2, Clock, Filter, ChevronDown, BookOpenCheck, ChevronLeft, ChevronRight, AlignJustify, Layers } from "lucide-react";
+import { Document, Page, pdfjs } from "react-pdf";
+import "react-pdf/dist/Page/AnnotationLayer.css";
+import "react-pdf/dist/Page/TextLayer.css";
 import { Layout } from "@/components/layout/Layout";
 import { useToast } from "@/hooks/use-toast";
+
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url,
+).toString();
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -177,45 +185,220 @@ function SubmitModal({ onClose, onSubmitted }: { onClose: () => void; onSubmitte
 
 // ── Drive Reader Modal ────────────────────────────────────────────────────────
 
+type ReadMode = "scroll" | "page";
+
 function DriveReaderModal({ gibi, onClose }: { gibi: Gibi; onClose: () => void }) {
   const fileIdMatch = gibi.drive_url?.match(/\/d\/([a-zA-Z0-9_-]+)/);
   const fileId = fileIdMatch?.[1];
-  const previewUrl = fileId ? `https://drive.google.com/file/d/${fileId}/preview` : null;
+  const pdfUrl = fileId ? `${BASE}/api/pdf/${fileId}` : null;
+
+  const [mode, setMode] = useState<ReadMode>("scroll");
+  const [numPages, setNumPages] = useState<number>(0);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [pageDirection, setPageDirection] = useState<1 | -1>(1);
+  const [pdfError, setPdfError] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Swipe gesture state
+  const dragX = useMotionValue(0);
+  const dragOpacity = useTransform(dragX, [-120, 0, 120], [0.4, 1, 0.4]);
+
+  function onDocumentLoad({ numPages }: { numPages: number }) {
+    setNumPages(numPages);
+    setPageNumber(1);
+  }
+
+  const goNext = useCallback(() => {
+    if (pageNumber < numPages) {
+      setPageDirection(1);
+      setPageNumber(p => p + 1);
+    }
+  }, [pageNumber, numPages]);
+
+  const goPrev = useCallback(() => {
+    if (pageNumber > 1) {
+      setPageDirection(-1);
+      setPageNumber(p => p - 1);
+    }
+  }, [pageNumber]);
+
+  useEffect(() => {
+    if (mode !== "page") return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "ArrowRight") goNext();
+      else if (e.key === "ArrowLeft") goPrev();
+      else if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mode, goNext, goPrev, onClose]);
+
+  function handleDragEnd(_: unknown, info: { offset: { x: number } }) {
+    if (info.offset.x < -60) goNext();
+    else if (info.offset.x > 60) goPrev();
+    dragX.set(0);
+  }
+
+  const pageVariants = {
+    enter: (dir: number) => ({ x: dir > 0 ? "100%" : "-100%", opacity: 0 }),
+    center: { x: 0, opacity: 1 },
+    exit: (dir: number) => ({ x: dir > 0 ? "-60%" : "60%", opacity: 0 }),
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-black/90">
-      <div className="bg-white border-b-4 border-black px-4 py-3 flex items-center gap-4 shrink-0">
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#1a1a1a]">
+      {/* Header */}
+      <div className="bg-white border-b-4 border-black px-3 py-2 flex items-center gap-3 shrink-0">
         <button onClick={onClose} className="p-2 border-4 border-black hover:bg-muted transition-colors">
           <X className="w-5 h-5" strokeWidth={3} />
         </button>
         <div className="flex-1 min-w-0">
-          <h2 className="font-display text-xl text-black leading-tight truncate">{gibi.titulo}</h2>
-          <p className="font-sans font-bold text-gray-500 text-sm truncate">
+          <h2 className="font-display text-lg text-black leading-tight truncate">{gibi.titulo}</h2>
+          <p className="font-sans font-bold text-gray-500 text-xs truncate">
             {[gibi.revista, gibi.editora, gibi.ano].filter(Boolean).join(" · ")}
           </p>
         </div>
-        {gibi.drive_url && (
-          <a href={gibi.drive_url} target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-2 px-4 py-2 border-4 border-black bg-secondary font-display text-base hover:bg-secondary/70 transition-colors shrink-0">
-            <ExternalLink className="w-4 h-4" strokeWidth={3} />
-            <span className="hidden sm:inline">ABRIR NO DRIVE</span>
-          </a>
+
+        {/* Mode toggle */}
+        <div className="flex border-4 border-black shrink-0">
+          <button
+            onClick={() => setMode("scroll")}
+            title="Rolar página"
+            className={`flex items-center gap-1.5 px-2 py-1.5 font-display text-xs transition-colors ${mode === "scroll" ? "bg-primary text-white" : "bg-white hover:bg-muted"}`}
+          >
+            <AlignJustify className="w-4 h-4" strokeWidth={3} />
+            <span className="hidden sm:inline">ROLAR</span>
+          </button>
+          <button
+            onClick={() => setMode("page")}
+            title="Virar página"
+            className={`flex items-center gap-1.5 px-2 py-1.5 font-display text-xs transition-colors border-l-4 border-black ${mode === "page" ? "bg-primary text-white" : "bg-white hover:bg-muted"}`}
+          >
+            <Layers className="w-4 h-4" strokeWidth={3} />
+            <span className="hidden sm:inline">VIRAR</span>
+          </button>
+        </div>
+
+        {/* Page counter (page mode only) */}
+        {mode === "page" && numPages > 0 && (
+          <span className="font-display text-sm text-black shrink-0 border-4 border-black px-2 py-1 bg-secondary">
+            {pageNumber}/{numPages}
+          </span>
         )}
       </div>
-      <div className="flex-1 bg-gray-900 overflow-hidden">
-        {previewUrl ? (
-          <iframe
-            src={previewUrl}
-            className="w-full h-full border-0"
-            title={gibi.titulo}
-            allow="autoplay"
-          />
-        ) : (
-          <div className="flex items-center justify-center h-full text-white font-display text-2xl">
-            Link do Drive inválido
+
+      {/* Content */}
+      {!pdfUrl ? (
+        <div className="flex-1 flex items-center justify-center text-white font-display text-2xl">
+          LINK INVÁLIDO
+        </div>
+      ) : pdfError ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-white">
+          <p className="font-display text-2xl">NÃO FOI POSSÍVEL CARREGAR</p>
+          <p className="font-sans text-gray-400 text-sm">Verifique se o arquivo é público</p>
+        </div>
+      ) : mode === "scroll" ? (
+        /* ── SCROLL MODE ── */
+        <div ref={scrollRef} className="flex-1 overflow-y-auto bg-[#1a1a1a] flex flex-col items-center gap-3 py-4 px-2">
+          <Document
+            file={pdfUrl}
+            onLoadSuccess={onDocumentLoad}
+            onLoadError={() => setPdfError(true)}
+            loading={
+              <div className="flex items-center gap-3 text-white py-20 font-display text-xl">
+                <Loader2 className="w-8 h-8 animate-spin" /> CARREGANDO...
+              </div>
+            }
+            className="flex flex-col items-center gap-3 w-full"
+          >
+            {Array.from({ length: numPages }, (_, i) => (
+              <div key={i} className="shadow-2xl">
+                <Page
+                  pageNumber={i + 1}
+                  width={Math.min(typeof window !== "undefined" ? window.innerWidth - 16 : 600, 800)}
+                  renderTextLayer={false}
+                  renderAnnotationLayer={false}
+                />
+              </div>
+            ))}
+          </Document>
+        </div>
+      ) : (
+        /* ── PAGE FLIP MODE ── */
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 relative overflow-hidden flex items-center justify-center bg-[#1a1a1a]">
+            <Document
+              file={pdfUrl}
+              onLoadSuccess={onDocumentLoad}
+              onLoadError={() => setPdfError(true)}
+              loading={
+                <div className="flex items-center gap-3 text-white font-display text-xl">
+                  <Loader2 className="w-8 h-8 animate-spin" /> CARREGANDO...
+                </div>
+              }
+            >
+              <AnimatePresence mode="popLayout" custom={pageDirection}>
+                <motion.div
+                  key={pageNumber}
+                  custom={pageDirection}
+                  variants={pageVariants}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  transition={{ type: "spring", stiffness: 300, damping: 35 }}
+                  drag="x"
+                  dragConstraints={{ left: 0, right: 0 }}
+                  dragElastic={0.2}
+                  onDragEnd={handleDragEnd}
+                  style={{ x: dragX, opacity: dragOpacity }}
+                  className="shadow-2xl cursor-grab active:cursor-grabbing select-none"
+                >
+                  <Page
+                    pageNumber={pageNumber}
+                    width={Math.min(typeof window !== "undefined" ? window.innerWidth - 80 : 500, 720)}
+                    renderTextLayer={false}
+                    renderAnnotationLayer={false}
+                  />
+                </motion.div>
+              </AnimatePresence>
+            </Document>
+
+            {/* Side arrows */}
+            {pageNumber > 1 && (
+              <button
+                onClick={goPrev}
+                className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/90 border-4 border-black p-2 hover:bg-secondary transition-colors z-10"
+              >
+                <ChevronLeft className="w-6 h-6" strokeWidth={3} />
+              </button>
+            )}
+            {pageNumber < numPages && (
+              <button
+                onClick={goNext}
+                className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/90 border-4 border-black p-2 hover:bg-secondary transition-colors z-10"
+              >
+                <ChevronRight className="w-6 h-6" strokeWidth={3} />
+              </button>
+            )}
           </div>
-        )}
-      </div>
+
+          {/* Page dots (up to 20 visible) */}
+          {numPages > 1 && numPages <= 80 && (
+            <div className="shrink-0 flex justify-center gap-1 py-2 bg-[#111] flex-wrap px-4">
+              {Array.from({ length: numPages }, (_, i) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    setPageDirection(i + 1 > pageNumber ? 1 : -1);
+                    setPageNumber(i + 1);
+                  }}
+                  className={`w-2 h-2 rounded-full border-2 transition-colors ${i + 1 === pageNumber ? "bg-primary border-primary" : "bg-gray-600 border-gray-500 hover:bg-gray-400"}`}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
