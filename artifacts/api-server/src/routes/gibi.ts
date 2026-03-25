@@ -17,10 +17,12 @@ interface ComicResultData {
   confianca?: number;
   nota?: string;
   balloon_text?: string;
+  imagem_url?: string;
   relatedResults?: ComicResultData[];
 }
 
 function buildResult(data: ComicResultData, id: string, searchType: string, images: string[] = []) {
+  const coverImages = images.length > 0 ? images : (data.imagem_url ? [data.imagem_url] : []);
   return {
     id,
     encontrado: data.encontrado ?? true,
@@ -34,7 +36,7 @@ function buildResult(data: ComicResultData, id: string, searchType: string, imag
     confianca: data.confianca || 0,
     nota: data.nota || "",
     balloon_text: data.balloon_text || "",
-    images,
+    images: coverImages,
     search_type: searchType,
     created_at: new Date().toISOString(),
   };
@@ -61,10 +63,207 @@ async function saveToSupabase(result: ReturnType<typeof buildResult>, query: str
       result_json: resultJson,
     });
   } catch (err) {
-    // Non-fatal: log but don't throw
     console.error("Supabase save error:", err);
   }
 }
+
+// Search the gibis collection in DB
+async function searchCollection(terms: string[]): Promise<ComicResultData[]> {
+  if (!supabase) return [];
+  try {
+    const query = terms.join(" ");
+    const { data, error } = await supabase
+      .from("gibis")
+      .select("*")
+      .or(
+        terms.map(t =>
+          `titulo.ilike.%${t}%,revista.ilike.%${t}%,editora.ilike.%${t}%,descricao.ilike.%${t}%`
+        ).join(",")
+      )
+      .limit(10);
+    if (error) {
+      console.error("Collection search error:", JSON.stringify(error));
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    console.error("Collection search exception:", err);
+    return [];
+  }
+}
+
+async function searchCollectionByCharacter(character: string): Promise<ComicResultData[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("gibis")
+      .select("*")
+      .contains("personagens", [character])
+      .limit(10);
+    if (error || !data?.length) {
+      // fallback: text match in personagens array using ilike on text cast
+      const { data: data2, error: error2 } = await supabase
+        .from("gibis")
+        .select("*")
+        .ilike("titulo", `%${character}%`)
+        .limit(10);
+      if (!error2 && data2) return data2;
+      return [];
+    }
+    return data;
+  } catch {
+    return [];
+  }
+}
+
+// ============================================================
+// COLLECTION CRUD ROUTES
+// ============================================================
+
+// GET /api/colecao — list all comics
+router.get("/colecao", async (req: Request, res: Response) => {
+  if (!supabase) {
+    res.json({ items: [], total: 0 });
+    return;
+  }
+  try {
+    const { q, editora, limit = "100", offset = "0" } = req.query as Record<string, string>;
+
+    let query = supabase
+      .from("gibis")
+      .select("*", { count: "exact" })
+      .order("revista", { ascending: true })
+      .order("titulo", { ascending: true })
+      .limit(parseInt(limit))
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+
+    if (q) {
+      query = query.or(`titulo.ilike.%${q}%,revista.ilike.%${q}%,editora.ilike.%${q}%`);
+    }
+    if (editora) query = query.ilike("editora", `%${editora}%`);
+
+    const { data, count, error } = await query;
+    if (error) {
+      console.error("Colecao list error:", JSON.stringify(error));
+      res.json({ items: [], total: 0 });
+      return;
+    }
+    res.json({ items: data || [], total: count || 0 });
+  } catch (err) {
+    console.error("Colecao list exception:", err);
+    res.json({ items: [], total: 0 });
+  }
+});
+
+// POST /api/colecao — add a comic
+router.post("/colecao", async (req: Request, res: Response) => {
+  if (!supabase) {
+    res.status(503).json({ error: "db_unavailable", message: "Banco de dados não configurado" });
+    return;
+  }
+  try {
+    const body = req.body as {
+      titulo?: string;
+      revista?: string;
+      editora?: string;
+      ano?: string;
+      numero?: string;
+      personagens?: string[];
+      descricao?: string;
+      imagem_url?: string;
+      tags?: string[];
+      notas?: string;
+    };
+
+    if (!body.titulo?.trim()) {
+      res.status(400).json({ error: "invalid_input", message: "Título é obrigatório" });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("gibis")
+      .insert({
+        titulo: body.titulo.trim(),
+        revista: body.revista?.trim() || null,
+        editora: body.editora?.trim() || null,
+        ano: body.ano?.trim() || null,
+        numero: body.numero?.trim() || null,
+        personagens: body.personagens || [],
+        descricao: body.descricao?.trim() || null,
+        imagem_url: body.imagem_url?.trim() || null,
+        tags: body.tags || [],
+        notas: body.notas?.trim() || null,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Colecao insert error:", JSON.stringify(error));
+      res.status(500).json({ error: "db_error", message: error.message });
+      return;
+    }
+    res.status(201).json({ item: data });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Erro ao adicionar gibi";
+    res.status(500).json({ error: "insert_error", message });
+  }
+});
+
+// PUT /api/colecao/:id — update a comic
+router.put("/colecao/:id", async (req: Request, res: Response) => {
+  if (!supabase) {
+    res.status(503).json({ error: "db_unavailable", message: "Banco de dados não configurado" });
+    return;
+  }
+  try {
+    const { id } = req.params;
+    const body = req.body as Record<string, unknown>;
+
+    const { data, error } = await supabase
+      .from("gibis")
+      .update({ ...body, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      res.status(500).json({ error: "db_error", message: error.message });
+      return;
+    }
+    if (!data) {
+      res.status(404).json({ error: "not_found", message: "Gibi não encontrado" });
+      return;
+    }
+    res.json({ item: data });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Erro ao atualizar gibi";
+    res.status(500).json({ error: "update_error", message });
+  }
+});
+
+// DELETE /api/colecao/:id — delete a comic
+router.delete("/colecao/:id", async (req: Request, res: Response) => {
+  if (!supabase) {
+    res.status(503).json({ error: "db_unavailable", message: "Banco de dados não configurado" });
+    return;
+  }
+  try {
+    const { id } = req.params;
+    const { error } = await supabase.from("gibis").delete().eq("id", id);
+    if (error) {
+      res.status(500).json({ error: "db_error", message: error.message });
+      return;
+    }
+    res.json({ success: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Erro ao remover gibi";
+    res.status(500).json({ error: "delete_error", message });
+  }
+});
+
+// ============================================================
+// SEARCH ROUTES (DB first, then Gemini fallback)
+// ============================================================
 
 // POST /api/identify - identify from images
 router.post("/identify", async (req: Request, res: Response) => {
@@ -83,13 +282,12 @@ router.post("/identify", async (req: Request, res: Response) => {
     const geminiResult = await identifyFromImages(images) as ComicResultData;
     const mainId = randomUUID();
     const mainResult = buildResult(geminiResult, mainId, "image", images);
-
     const relatedResults = (geminiResult.relatedResults || []).map((r: ComicResultData) =>
       buildResult(r, randomUUID(), "image")
     );
 
     const response = { mainResult, relatedResults };
-    await saveToSupabase(mainResult, `[${images.length} image(s)]`, response);
+    await saveToSupabase(mainResult, `[${images.length} imagem(ns)]`, response);
 
     res.json(response);
   } catch (err: unknown) {
@@ -98,7 +296,7 @@ router.post("/identify", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/search - text search
+// POST /api/search - text search (DB first)
 router.post("/search", async (req: Request, res: Response) => {
   try {
     const { query } = req.body as { query?: string };
@@ -108,6 +306,21 @@ router.post("/search", async (req: Request, res: Response) => {
       return;
     }
 
+    // Search real collection first
+    const terms = query.trim().split(/\s+/).filter(t => t.length > 2);
+    const dbResults = await searchCollection(terms.length > 0 ? terms : [query.trim()]);
+
+    if (dbResults.length > 0) {
+      const [first, ...rest] = dbResults;
+      const mainResult = buildResult({ ...first, encontrado: true, confianca: 100 }, (first as { id?: string }).id || randomUUID(), "text");
+      const relatedResults = rest.slice(0, 4).map((r) =>
+        buildResult({ ...r, encontrado: true, confianca: 90 }, (r as { id?: string }).id || randomUUID(), "text")
+      );
+      res.json({ mainResult, relatedResults, source: "colecao" });
+      return;
+    }
+
+    // Fallback to Gemini
     const geminiResult = await searchByText(query) as ComicResultData;
     const mainId = randomUUID();
     const mainResult = buildResult(geminiResult, mainId, "text");
@@ -115,9 +328,8 @@ router.post("/search", async (req: Request, res: Response) => {
       buildResult(r, randomUUID(), "text")
     );
 
-    const response = { mainResult, relatedResults };
+    const response = { mainResult, relatedResults, source: "gemini" };
     await saveToSupabase(mainResult, query, response);
-
     res.json(response);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Erro na busca";
@@ -125,7 +337,7 @@ router.post("/search", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/character-search
+// POST /api/character-search (DB first)
 router.post("/character-search", async (req: Request, res: Response) => {
   try {
     const { character } = req.body as { character?: string };
@@ -135,6 +347,20 @@ router.post("/character-search", async (req: Request, res: Response) => {
       return;
     }
 
+    // Search real collection first
+    const dbResults = await searchCollectionByCharacter(character.trim());
+
+    if (dbResults.length > 0) {
+      const [first, ...rest] = dbResults;
+      const mainResult = buildResult({ ...first, encontrado: true, confianca: 100 }, (first as { id?: string }).id || randomUUID(), "character");
+      const relatedResults = rest.slice(0, 4).map((r) =>
+        buildResult({ ...r, encontrado: true, confianca: 90 }, (r as { id?: string }).id || randomUUID(), "character")
+      );
+      res.json({ mainResult, relatedResults, source: "colecao" });
+      return;
+    }
+
+    // Fallback to Gemini
     const geminiResult = await searchByCharacter(character) as ComicResultData;
     const mainId = randomUUID();
     const mainResult = buildResult(geminiResult, mainId, "character");
@@ -142,9 +368,8 @@ router.post("/character-search", async (req: Request, res: Response) => {
       buildResult(r, randomUUID(), "character")
     );
 
-    const response = { mainResult, relatedResults };
+    const response = { mainResult, relatedResults, source: "gemini" };
     await saveToSupabase(mainResult, character, response);
-
     res.json(response);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Erro na busca por personagem";
@@ -152,7 +377,7 @@ router.post("/character-search", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/quote-search - search stored balloon text
+// POST /api/quote-search (DB first)
 router.post("/quote-search", async (req: Request, res: Response) => {
   try {
     const { quote } = req.body as { quote?: string };
@@ -162,43 +387,38 @@ router.post("/quote-search", async (req: Request, res: Response) => {
       return;
     }
 
-    let items: ComicResultData[] = [];
+    // Search DB collection first for matching descriptions/notes
+    const dbResults = await searchCollection([quote.trim()]);
 
-    if (supabase) {
-      const { data } = await supabase
-        .from("search_history")
-        .select("*")
-        .ilike("balloon_text", `%${quote}%`)
-        .limit(10);
-      items = data || [];
-    }
-
-    // If no stored results, also use Gemini
-    if (items.length === 0) {
-      const geminiResult = await searchByText(`história com a fala: "${quote}"`) as ComicResultData;
-      const mainId = randomUUID();
-      const mainResult = buildResult(geminiResult, mainId, "quote");
-      const relatedResults = (geminiResult.relatedResults || []).map((r: ComicResultData) =>
-        buildResult(r, randomUUID(), "quote")
+    if (dbResults.length > 0) {
+      const [first, ...rest] = dbResults;
+      const mainResult = buildResult({ ...first, encontrado: true, confianca: 100, balloon_text: quote }, (first as { id?: string }).id || randomUUID(), "quote");
+      const relatedResults = rest.slice(0, 4).map((r) =>
+        buildResult({ ...r, encontrado: true, confianca: 90 }, (r as { id?: string }).id || randomUUID(), "quote")
       );
-      const response = { mainResult, relatedResults };
-      await saveToSupabase(mainResult, quote, response);
-      res.json(response);
+      res.json({ mainResult, relatedResults, source: "colecao" });
       return;
     }
 
-    const [first, ...rest] = items;
-    const mainResult = buildResult(first as ComicResultData, (first as { id?: string }).id || randomUUID(), "quote");
-    const relatedResults = rest.map((r: ComicResultData) =>
-      buildResult(r, (r as { id?: string }).id || randomUUID(), "quote")
+    // Fallback to Gemini
+    const geminiResult = await searchByText(`história com a fala: "${quote}"`) as ComicResultData;
+    const mainId = randomUUID();
+    const mainResult = buildResult(geminiResult, mainId, "quote");
+    const relatedResults = (geminiResult.relatedResults || []).map((r: ComicResultData) =>
+      buildResult(r, randomUUID(), "quote")
     );
-
-    res.json({ mainResult, relatedResults });
+    const response = { mainResult, relatedResults, source: "gemini" };
+    await saveToSupabase(mainResult, quote, response);
+    res.json(response);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Erro na busca por fala";
     res.status(500).json({ error: "quote_search_error", message });
   }
 });
+
+// ============================================================
+// HISTORY / RANKING / RESULT ROUTES
+// ============================================================
 
 // GET /api/history
 router.get("/history", async (req: Request, res: Response) => {
@@ -253,7 +473,6 @@ router.get("/ranking", async (req: Request, res: Response) => {
       return;
     }
 
-    // Get start of current week (Monday)
     const now = new Date();
     const dayOfWeek = now.getDay();
     const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
@@ -269,14 +488,11 @@ router.get("/ranking", async (req: Request, res: Response) => {
       .not("revista", "eq", "");
 
     if (error) {
-      if (error.code === "42P01" || error.message?.includes("does not exist")) {
-        res.json({ items: [], week_start: weekStart.toISOString() });
-        return;
-      }
-      throw error;
+      console.error("Ranking error:", JSON.stringify(error));
+      res.json({ items: [], week_start: weekStart.toISOString() });
+      return;
     }
 
-    // Group by revista+titulo and count
     const counts = new Map<string, {
       revista: string;
       titulo: string;
@@ -291,9 +507,7 @@ router.get("/ranking", async (req: Request, res: Response) => {
       const existing = counts.get(key);
       if (existing) {
         existing.search_count++;
-        if (row.created_at > existing.last_searched) {
-          existing.last_searched = row.created_at;
-        }
+        if (row.created_at > existing.last_searched) existing.last_searched = row.created_at;
       } else {
         counts.set(key, {
           revista: row.revista,
@@ -324,6 +538,19 @@ router.get("/result/:id", async (req: Request, res: Response) => {
 
     if (!supabase) {
       res.status(404).json({ error: "not_found", message: "Resultado não encontrado" });
+      return;
+    }
+
+    // Check gibis collection first
+    const { data: gibiData } = await supabase
+      .from("gibis")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (gibiData) {
+      const result = buildResult(gibiData as ComicResultData, gibiData.id as string, "colecao", gibiData.imagem_url ? [gibiData.imagem_url as string] : []);
+      res.json({ result, feedback: [] });
       return;
     }
 
@@ -386,10 +613,7 @@ router.post("/feedback", async (req: Request, res: Response) => {
       correction_text: correction_text || null,
     });
 
-    if (error) {
-      console.error("Supabase feedback error:", JSON.stringify(error));
-    }
-
+    if (error) console.error("Supabase feedback error:", JSON.stringify(error));
     res.json({ success: true, id: feedbackId });
   } catch (err: unknown) {
     console.error("Feedback exception:", err);
