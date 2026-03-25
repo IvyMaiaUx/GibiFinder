@@ -57,11 +57,11 @@
   --secondary: 48 89% 60%;
   --secondary-foreground: 0 0% 0%;
 
-  /* Light gray for muted #E5E5E5 */
+  /* Light gray for muted */
   --muted: 0 0% 90%;
   --muted-foreground: 0 0% 40%;
 
-  /* Accent blue for links/highlights */
+  /* Accent */
   --accent: 210 100% 50%;
   --accent-foreground: 0 0% 100%;
 
@@ -76,7 +76,6 @@
 
   body {
     @apply font-sans antialiased text-foreground bg-background;
-    /* Halftone dot pattern #D8D2C7 (39 17% 81%) */
     background-image: radial-gradient(hsl(39 17% 81%) 15%, transparent 15%);
     background-size: 12px 12px;
   }
@@ -87,10 +86,13 @@
   }
 }
 
-@layer utilities {
+@layer components {
   /* Comic Book Specific Styles */
   .comic-border {
-    @apply border-4 border-black rounded-xl;
+    border-width: 4px;
+    border-style: solid;
+    border-color: #000000;
+    border-radius: 0.75rem;
   }
 
   .comic-shadow {
@@ -114,7 +116,11 @@
   }
 
   .comic-panel {
-    @apply bg-white border-4 border-black rounded-xl;
+    background-color: white;
+    border-width: 4px;
+    border-style: solid;
+    border-color: #000000;
+    border-radius: 0.75rem;
     box-shadow: 6px 6px 0px 0px rgba(0,0,0,1);
     transition: all 0.2s ease-in-out;
   }
