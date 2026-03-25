@@ -336,13 +336,13 @@ router.post("/admin/import-drive", async (req: Request, res: Response) => {
       return;
     }
 
-    const MAX_FILES = 10;
+    const MAX_FILES = 5;
     const toProcess = files.slice(0, MAX_FILES);
     const results: { file: string; titulo: string; status: string; id?: string; error?: string }[] = [];
     let imported = 0;
     let skipped = 0;
 
-    const { identifyFromImages } = await import("../lib/gemini");
+    const { identifyFromCover } = await import("../lib/gemini");
     const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
     // Step 1: fetch all thumbnails in parallel
@@ -377,24 +377,20 @@ router.post("/admin/import-drive", async (req: Request, res: Response) => {
       let identified: ComicResultData | null = null;
       let lastErr = "";
 
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          identified = await (identifyFromImages as (imgs: string[]) => Promise<ComicResultData>)([thumb.dataUrl]);
-          break;
-        } catch (err) {
-          lastErr = err instanceof Error ? err.message : "Erro Gemini";
-          if (lastErr.includes("429") || lastErr.toLowerCase().includes("quota")) {
-            await sleep(12000); // wait 12s before retry
-          } else {
-            break;
-          }
+      try {
+        identified = await (identifyFromCover as (img: string) => Promise<ComicResultData>)(thumb.dataUrl);
+      } catch (err) {
+        lastErr = err instanceof Error ? err.message : "Erro Gemini";
+        if (lastErr.includes("429") || lastErr.toLowerCase().includes("quota")) {
+          results.push({ file: thumb.file.name, titulo: "", status: "skipped", error: "Cota Gemini atingida — aguarde 1 minuto e importe de novo" });
+          skipped++;
+          continue;
         }
       }
 
       if (!identified) {
         results.push({ file: thumb.file.name, titulo: "", status: "error", error: lastErr || "Falha no Gemini" });
         skipped++;
-        await sleep(2000);
         continue;
       }
 

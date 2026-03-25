@@ -140,6 +140,44 @@ Analise as imagens fornecidas e identifique a história em quadrinhos. Retorne A
 Se não conseguir identificar, retorne encontrado: false mas tente fornecer pistas com base nos personagens ou estilo visual.
 O campo "confianca" deve ser um número de 0 a 100 indicando sua certeza.`;
 
+const IDENTIFY_COVER_PROMPT = `${COMIC_EXPERT_CONTEXT}
+
+Você está analisando a CAPA de um gibi/HQ para catalogação. Seu objetivo é identificar a EDIÇÃO (não a história interna).
+
+Retorne APENAS um objeto JSON válido, sem markdown, sem explicações:
+
+{
+  "encontrado": true,
+  "revista": "Nome da série/revista (ex: Mônica, Cebolinha, Turma da Mônica)",
+  "titulo": "Número ou nome da edição SE visível na capa (ex: 'Nº 45', 'Edição Especial', 'Coleção X'). Se não houver número específico, use o nome da série.",
+  "editora": "Nome da editora (ex: Editora Abril, Editora Globo, Panini Comics)",
+  "ano": "Ano de publicação SE visível (ex: 1985). Deixe vazio se não souber.",
+  "personagens": ["Personagens visíveis na capa"],
+  "descricao": "",
+  "confianca": 80,
+  "nota": "Informações adicionais visíveis na capa (slogan, evento especial, etc.)",
+  "balloon_text": "",
+  "relatedResults": []
+}
+
+IMPORTANTE: NÃO invente títulos de histórias. O campo "titulo" deve ser apenas o número ou nome da edição conforme aparece na capa. Se não houver número visível, use o nome da série principal.`;
+
+export async function identifyFromCover(base64Image: string): Promise<unknown> {
+  const mimeMatch = base64Image.match(/^data:([^;]+);base64,/);
+  const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+  const data = base64Image.replace(/^data:[^;]+;base64,/, "");
+  const imagePart: Part = { inlineData: { data, mimeType } };
+
+  return withKeyRotation(async () => {
+    const model = getModel();
+    const result = await model.generateContent([IDENTIFY_COVER_PROMPT, imagePart]);
+    const text = result.response.text().trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("Resposta do Gemini não contém JSON válido");
+    return JSON.parse(jsonMatch[0]);
+  });
+}
+
 export async function identifyFromImages(base64Images: string[]): Promise<unknown> {
   const imageParts: Part[] = base64Images.map((b64) => {
     const mimeMatch = b64.match(/^data:([^;]+);base64,/);

@@ -463,7 +463,7 @@ export default function Admin() {
                 <p>📋 <strong>Pré-requisitos:</strong></p>
                 <p>1. A pasta deve ser pública ("qualquer pessoa com o link pode ver")</p>
                 <p>2. <code className="bg-black text-white px-1">GOOGLE_DRIVE_API_KEY</code> deve estar configurada nas variáveis de ambiente</p>
-                <p>3. Máximo de 10 PDFs por rodada (rode múltiplas vezes para importar mais)</p>
+                <p>3. Máximo de 5 PDFs por rodada (rode múltiplas vezes para importar mais)</p>
               </div>
 
               <div>
@@ -523,15 +523,17 @@ export default function Admin() {
                 )}
                 <div className="space-y-2 max-h-80 overflow-y-auto">
                   {driveResult.results.map((r, i) => (
-                    <div key={i} className={`flex items-start gap-3 p-3 border-2 border-black text-sm ${r.status === "ok" ? "bg-green-50" : "bg-red-50"}`}>
+                    <div key={i} className={`flex items-start gap-3 p-3 border-2 border-black text-sm ${r.status === "ok" ? "bg-green-50" : r.status === "skipped" ? "bg-amber-50" : "bg-red-50"}`}>
                       {r.status === "ok" ? (
                         <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" strokeWidth={3} />
+                      ) : r.status === "skipped" ? (
+                        <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" strokeWidth={3} />
                       ) : (
                         <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" strokeWidth={3} />
                       )}
                       <div className="flex-1 min-w-0">
                         <p className="font-display text-base leading-tight">{r.titulo || r.file}</p>
-                        {r.error && <p className="font-sans text-red-600 text-xs mt-0.5">{r.error}</p>}
+                        {r.error && <p className={`font-sans text-xs mt-0.5 ${r.status === "skipped" ? "text-amber-700" : "text-red-600"}`}>{r.error}</p>}
                         <p className="font-sans text-gray-400 text-xs truncate">{r.file}</p>
                       </div>
                     </div>
