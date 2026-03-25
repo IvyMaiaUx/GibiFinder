@@ -276,6 +276,24 @@ router.get("/admin/verify", (req: Request, res: Response) => {
   res.json({ valid: isAdmin(req) });
 });
 
+// GET /api/admin/test-drive — test Drive API key connectivity
+router.get("/admin/test-drive", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  const driveApiKey = process.env["GOOGLE_DRIVE_API_KEY"];
+  if (!driveApiKey) { res.json({ ok: false, error: "GOOGLE_DRIVE_API_KEY não configurada" }); return; }
+  try {
+    // Use a known public Google sample folder
+    const testUrl = `https://www.googleapis.com/drive/v3/files?q=trashed%3Dfalse&key=${driveApiKey}&pageSize=1&fields=files(id,name)`;
+    const r = await fetch(testUrl);
+    const text = await r.text();
+    let parsed: unknown;
+    try { parsed = JSON.parse(text); } catch { parsed = text; }
+    res.json({ ok: r.ok, status: r.status, body: parsed, keyPrefix: driveApiKey.slice(0, 8) + "..." });
+  } catch (err) {
+    res.json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // POST /api/admin/import-drive — bulk import from Google Drive folder
 router.post("/admin/import-drive", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
