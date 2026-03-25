@@ -10,7 +10,7 @@ interface ComicCardProps {
 
 export function ComicCard({ result, isMain = false }: ComicCardProps) {
   const imageUrl = result.images?.[0] || `${import.meta.env.BASE_URL}images/comic-placeholder.png`;
-  const confianca = result.confianca ? Math.round(result.confianca * 100) : 0;
+  const confianca = result.confianca ? Math.round(result.confianca) : 0;
 
   return (
     <div className={cn(

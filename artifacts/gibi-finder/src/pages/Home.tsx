@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Hero } from "@/components/home/Hero";
 import { SearchPanel } from "@/components/home/SearchPanel";
@@ -14,6 +15,16 @@ export default function Home() {
     searchByQuote 
   } = useSearchActions();
 
+  const resultsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (results && resultsRef.current) {
+      setTimeout(() => {
+        resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    }
+  }, [results]);
+
   return (
     <Layout>
       <div className="max-w-6xl mx-auto relative z-10">
@@ -27,7 +38,7 @@ export default function Home() {
         />
         
         {results && (
-          <div id="results-anchor" className="scroll-mt-24">
+          <div ref={resultsRef} className="scroll-mt-24 mt-8">
             <ResultView results={results} />
           </div>
         )}
