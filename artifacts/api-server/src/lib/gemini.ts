@@ -40,18 +40,62 @@ export async function fetchWikipediaImage(query: string): Promise<string | null>
   return (await tryLang("pt")) || (await tryLang("en"));
 }
 
-const apiKey = process.env["GEMINI_API_KEY"];
 const modelName = process.env["GEMINI_MODEL"] || "gemini-2.5-flash";
 
-if (!apiKey) {
+// Support multiple keys separated by comma for rate-limit rotation
+const rawKeys = process.env["GEMINI_API_KEY"] || "";
+const apiKeys = rawKeys.split(",").map(k => k.trim()).filter(Boolean);
+
+if (apiKeys.length === 0) {
   logger.warn("GEMINI_API_KEY not set — AI features will be unavailable");
+} else {
+  logger.info({ msg: `Gemini: ${apiKeys.length} API key(s) configured` });
 }
 
-export const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
+const clients = apiKeys.map(key => new GoogleGenerativeAI(key));
+
+let currentKeyIndex = 0;
+
+function getNextClient(): GoogleGenerativeAI | null {
+  if (clients.length === 0) return null;
+  return clients[currentKeyIndex];
+}
+
+function rotateKey() {
+  if (clients.length <= 1) return;
+  currentKeyIndex = (currentKeyIndex + 1) % clients.length;
+  logger.warn({ msg: `Gemini: rotating to key index ${currentKeyIndex}` });
+}
+
+function isRateLimitError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes("429") || msg.toLowerCase().includes("rate") || msg.toLowerCase().includes("quota");
+}
+
+export const genAI = clients[0] || null;
 
 export function getModel() {
-  if (!genAI) throw new Error("GEMINI_API_KEY não configurada");
-  return genAI.getGenerativeModel({ model: modelName });
+  const client = getNextClient();
+  if (!client) throw new Error("GEMINI_API_KEY não configurada");
+  return client.getGenerativeModel({ model: modelName });
+}
+
+async function withKeyRotation<T>(fn: () => Promise<T>): Promise<T> {
+  const maxAttempts = Math.max(clients.length, 1);
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (isRateLimitError(err) && clients.length > 1) {
+        rotateKey();
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
 }
 
 const COMIC_EXPERT_CONTEXT = `Você é um especialista em histórias em quadrinhos brasileiras, com profundo conhecimento sobre:
@@ -63,19 +107,7 @@ const COMIC_EXPERT_CONTEXT = `Você é um especialista em histórias em quadrinh
 - Turma da Mônica Jovem
 - Clássicos do quadrinho brasileiro`;
 
-export async function identifyFromImages(base64Images: string[]): Promise<unknown> {
-  const model = getModel();
-
-  const imageParts: Part[] = base64Images.map((b64) => {
-    const mimeMatch = b64.match(/^data:([^;]+);base64,/);
-    const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
-    const data = b64.replace(/^data:[^;]+;base64,/, "");
-    return {
-      inlineData: { data, mimeType },
-    };
-  });
-
-  const prompt = `${COMIC_EXPERT_CONTEXT}
+const IDENTIFY_PROMPT = `${COMIC_EXPERT_CONTEXT}
 
 Analise as imagens fornecidas e identifique a história em quadrinhos. Retorne APENAS um objeto JSON válido, sem markdown, sem explicações, com exatamente esta estrutura:
 
@@ -108,18 +140,25 @@ Analise as imagens fornecidas e identifique a história em quadrinhos. Retorne A
 Se não conseguir identificar, retorne encontrado: false mas tente fornecer pistas com base nos personagens ou estilo visual.
 O campo "confianca" deve ser um número de 0 a 100 indicando sua certeza.`;
 
-  const result = await model.generateContent([prompt, ...imageParts]);
-  const text = result.response.text().trim();
+export async function identifyFromImages(base64Images: string[]): Promise<unknown> {
+  const imageParts: Part[] = base64Images.map((b64) => {
+    const mimeMatch = b64.match(/^data:([^;]+);base64,/);
+    const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+    const data = b64.replace(/^data:[^;]+;base64,/, "");
+    return { inlineData: { data, mimeType } };
+  });
 
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Resposta do Gemini não contém JSON válido");
-
-  return JSON.parse(jsonMatch[0]);
+  return withKeyRotation(async () => {
+    const model = getModel();
+    const result = await model.generateContent([IDENTIFY_PROMPT, ...imageParts]);
+    const text = result.response.text().trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("Resposta do Gemini não contém JSON válido");
+    return JSON.parse(jsonMatch[0]);
+  });
 }
 
 export async function searchByText(query: string, fandomContext?: string): Promise<unknown> {
-  const model = getModel();
-
   const contextBlock = fandomContext
     ? `\n\nINFORMAÇÕES DE REFERÊNCIA (use como base factual prioritária):\n${fandomContext}\n`
     : "";
@@ -156,16 +195,17 @@ Identifique a melhor correspondência e resultados relacionados. Se as informaç
   ]
 }`;
 
-  const result = await model.generateContent(prompt);
-  const text = result.response.text().trim();
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Resposta do Gemini não contém JSON válido");
-  return JSON.parse(jsonMatch[0]);
+  return withKeyRotation(async () => {
+    const model = getModel();
+    const result = await model.generateContent(prompt);
+    const text = result.response.text().trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("Resposta do Gemini não contém JSON válido");
+    return JSON.parse(jsonMatch[0]);
+  });
 }
 
 export async function searchByCharacter(character: string, fandomContext?: string): Promise<unknown> {
-  const model = getModel();
-
   const contextBlock = fandomContext
     ? `\n\nINFORMAÇÕES DE REFERÊNCIA (use como base factual prioritária):\n${fandomContext}\n`
     : "";
@@ -203,9 +243,12 @@ Retorne APENAS um objeto JSON válido:
   ]
 }`;
 
-  const result = await model.generateContent(prompt);
-  const text = result.response.text().trim();
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Resposta do Gemini não contém JSON válido");
-  return JSON.parse(jsonMatch[0]);
+  return withKeyRotation(async () => {
+    const model = getModel();
+    const result = await model.generateContent(prompt);
+    const text = result.response.text().trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("Resposta do Gemini não contém JSON válido");
+    return JSON.parse(jsonMatch[0]);
+  });
 }
