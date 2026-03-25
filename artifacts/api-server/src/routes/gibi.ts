@@ -450,6 +450,74 @@ router.get("/result/:id", async (req: Request, res: Response) => {
   } catch (err) { res.status(500).json({ error: "result_error", message: err instanceof Error ? err.message : "Erro" }); }
 });
 
+// ============================================================
+// SUGGESTIONS (public submit, admin read)
+// ============================================================
+
+router.post("/suggestion", async (req: Request, res: Response) => {
+  const { type, message, nome, email } = req.body as { type?: string; message?: string; nome?: string; email?: string };
+  if (!message || typeof message !== "string" || message.trim().length < 5) {
+    res.status(400).json({ error: "invalid_input", message: "Mensagem muito curta" }); return;
+  }
+  if (!supabase) { res.json({ success: true }); return; }
+  try {
+    const { error } = await supabase.from("suggestions").insert({
+      type: type === "bug" ? "bug" : "sugestao",
+      message: message.trim(),
+      nome: nome?.trim() || null,
+      email: email?.trim() || null,
+      status: "novo",
+    });
+    if (error) { console.error("Suggestion insert error:", JSON.stringify(error)); res.status(500).json({ error: "db_error", message: error.message }); return; }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "insert_error", message: err instanceof Error ? err.message : "Erro ao salvar" });
+  }
+});
+
+router.get("/admin/suggestions", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  if (!supabase) { res.json({ items: [], total: 0 }); return; }
+  try {
+    const { status } = req.query as { status?: string };
+    let query = supabase.from("suggestions").select("*", { count: "exact" }).order("created_at", { ascending: false });
+    if (status) query = query.eq("status", status);
+    const { data, count, error } = await query;
+    if (error) { console.error("Suggestions list error:", JSON.stringify(error)); res.json({ items: [], total: 0 }); return; }
+    res.json({ items: data || [], total: count || 0 });
+  } catch (err) { console.error("Suggestions list exception:", err); res.json({ items: [], total: 0 }); }
+});
+
+router.put("/admin/suggestions/:id", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  try {
+    const { id } = req.params;
+    const { status } = req.body as { status: string };
+    if (!["novo", "visto", "arquivado"].includes(status)) {
+      res.status(400).json({ error: "invalid_status" }); return;
+    }
+    const { error } = await supabase.from("suggestions").update({ status }).eq("id", id);
+    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "update_error", message: err instanceof Error ? err.message : "Erro" });
+  }
+});
+
+router.delete("/admin/suggestions/:id", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  try {
+    const { id } = req.params;
+    const { error } = await supabase.from("suggestions").delete().eq("id", id);
+    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "delete_error", message: err instanceof Error ? err.message : "Erro" });
+  }
+});
+
 router.post("/feedback", async (req: Request, res: Response) => {
   const { result_id, is_correct, correction_text } = req.body as { result_id?: string; is_correct?: boolean; correction_text?: string };
   if (!result_id || typeof is_correct !== "boolean") { res.status(400).json({ error: "invalid_input", message: "Dados inválidos" }); return; }

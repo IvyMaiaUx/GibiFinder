@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye } from "lucide-react";
+import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, MessageSquare, Bug, Lightbulb, Archive } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { useToast } from "@/hooks/use-toast";
 
@@ -21,6 +21,16 @@ interface Gibi {
   notas?: string;
   status?: string;
   created_at?: string;
+}
+
+interface Suggestion {
+  id: string;
+  type: "bug" | "sugestao";
+  message: string;
+  nome?: string;
+  email?: string;
+  status: "novo" | "visto" | "arquivado";
+  created_at: string;
 }
 
 interface GibiForm {
@@ -159,7 +169,7 @@ export default function Admin() {
   const [keyInput, setKeyInput] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [tab, setTab] = useState<"pending" | "approved">("pending");
+  const [tab, setTab] = useState<"pending" | "approved" | "suggestions">("pending");
   const [editModal, setEditModal] = useState<{ open: boolean; gibi?: Gibi }>({ open: false });
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
@@ -206,6 +216,27 @@ export default function Admin() {
     select: (d: { items: Gibi[]; total: number }) => d,
   });
 
+  const { data: suggestionsData, isLoading: loadingSuggestions } = useQuery({
+    queryKey: ["admin-suggestions", adminKey],
+    queryFn: () => adminRequest("/api/admin/suggestions", adminKey),
+    enabled: unlocked,
+    select: (d: { items: Suggestion[]; total: number }) => d,
+    refetchInterval: tab === "suggestions" ? 30000 : false,
+  });
+
+  const updateSuggestionMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      adminRequest(`/api/admin/suggestions/${id}`, adminKey, "PUT", { status }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["admin-suggestions"] }); },
+    onError: () => toast({ title: "Erro ao atualizar", variant: "destructive" }),
+  });
+
+  const deleteSuggestionMutation = useMutation({
+    mutationFn: (id: string) => adminRequest(`/api/admin/suggestions/${id}`, adminKey, "DELETE"),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["admin-suggestions"] }); toast({ title: "Removido!" }); },
+    onError: () => toast({ title: "Erro ao remover", variant: "destructive" }),
+  });
+
   const reviewMutation = useMutation({
     mutationFn: ({ id, action }: { id: string; action: "approve" | "reject" }) =>
       adminRequest(`/api/admin/review/${id}`, adminKey, "PUT", { action }),
@@ -232,6 +263,8 @@ export default function Admin() {
 
   const pendingItems = pendingData?.items || [];
   const approvedItems = approvedData?.items || [];
+  const suggestionItems = suggestionsData?.items || [];
+  const newSuggestions = suggestionItems.filter(s => s.status === "novo");
 
   if (!unlocked) {
     return (
@@ -289,14 +322,19 @@ export default function Admin() {
         {/* Tabs */}
         <div className="flex border-4 border-black mb-6 overflow-hidden">
           <button onClick={() => setTab("pending")}
-            className={`flex-1 py-3 font-display text-xl flex items-center justify-center gap-2 transition-colors ${tab === "pending" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
+            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 transition-colors ${tab === "pending" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
             <Eye className="w-5 h-5" strokeWidth={3} />
             PENDENTES {pendingItems.length > 0 && <span className="bg-primary text-white text-sm font-bold px-2 py-0.5 rounded-full">{pendingItems.length}</span>}
           </button>
           <button onClick={() => setTab("approved")}
-            className={`flex-1 py-3 font-display text-xl flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "approved" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
+            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "approved" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
             <Check className="w-5 h-5" strokeWidth={3} />
             APROVADOS ({approvedItems.length})
+          </button>
+          <button onClick={() => setTab("suggestions")}
+            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "suggestions" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
+            <MessageSquare className="w-5 h-5" strokeWidth={3} />
+            FEEDBACK {newSuggestions.length > 0 && <span className="bg-primary text-white text-sm font-bold px-2 py-0.5 rounded-full">{newSuggestions.length}</span>}
           </button>
         </div>
 
@@ -339,6 +377,66 @@ export default function Admin() {
                   onEdit={() => setEditModal({ open: true, gibi })}
                   onDelete={() => setConfirmDelete(gibi.id)}
                 />
+              ))}
+            </div>
+          )
+        )}
+        {/* Suggestions tab */}
+        {tab === "suggestions" && (
+          loadingSuggestions ? (
+            <div className="flex items-center justify-center py-24"><Loader2 className="w-12 h-12 animate-spin text-primary" /></div>
+          ) : suggestionItems.length === 0 ? (
+            <div className="text-center py-24 border-4 border-dashed border-black bg-white">
+              <MessageSquare className="w-16 h-16 mx-auto text-black/30 mb-4" />
+              <p className="font-display text-3xl text-black/50">SEM FEEDBACKS</p>
+              <p className="font-sans font-bold text-gray-500">Nenhuma sugestão ou bug reportado ainda.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {suggestionItems.map(s => (
+                <div key={s.id} className={`bg-white border-4 border-black p-4 flex flex-col sm:flex-row gap-4 ${s.status === "novo" ? "border-l-8 border-l-primary" : s.status === "arquivado" ? "opacity-60" : ""}`}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      {s.type === "bug" ? (
+                        <span className="flex items-center gap-1 bg-red-100 border-2 border-black text-black text-xs font-bold px-2 py-0.5">
+                          <Bug className="w-3 h-3" /> BUG
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 bg-secondary border-2 border-black text-black text-xs font-bold px-2 py-0.5">
+                          <Lightbulb className="w-3 h-3" /> SUGESTÃO
+                        </span>
+                      )}
+                      {s.status === "novo" && <span className="bg-primary text-white text-xs font-bold px-2 py-0.5 border-2 border-black">NOVO</span>}
+                      {s.status === "visto" && <span className="bg-green-100 text-black text-xs font-bold px-2 py-0.5 border-2 border-black">VISTO</span>}
+                      {s.status === "arquivado" && <span className="bg-gray-100 text-black text-xs font-bold px-2 py-0.5 border-2 border-black">ARQUIVADO</span>}
+                      <span className="text-xs font-bold text-gray-400 ml-auto">{new Date(s.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                    </div>
+                    <p className="font-sans font-semibold text-gray-800 text-sm leading-relaxed">{s.message}</p>
+                    {(s.nome || s.email) && (
+                      <p className="font-sans font-bold text-gray-500 text-xs mt-2">
+                        De: {s.nome || "Anônimo"}{s.email ? ` · ${s.email}` : ""}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex sm:flex-col gap-2 shrink-0">
+                    {s.status !== "visto" && (
+                      <button onClick={() => updateSuggestionMutation.mutate({ id: s.id, status: "visto" })}
+                        title="Marcar como visto" className="p-2 border-4 border-black bg-green-100 hover:bg-green-200 transition-colors flex items-center gap-1">
+                        <Eye className="w-4 h-4" strokeWidth={3} />
+                      </button>
+                    )}
+                    {s.status !== "arquivado" && (
+                      <button onClick={() => updateSuggestionMutation.mutate({ id: s.id, status: "arquivado" })}
+                        title="Arquivar" className="p-2 border-4 border-black bg-gray-100 hover:bg-gray-200 transition-colors">
+                        <Archive className="w-4 h-4" strokeWidth={3} />
+                      </button>
+                    )}
+                    <button onClick={() => deleteSuggestionMutation.mutate(s.id)}
+                      title="Remover" className="p-2 border-4 border-black hover:bg-primary hover:text-white transition-colors">
+                      <Trash2 className="w-4 h-4" strokeWidth={3} />
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
           )

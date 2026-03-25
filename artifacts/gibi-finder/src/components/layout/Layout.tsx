@@ -1,4 +1,5 @@
 import { Header } from "./Header";
+import { FeedbackButton } from "@/components/feedback/FeedbackButton";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -12,6 +13,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <p>GIBI FINDER &copy; {new Date().getFullYear()} - O DETETIVE DOS QUADRINHOS</p>
         </div>
       </footer>
+      <FeedbackButton />
     </div>
   );
 }
