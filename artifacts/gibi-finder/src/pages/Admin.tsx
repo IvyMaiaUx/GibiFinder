@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye } from "lucide-react";
@@ -189,8 +189,8 @@ export default function Admin() {
     } catch { localStorage.removeItem(STORAGE_KEY); setAdminKey(""); }
   };
 
-  // Run auto-unlock once
-  useState(() => { tryAutoUnlock(); });
+  // Run auto-unlock once on mount
+  useEffect(() => { tryAutoUnlock(); }, []);
 
   const { data: pendingData, isLoading: loadingPending } = useQuery({
     queryKey: ["admin-pending", adminKey],
