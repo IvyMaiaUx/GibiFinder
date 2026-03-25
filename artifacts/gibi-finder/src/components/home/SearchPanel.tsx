@@ -25,7 +25,7 @@ export function SearchPanel({
 
   const tabs = [
     { id: 'image', label: 'Por Imagem', icon: Camera },
-    { id: 'text', label: 'Por Texto', icon: Type },
+    { id: 'text', label: 'Por Descrição', icon: Type },
     { id: 'character', label: 'Por Personagem', icon: Users },
     { id: 'quote', label: 'Por Fala', icon: MessageSquare },
   ] as const;
@@ -67,8 +67,9 @@ export function SearchPanel({
           <TextInputSearch 
             onSearch={onSearchText} 
             isPending={isPending}
-            placeholder="Ex: Turma da Mônica número 12 editora Globo..."
-            buttonText="BUSCAR POR TEXTO"
+            placeholder="Ex: gibi da Mônica com capa azul, editora Globo, anos 80, história na praia..."
+            buttonText="BUSCAR POR DESCRIÇÃO"
+            hint="💡 Quanto mais detalhes você der, melhor o resultado! Editora, ano, cor da capa, tema da história — tudo ajuda."
           />
         )}
 

@@ -7,7 +7,7 @@ import { getLocalHistory, removeFromLocalHistory, clearLocalHistory, type LocalH
 
 const TYPE_LABELS: Record<string, string> = {
   image: "📷 Imagem",
-  text: "🔤 Texto",
+  text: "🔤 Descrição",
   character: "👤 Personagem",
   quote: "💬 Fala",
 };
