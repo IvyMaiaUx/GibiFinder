@@ -304,8 +304,10 @@ router.post("/admin/import-drive", async (req: Request, res: Response) => {
     const listRes = await fetch(listUrl);
     if (!listRes.ok) {
       const errText = await listRes.text();
-      console.error("Drive API error:", errText);
-      res.status(502).json({ error: "drive_api_error", message: "Erro ao listar arquivos do Drive. Verifique se a pasta é pública e a chave da API é válida." });
+      console.error("Drive API error:", listRes.status, errText);
+      let detail = "";
+      try { detail = JSON.parse(errText)?.error?.message || errText; } catch { detail = errText; }
+      res.status(502).json({ error: "drive_api_error", message: `Drive API (${listRes.status}): ${detail}` });
       return;
     }
     const listData = await listRes.json() as { files?: { id: string; name: string; mimeType: string }[] };
