@@ -1,0 +1,17 @@
+packages:
+  "react-dropzone": "Drag and drop functionality for image uploads"
+  "framer-motion": "Animations and layout transitions for comic book pop effects"
+  "clsx": "Class name merging"
+  "tailwind-merge": "Tailwind class merging"
+  "@radix-ui/react-dialog": "Accessible modal dialogs for history expansion"
+  "@radix-ui/react-slot": "Component composition"
+
+images:
+  - path: "artifacts/gibifinder/public/images/mascot.png"
+    description: "Pop art retro comic book style illustration of a detective with a magnifying glass looking at a comic book page, bold black outlines, vibrant primary colors, halftone dot shading, flat background"
+    aspect_ratio: "1:1"
+
+notes:
+  - The API hooks are automatically imported from @workspace/api-client-react
+  - CSS relies on Tailwind v4 and extensive custom comic book styling
+  - base64 conversion strips the data URI prefix before sending to the backend as requested by the schema separation of images and mimeTypes

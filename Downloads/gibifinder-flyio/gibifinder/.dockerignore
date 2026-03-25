@@ -1,0 +1,11 @@
+node_modules
+**/node_modules
+**/.git
+**/*.log
+**/dist
+artifacts/mockup-sandbox
+attached_assets
+gibifinder-project.zip
+gibifinder-project.tar.gz
+.local
+**/.DS_Store

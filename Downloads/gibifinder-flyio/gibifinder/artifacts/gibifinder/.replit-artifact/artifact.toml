@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "GibiFinder"
+version = "1.0.0"
+id = "artifacts/gibifinder"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24993
+
+[services.development]
+run = "pnpm --filter @workspace/gibifinder run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/gibifinder", "run", "build" ]
+publicDir = "artifacts/gibifinder/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24993"
+BASE_PATH = "/"
