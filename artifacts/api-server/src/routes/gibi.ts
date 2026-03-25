@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { identifyFromImages, searchByText, searchByCharacter, fetchWikipediaImage } from "../lib/gemini";
+import { fetchFandomContext } from "../lib/fandom";
 import { supabase } from "../lib/supabase";
 import { randomUUID } from "crypto";
 
@@ -305,17 +306,32 @@ router.post("/search", async (req: Request, res: Response) => {
       res.status(400).json({ error: "invalid_input", message: "Forneça uma descrição para buscar" }); return;
     }
     const terms = query.trim().split(/\s+/).filter(t => t.length > 2);
-    const dbResults = await searchCollection(terms.length > 0 ? terms : [query.trim()]);
+
+    // Search DB and Fandom in parallel
+    const [dbResults, fandomCtx] = await Promise.all([
+      searchCollection(terms.length > 0 ? terms : [query.trim()]),
+      fetchFandomContext(query),
+    ]);
+
     if (dbResults.length > 0) {
       const [first, ...rest] = dbResults;
       const mainResult = buildResult({ ...first, encontrado: true, confianca: 100 }, (first as { id?: string }).id || randomUUID(), "text");
       const relatedResults = rest.slice(0, 4).map((r) => buildResult({ ...r, encontrado: true, confianca: 90 }, (r as { id?: string }).id || randomUUID(), "text"));
       res.json({ mainResult, relatedResults, source: "colecao" }); return;
     }
-    const geminiResult = await searchByText(query) as ComicResultData;
-    const wikiQuery = geminiResult.revista || geminiResult.titulo || query;
-    const wikiImage = await fetchWikipediaImage(wikiQuery);
-    const coverImages = wikiImage ? [wikiImage] : [];
+
+    const geminiResult = await searchByText(query, fandomCtx.text || undefined) as ComicResultData;
+
+    // Use Fandom image first, then Wikipedia as fallback
+    let coverImages: string[] = [];
+    if (fandomCtx.imageUrl) {
+      coverImages = [fandomCtx.imageUrl];
+    } else {
+      const wikiQuery = geminiResult.revista || geminiResult.titulo || query;
+      const wikiImage = await fetchWikipediaImage(wikiQuery);
+      if (wikiImage) coverImages = [wikiImage];
+    }
+
     const mainId = randomUUID();
     const mainResult = buildResult(geminiResult, mainId, "text", coverImages);
     const relatedResults = (geminiResult.relatedResults || []).map((r) => buildResult(r, randomUUID(), "text"));
@@ -333,16 +349,29 @@ router.post("/character-search", async (req: Request, res: Response) => {
     if (!character || typeof character !== "string" || character.trim().length === 0) {
       res.status(400).json({ error: "invalid_input", message: "Forneça o nome de um personagem" }); return;
     }
-    const dbResults = await searchCollectionByCharacter(character.trim());
+
+    const [dbResults, fandomCtx] = await Promise.all([
+      searchCollectionByCharacter(character.trim()),
+      fetchFandomContext(character),
+    ]);
+
     if (dbResults.length > 0) {
       const [first, ...rest] = dbResults;
       const mainResult = buildResult({ ...first, encontrado: true, confianca: 100 }, (first as { id?: string }).id || randomUUID(), "character");
       const relatedResults = rest.slice(0, 4).map((r) => buildResult({ ...r, encontrado: true, confianca: 90 }, (r as { id?: string }).id || randomUUID(), "character"));
       res.json({ mainResult, relatedResults, source: "colecao" }); return;
     }
-    const geminiResult = await searchByCharacter(character) as ComicResultData;
-    const wikiImage = await fetchWikipediaImage(`${character} personagem quadrinhos`);
-    const coverImages = wikiImage ? [wikiImage] : [];
+
+    const geminiResult = await searchByCharacter(character, fandomCtx.text || undefined) as ComicResultData;
+
+    let coverImages: string[] = [];
+    if (fandomCtx.imageUrl) {
+      coverImages = [fandomCtx.imageUrl];
+    } else {
+      const wikiImage = await fetchWikipediaImage(`${character} personagem quadrinhos`);
+      if (wikiImage) coverImages = [wikiImage];
+    }
+
     const mainId = randomUUID();
     const mainResult = buildResult(geminiResult, mainId, "character", coverImages);
     const relatedResults = (geminiResult.relatedResults || []).map((r) => buildResult(r, randomUUID(), "character"));
@@ -360,17 +389,30 @@ router.post("/quote-search", async (req: Request, res: Response) => {
     if (!quote || typeof quote !== "string" || quote.trim().length === 0) {
       res.status(400).json({ error: "invalid_input", message: "Forneça uma fala para buscar" }); return;
     }
-    const dbResults = await searchCollection([quote.trim()]);
+
+    const [dbResults, fandomCtx] = await Promise.all([
+      searchCollection([quote.trim()]),
+      fetchFandomContext(quote),
+    ]);
+
     if (dbResults.length > 0) {
       const [first, ...rest] = dbResults;
       const mainResult = buildResult({ ...first, encontrado: true, confianca: 100, balloon_text: quote }, (first as { id?: string }).id || randomUUID(), "quote");
       const relatedResults = rest.slice(0, 4).map((r) => buildResult({ ...r, encontrado: true, confianca: 90 }, (r as { id?: string }).id || randomUUID(), "quote"));
       res.json({ mainResult, relatedResults, source: "colecao" }); return;
     }
-    const geminiResult = await searchByText(`história com a fala: "${quote}"`) as ComicResultData;
-    const wikiQuery = geminiResult.revista || geminiResult.titulo || (geminiResult.personagens?.[0] ?? quote);
-    const wikiImage = await fetchWikipediaImage(wikiQuery);
-    const coverImages = wikiImage ? [wikiImage] : [];
+
+    const geminiResult = await searchByText(`história com a fala: "${quote}"`, fandomCtx.text || undefined) as ComicResultData;
+
+    let coverImages: string[] = [];
+    if (fandomCtx.imageUrl) {
+      coverImages = [fandomCtx.imageUrl];
+    } else {
+      const wikiQuery = geminiResult.revista || geminiResult.titulo || (geminiResult.personagens?.[0] ?? quote);
+      const wikiImage = await fetchWikipediaImage(wikiQuery);
+      if (wikiImage) coverImages = [wikiImage];
+    }
+
     const mainId = randomUUID();
     const mainResult = buildResult(geminiResult, mainId, "quote", coverImages);
     const relatedResults = (geminiResult.relatedResults || []).map((r) => buildResult(r, randomUUID(), "quote"));

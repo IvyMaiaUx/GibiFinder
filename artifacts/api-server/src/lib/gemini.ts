@@ -117,14 +117,18 @@ O campo "confianca" deve ser um número de 0 a 100 indicando sua certeza.`;
   return JSON.parse(jsonMatch[0]);
 }
 
-export async function searchByText(query: string): Promise<unknown> {
+export async function searchByText(query: string, fandomContext?: string): Promise<unknown> {
   const model = getModel();
 
-  const prompt = `${COMIC_EXPERT_CONTEXT}
+  const contextBlock = fandomContext
+    ? `\n\nINFORMAÇÕES DE REFERÊNCIA (use como base factual prioritária):\n${fandomContext}\n`
+    : "";
+
+  const prompt = `${COMIC_EXPERT_CONTEXT}${contextBlock}
 
 Um usuário está procurando uma história em quadrinhos com esta descrição: "${query}"
 
-Identifique a melhor correspondência e resultados relacionados. Retorne APENAS um objeto JSON válido:
+Identifique a melhor correspondência e resultados relacionados. Se as informações de referência acima forem relevantes, priorize os dados factual delas (títulos, editorias, anos, personagens). Retorne APENAS um objeto JSON válido:
 
 {
   "encontrado": true,
@@ -159,12 +163,17 @@ Identifique a melhor correspondência e resultados relacionados. Retorne APENAS 
   return JSON.parse(jsonMatch[0]);
 }
 
-export async function searchByCharacter(character: string): Promise<unknown> {
+export async function searchByCharacter(character: string, fandomContext?: string): Promise<unknown> {
   const model = getModel();
 
-  const prompt = `${COMIC_EXPERT_CONTEXT}
+  const contextBlock = fandomContext
+    ? `\n\nINFORMAÇÕES DE REFERÊNCIA (use como base factual prioritária):\n${fandomContext}\n`
+    : "";
+
+  const prompt = `${COMIC_EXPERT_CONTEXT}${contextBlock}
 
 Liste as principais histórias em quadrinhos brasileiras onde o personagem "${character}" aparece. Inclua pelo menos 8-10 resultados se disponíveis.
+Se as informações de referência acima forem relevantes, priorize os dados factuais delas.
 
 Retorne APENAS um objeto JSON válido:
 
