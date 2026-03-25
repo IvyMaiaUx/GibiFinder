@@ -9,7 +9,8 @@ interface ComicCardProps {
 }
 
 export function ComicCard({ result, isMain = false }: ComicCardProps) {
-  const imageUrl = result.images?.[0] || `${import.meta.env.BASE_URL}images/comic-placeholder.png`;
+  const hasImage = result.images && result.images.length > 0;
+  const imageUrl = result.images?.[0];
   const confianca = result.confianca ? Math.round(result.confianca) : 0;
 
   return (
@@ -17,27 +18,34 @@ export function ComicCard({ result, isMain = false }: ComicCardProps) {
       "bg-white flex flex-col sm:flex-row overflow-hidden",
       isMain ? "comic-border comic-shadow" : "border-4 border-black rounded-xl"
     )}>
-      {/* Cover Image Area */}
-      <div className={cn(
-        "bg-muted relative border-b-4 sm:border-b-0 sm:border-r-4 border-black shrink-0",
-        isMain ? "w-full sm:w-64 md:w-80 h-80 sm:h-auto" : "w-full sm:w-40 h-48 sm:h-auto"
-      )}>
-        <img 
-          src={imageUrl} 
-          alt={result.titulo || "Capa do Gibi"} 
-          className="w-full h-full object-cover"
-        />
-        
-        {isMain && (
-          <div className="absolute top-4 left-[-10px] bg-primary text-white font-display text-xl px-4 py-1 border-4 border-black transform -rotate-6 shadow-[4px_4px_0_rgba(0,0,0,1)]">
-            RESULTADO PRINCIPAL
-          </div>
-        )}
-      </div>
-
+      {/* Cover Image Area — only shown for image searches */}
+      {hasImage && (
+        <div className={cn(
+          "bg-muted relative border-b-4 sm:border-b-0 sm:border-r-4 border-black shrink-0",
+          isMain ? "w-full sm:w-64 md:w-80 h-80 sm:h-auto" : "w-full sm:w-40 h-48 sm:h-auto"
+        )}>
+          <img 
+            src={imageUrl} 
+            alt={result.titulo || "Capa do Gibi"} 
+            className="w-full h-full object-cover"
+          />
+          
+          {isMain && (
+            <div className="absolute top-4 left-[-10px] bg-primary text-white font-display text-xl px-4 py-1 border-4 border-black transform -rotate-6 shadow-[4px_4px_0_rgba(0,0,0,1)]">
+              RESULTADO PRINCIPAL
+            </div>
+          )}
+        </div>
+      )}
       {/* Content Area */}
       <div className={cn("flex flex-col flex-1", isMain ? "p-6 md:p-8" : "p-4")}>
         <div className="flex-1">
+          {/* Badge for non-image main results */}
+          {!hasImage && isMain && (
+            <div className="inline-block bg-primary text-white font-display text-lg px-4 py-1 border-4 border-black transform -rotate-2 shadow-[3px_3px_0_rgba(0,0,0,1)] mb-4">
+              RESULTADO PRINCIPAL
+            </div>
+          )}
           {/* Header */}
           <div className="flex justify-between items-start gap-4 mb-4">
             <div>

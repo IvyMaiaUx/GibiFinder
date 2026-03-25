@@ -37,7 +37,8 @@ interface ComicResultData {
 }
 
 function buildResult(data: ComicResultData, id: string, searchType: string, images: string[] = []) {
-  const coverImages = images.length > 0 ? images : (data.imagem_url ? [data.imagem_url] : []);
+  // Only include cover images for photo/image searches — never for text, character, quote searches
+  const coverImages = images.length > 0 ? images : (searchType === "image" && data.imagem_url ? [data.imagem_url] : []);
   return {
     id,
     encontrado: data.encontrado ?? true,
