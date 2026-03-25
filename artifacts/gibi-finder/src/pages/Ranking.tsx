@@ -54,15 +54,6 @@ export default function Ranking() {
                   </span>
                 </div>
 
-                {/* Image */}
-                <div className="w-20 h-24 md:w-24 md:h-32 shrink-0 border-4 border-black rounded overflow-hidden mr-4 md:mr-6">
-                  <img 
-                    src={item.images?.[0] || `${import.meta.env.BASE_URL}images/comic-placeholder.png`} 
-                    alt={item.titulo || item.revista}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-
                 {/* Details */}
                 <div className="flex-1 min-w-0">
                   <h3 className="font-display text-2xl md:text-3xl leading-tight truncate">
