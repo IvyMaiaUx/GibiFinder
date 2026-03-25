@@ -47,8 +47,9 @@ export default function Ranking() {
                 {/* Rank Number */}
                 <div className="w-16 md:w-24 shrink-0 flex justify-center">
                   <span className="font-display text-5xl md:text-6xl" style={{
-                    color: index === 0 ? '#F4D03F' : index === 1 ? '#C0C0C0' : index === 2 ? '#CD7F32' : 'black',
-                    textShadow: '2px 2px 0px black'
+                    color: index === 0 ? '#F4D03F' : index === 1 ? '#C0C0C0' : index === 2 ? '#CD7F32' : '#E63946',
+                    WebkitTextStroke: '2px black',
+                    textShadow: '3px 3px 0px black'
                   }}>
                     #{index + 1}
                   </span>
