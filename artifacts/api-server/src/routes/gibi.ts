@@ -615,6 +615,51 @@ router.post("/suggestion", async (req: Request, res: Response) => {
   }
 });
 
+router.get("/admin/ranking", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  if (!supabase) { res.json({ items: [], total: 0 }); return; }
+  try {
+    const { data, error } = await supabase
+      .from("search_history")
+      .select("revista, titulo, editora, created_at")
+      .not("revista", "is", null)
+      .not("revista", "eq", "")
+      .order("created_at", { ascending: false });
+    if (error) { res.json({ items: [], total: 0 }); return; }
+    const counts = new Map<string, { revista: string; titulo: string; editora: string; search_count: number; last_searched: string }>();
+    for (const row of data || []) {
+      const key = `${row.revista}||${row.titulo}`;
+      const ex = counts.get(key);
+      if (ex) { ex.search_count++; if (row.created_at > ex.last_searched) ex.last_searched = row.created_at; }
+      else counts.set(key, { revista: row.revista, titulo: row.titulo, editora: row.editora, search_count: 1, last_searched: row.created_at });
+    }
+    const items = Array.from(counts.values()).sort((a, b) => b.search_count - a.search_count);
+    res.json({ items, total: items.length });
+  } catch (err) { res.status(500).json({ error: "ranking_admin_error", message: err instanceof Error ? err.message : "Erro" }); }
+});
+
+router.delete("/admin/ranking/entry", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  try {
+    const { revista, titulo } = req.body as { revista?: string; titulo?: string };
+    if (!revista || !titulo) { res.status(400).json({ error: "invalid_input", message: "revista e titulo obrigatórios" }); return; }
+    const { error } = await supabase.from("search_history").delete().eq("revista", revista).eq("titulo", titulo);
+    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: "delete_error", message: err instanceof Error ? err.message : "Erro" }); }
+});
+
+router.delete("/admin/ranking/all", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  try {
+    const { error } = await supabase.from("search_history").delete().not("id", "is", null);
+    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: "delete_error", message: err instanceof Error ? err.message : "Erro" }); }
+});
+
 router.get("/admin/suggestions", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   if (!supabase) { res.json({ items: [], total: 0 }); return; }
