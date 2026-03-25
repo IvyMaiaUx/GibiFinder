@@ -8,6 +8,7 @@ import {
 import type { SearchResponse } from "@workspace/api-client-react/src/generated/api.schemas";
 import { fileToBase64 } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { addToLocalHistory } from "@/hooks/use-local-history";
 
 export function useSearchActions() {
   const { toast } = useToast();
@@ -25,9 +26,23 @@ export function useSearchActions() {
     characterMutation.isPending || 
     quoteMutation.isPending;
 
-  const handleSuccess = (data: SearchResponse & { source?: string }) => {
+  const handleSuccess = (data: SearchResponse & { source?: string; search_type?: string }) => {
     setResults(data);
     setResultSource(data.source === "colecao" ? "colecao" : "gemini");
+
+    if (data.mainResult.encontrado && data.mainResult.id) {
+      addToLocalHistory({
+        id: data.mainResult.id,
+        titulo: data.mainResult.titulo || "",
+        revista: data.mainResult.revista || "",
+        editora: data.mainResult.editora || "",
+        ano: data.mainResult.ano || "",
+        images: data.mainResult.images || [],
+        search_type: data.mainResult.search_type || "text",
+        created_at: new Date().toISOString(),
+      });
+    }
+
     if (data.mainResult.encontrado) {
       toast({
         title: "BINGO! Gibi Encontrado!",
