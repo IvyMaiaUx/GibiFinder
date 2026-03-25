@@ -103,14 +103,6 @@ export function ComicCard({ result, isMain = false }: ComicCardProps) {
               </div>
             )}
 
-            {isMain && result.balloon_text && (
-              <div className="md:col-span-2 mt-2">
-                <span className="text-gray-500 font-bold text-sm uppercase">Fala Identificada</span>
-                <div className="speech-bubble p-3 mt-2 inline-block max-w-full">
-                  <p className="font-display text-xl tracking-wide">{result.balloon_text}</p>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 

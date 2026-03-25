@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 export function useSearchActions() {
   const { toast } = useToast();
   const [results, setResults] = useState<SearchResponse | null>(null);
+  const [resultSource, setResultSource] = useState<"colecao" | "gemini" | null>(null);
   
   const identifyMutation = useIdentifyComic();
   const textMutation = useSearchComic();
@@ -24,8 +25,9 @@ export function useSearchActions() {
     characterMutation.isPending || 
     quoteMutation.isPending;
 
-  const handleSuccess = (data: SearchResponse) => {
+  const handleSuccess = (data: SearchResponse & { source?: string }) => {
     setResults(data);
+    setResultSource(data.source === "colecao" ? "colecao" : "gemini");
     if (data.mainResult.encontrado) {
       toast({
         title: "BINGO! Gibi Encontrado!",
@@ -85,10 +87,11 @@ export function useSearchActions() {
     );
   };
 
-  const clearResults = () => setResults(null);
+  const clearResults = () => { setResults(null); setResultSource(null); };
 
   return {
     results,
+    resultSource,
     isPending,
     searchByImage,
     searchByText,

@@ -1,5 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Search } from "lucide-react";
+
+const LOADING_MESSAGES = [
+  "INVESTIGANDO AS PISTAS...",
+  "CONSULTANDO O ARQUIVO...",
+  "PERGUNTANDO AO DETETIVE...",
+  "VASCULHANDO A COLEÇÃO...",
+  "DECIFRANDO OS QUADRINHOS...",
+  "QUASE LÁ...",
+];
 
 interface TextInputSearchProps {
   onSearch: (query: string) => void;
@@ -10,6 +19,15 @@ interface TextInputSearchProps {
 
 export function TextInputSearch({ onSearch, isPending, placeholder, buttonText }: TextInputSearchProps) {
   const [query, setQuery] = useState("");
+  const [msgIndex, setMsgIndex] = useState(0);
+
+  useEffect(() => {
+    if (!isPending) { setMsgIndex(0); return; }
+    const interval = setInterval(() => {
+      setMsgIndex((i) => (i + 1) % LOADING_MESSAGES.length);
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [isPending]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,9 +53,9 @@ export function TextInputSearch({ onSearch, isPending, placeholder, buttonText }
       <button
         type="submit"
         disabled={!query.trim() || isPending}
-        className="w-full bg-secondary text-black font-display text-3xl py-4 comic-border comic-shadow comic-hover comic-active disabled:opacity-50 disabled:transform-none disabled:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] disabled:cursor-not-allowed"
+        className="w-full bg-secondary text-black font-display text-3xl py-4 comic-border comic-shadow comic-hover comic-active disabled:opacity-50 disabled:transform-none disabled:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] disabled:cursor-not-allowed transition-all"
       >
-        {isPending ? "BUSCANDO..." : buttonText}
+        {isPending ? LOADING_MESSAGES[msgIndex] : buttonText}
       </button>
     </form>
   );

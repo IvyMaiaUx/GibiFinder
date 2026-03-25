@@ -7,7 +7,8 @@ import { useSearchActions } from "@/hooks/use-search-actions";
 
 export default function Home() {
   const { 
-    results, 
+    results,
+    resultSource,
     isPending, 
     searchByImage, 
     searchByText, 
@@ -39,7 +40,7 @@ export default function Home() {
         
         {results && (
           <div ref={resultsRef} className="scroll-mt-24 mt-8">
-            <ResultView results={results} />
+            <ResultView results={results} source={resultSource} />
           </div>
         )}
       </div>
