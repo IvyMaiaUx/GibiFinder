@@ -1,6 +1,6 @@
 import { useGetRanking } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout/Layout";
-import { Trophy, Flame } from "lucide-react";
+import { Trophy, Flame, Search } from "lucide-react";
 import { formatComicDate } from "@/lib/utils";
 
 export default function Ranking() {
