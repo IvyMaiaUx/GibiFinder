@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, BookOpen, Search, X, Check, Loader2, Clock } from "lucide-react";
+import { Plus, BookOpen, Search, X, Check, Loader2, Clock, Filter, ChevronDown } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { useToast } from "@/hooks/use-toast";
 
@@ -49,6 +49,8 @@ async function apiRequest(path: string, method = "GET", body?: unknown) {
   }
   return res.json();
 }
+
+// ── Submit Modal ──────────────────────────────────────────────────────────────
 
 function SubmitModal({ onClose, onSubmitted }: { onClose: () => void; onSubmitted: () => void }) {
   const { toast } = useToast();
@@ -172,6 +174,8 @@ function SubmitModal({ onClose, onSubmitted }: { onClose: () => void; onSubmitte
   );
 }
 
+// ── Gibi Card ─────────────────────────────────────────────────────────────────
+
 function GibiCard({ gibi }: { gibi: Gibi }) {
   return (
     <motion.div
@@ -190,7 +194,7 @@ function GibiCard({ gibi }: { gibi: Gibi }) {
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <h3 className="font-display text-xl text-black leading-tight truncate">{gibi.titulo}</h3>
+        <h3 className="font-display text-xl text-black leading-tight">{gibi.titulo}</h3>
         <p className="font-sans font-bold text-gray-600 text-sm">
           {[gibi.revista, gibi.numero && `#${gibi.numero}`, gibi.editora, gibi.ano].filter(Boolean).join(" · ")}
         </p>
@@ -207,28 +211,90 @@ function GibiCard({ gibi }: { gibi: Gibi }) {
   );
 }
 
+// ── Filter Chip ───────────────────────────────────────────────────────────────
+
+function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 bg-primary text-white font-bold text-sm px-3 py-1 border-2 border-black">
+      {label}
+      <button onClick={onRemove} className="hover:opacity-75">
+        <X className="w-3 h-3" strokeWidth={3} />
+      </button>
+    </span>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+
 export default function Colecao() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [filterEditora, setFilterEditora] = useState("");
+  const [filterAno, setFilterAno] = useState("");
+  const [filterPersonagem, setFilterPersonagem] = useState("");
+  const [personagemInput, setPersonagemInput] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
 
+  // Fetch all gibis once (up to 500), filter client-side
   const { data, isLoading } = useQuery({
-    queryKey: ["colecao", search],
-    queryFn: () => apiRequest(`/api/colecao?q=${encodeURIComponent(search)}&limit=200`),
+    queryKey: ["colecao-all"],
+    queryFn: () => apiRequest(`/api/colecao?limit=500`),
     select: (d: { items: Gibi[]; total: number }) => d,
+    staleTime: 60_000,
   });
 
-  const gibis: Gibi[] = data?.items || [];
-  const total: number = data?.total || 0;
+  const allGibis: Gibi[] = data?.items || [];
+
+  // Derived filter options from data
+  const editoras = useMemo(() => {
+    const set = new Set(allGibis.map(g => g.editora).filter(Boolean) as string[]);
+    return Array.from(set).sort();
+  }, [allGibis]);
+
+  const anos = useMemo(() => {
+    const set = new Set(allGibis.map(g => g.ano).filter(Boolean) as string[]);
+    return Array.from(set).sort((a, b) => Number(b) - Number(a));
+  }, [allGibis]);
+
+  // Apply all filters
+  const gibis = useMemo(() => {
+    return allGibis.filter(g => {
+      if (search) {
+        const q = search.toLowerCase();
+        const matches = [g.titulo, g.revista, g.editora, g.descricao]
+          .some(f => f?.toLowerCase().includes(q));
+        if (!matches) return false;
+      }
+      if (filterEditora && g.editora !== filterEditora) return false;
+      if (filterAno && g.ano !== filterAno) return false;
+      if (filterPersonagem) {
+        const q = filterPersonagem.toLowerCase();
+        const has = g.personagens?.some(p => p.toLowerCase().includes(q));
+        if (!has) return false;
+      }
+      return true;
+    });
+  }, [allGibis, search, filterEditora, filterAno, filterPersonagem]);
+
+  const hasActiveFilters = filterEditora || filterAno || filterPersonagem;
+  const clearAll = () => { setFilterEditora(""); setFilterAno(""); setFilterPersonagem(""); setPersonagemInput(""); };
+
+  const handlePersonagemSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setFilterPersonagem(personagemInput.trim());
+  };
 
   return (
     <Layout>
       <div className="max-w-4xl mx-auto relative z-10">
+
+        {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="font-display text-5xl text-black leading-none">COLEÇÃO</h1>
             <p className="font-sans font-bold text-gray-600 mt-1">
-              {total > 0 ? `${total} gibi${total !== 1 ? "s" : ""} na coleção` : "Nenhum gibi ainda"}
+              {isLoading ? "Carregando..." : `${gibis.length} de ${allGibis.length} gibi${allGibis.length !== 1 ? "s" : ""}`}
             </p>
           </div>
           <button
@@ -240,21 +306,124 @@ export default function Colecao() {
           </button>
         </div>
 
-        <div className="relative mb-6">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" strokeWidth={3} />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Filtrar por título, revista ou editora..."
-            className="w-full border-4 border-black pl-12 pr-4 py-3 font-sans font-bold text-black bg-white focus:outline-none focus:ring-4 focus:ring-secondary"
-          />
-          {search && (
-            <button onClick={() => setSearch("")} className="absolute right-4 top-1/2 -translate-y-1/2">
-              <X className="w-5 h-5" strokeWidth={3} />
-            </button>
-          )}
+        {/* Search + filter toggle */}
+        <div className="flex gap-2 mb-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" strokeWidth={3} />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Buscar por título, revista ou editora..."
+              className="w-full border-4 border-black pl-12 pr-10 py-3 font-sans font-bold text-black bg-white focus:outline-none focus:ring-4 focus:ring-secondary"
+            />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute right-4 top-1/2 -translate-y-1/2">
+                <X className="w-5 h-5" strokeWidth={3} />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => setShowFilters(f => !f)}
+            className={`flex items-center gap-2 px-4 py-3 border-4 border-black font-display text-lg transition-colors ${showFilters || hasActiveFilters ? "bg-primary text-white" : "bg-white"}`}
+          >
+            <Filter className="w-5 h-5" strokeWidth={3} />
+            <span className="hidden sm:inline">FILTROS</span>
+            {hasActiveFilters && (
+              <span className="bg-white text-primary rounded-full w-5 h-5 text-xs font-bold flex items-center justify-center border-2 border-black">
+                {[filterEditora, filterAno, filterPersonagem].filter(Boolean).length}
+              </span>
+            )}
+            <ChevronDown className={`w-4 h-4 transition-transform ${showFilters ? "rotate-180" : ""}`} strokeWidth={3} />
+          </button>
         </div>
 
+        {/* Filter panel */}
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="bg-white border-4 border-black p-4 mb-3 space-y-4">
+
+                {/* Editora */}
+                <div>
+                  <p className="font-display text-lg mb-2">EDITORA</p>
+                  <div className="flex flex-wrap gap-2">
+                    {editoras.map(e => (
+                      <button
+                        key={e}
+                        onClick={() => setFilterEditora(prev => prev === e ? "" : e)}
+                        className={`px-3 py-1 border-2 border-black font-bold text-sm transition-colors ${filterEditora === e ? "bg-primary text-white" : "bg-white hover:bg-secondary/50"}`}
+                      >
+                        {e}
+                      </button>
+                    ))}
+                    {editoras.length === 0 && <span className="text-gray-400 font-sans text-sm">Nenhuma editora disponível</span>}
+                  </div>
+                </div>
+
+                {/* Ano */}
+                <div>
+                  <p className="font-display text-lg mb-2">ANO</p>
+                  <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto">
+                    {anos.map(a => (
+                      <button
+                        key={a}
+                        onClick={() => setFilterAno(prev => prev === a ? "" : a)}
+                        className={`px-3 py-1 border-2 border-black font-bold text-sm transition-colors ${filterAno === a ? "bg-primary text-white" : "bg-white hover:bg-secondary/50"}`}
+                      >
+                        {a}
+                      </button>
+                    ))}
+                    {anos.length === 0 && <span className="text-gray-400 font-sans text-sm">Nenhum ano disponível</span>}
+                  </div>
+                </div>
+
+                {/* Personagem */}
+                <div>
+                  <p className="font-display text-lg mb-2">PERSONAGEM</p>
+                  <form onSubmit={handlePersonagemSearch} className="flex gap-2">
+                    <input
+                      value={personagemInput}
+                      onChange={e => setPersonagemInput(e.target.value)}
+                      placeholder="Ex: Mônica, Cebolinha..."
+                      className="flex-1 border-4 border-black px-3 py-2 font-sans font-bold focus:outline-none focus:ring-4 focus:ring-secondary"
+                    />
+                    <button type="submit" className="bg-primary text-white border-4 border-black px-4 font-display text-lg comic-hover">
+                      OK
+                    </button>
+                    {filterPersonagem && (
+                      <button type="button" onClick={() => { setFilterPersonagem(""); setPersonagemInput(""); }}
+                        className="border-4 border-black px-3 hover:bg-red-100">
+                        <X className="w-5 h-5" strokeWidth={3} />
+                      </button>
+                    )}
+                  </form>
+                </div>
+
+                {hasActiveFilters && (
+                  <button onClick={clearAll} className="text-primary font-bold text-sm underline">
+                    Limpar todos os filtros
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Active filter chips */}
+        {hasActiveFilters && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {filterEditora && <FilterChip label={`Editora: ${filterEditora}`} onRemove={() => setFilterEditora("")} />}
+            {filterAno && <FilterChip label={`Ano: ${filterAno}`} onRemove={() => setFilterAno("")} />}
+            {filterPersonagem && <FilterChip label={`Personagem: ${filterPersonagem}`} onRemove={() => { setFilterPersonagem(""); setPersonagemInput(""); }} />}
+          </div>
+        )}
+
+        {/* Results */}
         {isLoading ? (
           <div className="flex items-center justify-center py-24">
             <Loader2 className="w-12 h-12 animate-spin text-primary" />
@@ -262,16 +431,21 @@ export default function Colecao() {
         ) : gibis.length === 0 ? (
           <div className="text-center py-24 border-4 border-dashed border-black bg-white">
             <BookOpen className="w-16 h-16 mx-auto text-black/30 mb-4" />
-            <p className="font-display text-3xl text-black/50 mb-2">
-              {search ? "NENHUM RESULTADO" : "COLEÇÃO VAZIA"}
-            </p>
+            <p className="font-display text-3xl text-black/50 mb-2">NENHUM RESULTADO</p>
             <p className="font-sans font-bold text-gray-500">
-              {search ? `Nenhum gibi corresponde a "${search}"` : "Seja o primeiro a sugerir um HQ!"}
+              Tente ajustar os filtros ou a busca.
             </p>
+            {hasActiveFilters && (
+              <button onClick={clearAll} className="mt-4 text-primary font-bold underline">
+                Limpar filtros
+              </button>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
-            {gibis.map(gibi => <GibiCard key={gibi.id} gibi={gibi} />)}
+            <AnimatePresence>
+              {gibis.map(gibi => <GibiCard key={gibi.id} gibi={gibi} />)}
+            </AnimatePresence>
           </div>
         )}
       </div>
@@ -280,7 +454,7 @@ export default function Colecao() {
         {modalOpen && (
           <SubmitModal
             onClose={() => setModalOpen(false)}
-            onSubmitted={() => queryClient.invalidateQueries({ queryKey: ["colecao"] })}
+            onSubmitted={() => queryClient.invalidateQueries({ queryKey: ["colecao-all"] })}
           />
         )}
       </AnimatePresence>
