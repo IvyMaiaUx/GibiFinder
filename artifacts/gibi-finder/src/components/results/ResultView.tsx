@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Sparkles, BookOpen } from "lucide-react";
+import { BookOpen } from "lucide-react";
 import type { SearchResponse } from "@workspace/api-client-react/src/generated/api.schemas";
 import { ComicCard } from "./ComicCard";
 import { FeedbackActions } from "./FeedbackActions";
@@ -19,22 +19,6 @@ export function ResultView({ results, source }: ResultViewProps) {
       animate={{ opacity: 1, y: 0 }}
       className="max-w-5xl mx-auto mt-12 space-y-12"
     >
-      {fromGemini && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="bg-secondary border-4 border-black rounded-xl p-4 flex items-start gap-3 comic-shadow-sm"
-        >
-          <Sparkles className="w-6 h-6 shrink-0 mt-0.5" strokeWidth={2.5} />
-          <div>
-            <p className="font-display text-lg leading-tight">RESULTADO VIA INTELIGÊNCIA ARTIFICIAL</p>
-            <p className="font-sans text-sm font-semibold mt-1 text-gray-800">
-              Este HQ ainda não está na nossa coleção — o resultado foi gerado pela IA e pode não ser 100% preciso.
-              Encontrou algo errado? Use o botão de feedback abaixo!
-            </p>
-          </div>
-        </motion.div>
-      )}
 
       {!fromGemini && source === "colecao" && (
         <motion.div
