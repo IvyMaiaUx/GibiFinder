@@ -337,22 +337,30 @@ router.post("/admin/import-drive", async (req: Request, res: Response) => {
     }
 
     const MAX_FILES = 20;
+    const CONCURRENCY = 5;
     const toProcess = files.slice(0, MAX_FILES);
     const results: { file: string; titulo: string; status: string; id?: string; error?: string }[] = [];
     let imported = 0;
     let skipped = 0;
 
-    for (const file of toProcess) {
+    const { identifyFromImages } = await import("../lib/gemini");
+
+    const processFile = async (file: { id: string; name: string; mimeType: string }) => {
       try {
         const thumbnailUrl = `https://drive.google.com/thumbnail?id=${file.id}&sz=w400`;
         const driveViewUrl = `https://drive.google.com/file/d/${file.id}/view`;
 
-        // Fetch thumbnail as base64
-        const thumbRes = await fetch(thumbnailUrl);
+        // Fetch thumbnail with 15s timeout
+        const controller = new AbortController();
+        const thumbTimer = setTimeout(() => controller.abort(), 15000);
+        let thumbRes: Response;
+        try {
+          thumbRes = await fetch(thumbnailUrl, { signal: controller.signal });
+        } finally {
+          clearTimeout(thumbTimer);
+        }
         if (!thumbRes.ok) {
-          results.push({ file: file.name, titulo: "", status: "skipped", error: "Thumbnail inacessível" });
-          skipped++;
-          continue;
+          return { file: file.name, titulo: "", status: "skipped", error: "Thumbnail inacessível" };
         }
         const thumbBuffer = await thumbRes.arrayBuffer();
         const base64 = Buffer.from(thumbBuffer).toString("base64");
@@ -360,10 +368,8 @@ router.post("/admin/import-drive", async (req: Request, res: Response) => {
         const dataUrl = `data:${contentType};base64,${base64}`;
 
         // Identify with Gemini
-        const { identifyFromImages } = await import("../lib/gemini");
         const identified = await (identifyFromImages as (imgs: string[]) => Promise<ComicResultData>)([dataUrl]);
-
-        const titulo = identified.titulo || file.name.replace(".pdf", "");
+        const titulo = identified.titulo || file.name.replace(/\.pdf$/i, "");
 
         // Insert into collection
         const { data: inserted, error: insertErr } = await supabase
@@ -383,15 +389,21 @@ router.post("/admin/import-drive", async (req: Request, res: Response) => {
           .single();
 
         if (insertErr) {
-          results.push({ file: file.name, titulo, status: "error", error: insertErr.message });
-          skipped++;
-        } else {
-          results.push({ file: file.name, titulo, status: "ok", id: (inserted as { id: string }).id });
-          imported++;
+          return { file: file.name, titulo, status: "error", error: insertErr.message };
         }
+        return { file: file.name, titulo, status: "ok", id: (inserted as { id: string }).id };
       } catch (err) {
-        results.push({ file: file.name, titulo: "", status: "error", error: err instanceof Error ? err.message : "Erro desconhecido" });
-        skipped++;
+        return { file: file.name, titulo: "", status: "error", error: err instanceof Error ? err.message : "Erro desconhecido" };
+      }
+    };
+
+    // Process in parallel batches
+    for (let i = 0; i < toProcess.length; i += CONCURRENCY) {
+      const batch = toProcess.slice(i, i + CONCURRENCY);
+      const batchResults = await Promise.all(batch.map(processFile));
+      for (const r of batchResults) {
+        results.push(r);
+        if (r.status === "ok") imported++; else skipped++;
       }
     }
 
