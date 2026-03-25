@@ -128,41 +128,39 @@
   .speech-bubble {
     position: relative;
     background: white;
-    border-radius: .4em;
+    border-radius: 2em;
     border: 4px solid black;
     box-shadow: 6px 6px 0px 0px rgba(0,0,0,1);
     transition: all 0.2s ease-in-out;
   }
 
+  /* tail pointing LEFT toward detective */
   .speech-bubble:after {
     content: '';
     position: absolute;
-    bottom: 0;
-    left: 20%;
+    left: 0;
+    top: 58%;
     width: 0;
     height: 0;
-    border: 15px solid transparent;
-    border-top-color: black;
-    border-bottom: 0;
+    border: 20px solid transparent;
+    border-right-color: black;
     border-left: 0;
-    margin-left: -7.5px;
-    margin-bottom: -19px;
-    z-index: 1;
+    margin-top: -20px;
+    margin-left: -24px;
   }
 
   .speech-bubble:before {
     content: '';
     position: absolute;
-    bottom: 0;
-    left: 20%;
+    left: 0;
+    top: 58%;
     width: 0;
     height: 0;
     border: 16px solid transparent;
-    border-top-color: white;
-    border-bottom: 0;
+    border-right-color: white;
     border-left: 0;
-    margin-left: -4.5px;
-    margin-bottom: -11px;
+    margin-top: -16px;
+    margin-left: -16px;
     z-index: 2;
   }
   

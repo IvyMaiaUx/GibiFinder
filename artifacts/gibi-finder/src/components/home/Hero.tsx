@@ -9,7 +9,7 @@ export function Hero() {
         <DetectiveIllustration />
       </div>
       {/* Right: Text Content */}
-      <div className="w-full md:w-1/2 flex flex-col items-center md:items-start gap-6">
+      <div className="w-full md:w-1/2 flex flex-col items-center md:items-start gap-6 md:-ml-8">
         
         <motion.div 
           className="speech-bubble p-6 max-w-md text-center md:text-left"
