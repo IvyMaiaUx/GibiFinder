@@ -14,19 +14,19 @@ export function Header() {
 
   return (
     <header className="bg-secondary border-b-8 border-black sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-24 flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-20 md:h-24 flex items-center justify-between gap-2">
         
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 group comic-hover transition-transform">
-          <div className="bg-primary text-primary-foreground font-display text-3xl px-4 py-2 rounded-lg border-4 border-black comic-shadow transform -rotate-3 group-hover:rotate-0 transition-all">
+        <Link href="/" className="flex items-center gap-1.5 group comic-hover transition-transform shrink-0">
+          <div className="bg-primary text-primary-foreground font-display text-xl md:text-3xl px-2 md:px-4 py-1 md:py-2 rounded-lg border-4 border-black comic-shadow transform -rotate-3 group-hover:rotate-0 transition-all">
             GIBI
           </div>
-          <span className="font-display text-4xl text-black tracking-wider group-hover:scale-105 transition-transform drop-shadow-[2px_2px_0_white]">
+          <span className="font-display text-2xl md:text-4xl text-black tracking-wider group-hover:scale-105 transition-transform drop-shadow-[2px_2px_0_white]">
             FINDER
           </span>
         </Link>
 
-        {/* Navigation */}
+        {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center gap-4">
           {navItems.map((item) => {
             const isActive = location === item.path;
@@ -49,21 +49,22 @@ export function Header() {
           })}
         </nav>
 
-        {/* Mobile Nav Button (Simplified for this example, usually a drawer) */}
-        <div className="md:hidden flex items-center gap-2">
+        {/* Mobile Navigation — icon only, compact */}
+        <nav className="md:hidden flex items-center gap-1">
           {navItems.map((item) => (
-             <Link
-             key={item.path}
-             href={item.path}
-             className={cn(
-               "p-2 border-4 border-black rounded-lg transition-all",
-               location === item.path ? "bg-white" : "bg-transparent"
-             )}
-           >
-             <item.icon className="w-6 h-6" strokeWidth={3} />
-           </Link>
+            <Link
+              key={item.path}
+              href={item.path}
+              className={cn(
+                "p-2 border-[3px] border-black rounded-lg transition-all",
+                location === item.path ? "bg-white" : "bg-transparent hover:bg-white/50"
+              )}
+              title={item.label}
+            >
+              <item.icon className="w-5 h-5" strokeWidth={3} />
+            </Link>
           ))}
-        </div>
+        </nav>
       </div>
     </header>
   );
