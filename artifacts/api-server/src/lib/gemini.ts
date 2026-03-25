@@ -1,6 +1,45 @@
 import { GoogleGenerativeAI, Part } from "@google/generative-ai";
 import { logger } from "./logger";
 
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
+  ]);
+}
+
+const WIKI_HEADERS = {
+  "User-Agent": "GibiFinder/1.0 (https://gibifinder.app; contact@gibifinder.app)",
+  "Accept": "application/json",
+};
+
+export async function fetchWikipediaImage(query: string): Promise<string | null> {
+  const tryLang = async (lang: string): Promise<string | null> => {
+    try {
+      const searchUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&srlimit=1`;
+      const searchRes = await withTimeout(fetch(searchUrl, { headers: WIKI_HEADERS }), 6000);
+      if (!searchRes.ok) return null;
+      const searchData = await searchRes.json() as { query?: { search?: { title: string }[] } };
+      const firstTitle = searchData?.query?.search?.[0]?.title;
+      if (!firstTitle) return null;
+
+      const imgUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(firstTitle)}&prop=pageimages&format=json&pithumbsize=600`;
+      const imgRes = await withTimeout(fetch(imgUrl, { headers: WIKI_HEADERS }), 6000);
+      if (!imgRes.ok) return null;
+      const imgData = await imgRes.json() as { query?: { pages?: Record<string, { thumbnail?: { source: string } }> } };
+      const pages = imgData?.query?.pages;
+      if (!pages) return null;
+      const page = Object.values(pages)[0];
+      return page?.thumbnail?.source || null;
+    } catch (e) {
+      logger.warn({ msg: "Wikipedia image fetch failed", lang, query, err: String(e) });
+      return null;
+    }
+  };
+
+  return (await tryLang("pt")) || (await tryLang("en"));
+}
+
 const apiKey = process.env["GEMINI_API_KEY"];
 const modelName = process.env["GEMINI_MODEL"] || "gemini-2.5-flash";
 

@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { identifyFromImages, searchByText, searchByCharacter } from "../lib/gemini";
+import { identifyFromImages, searchByText, searchByCharacter, fetchWikipediaImage } from "../lib/gemini";
 import { supabase } from "../lib/supabase";
 import { randomUUID } from "crypto";
 
@@ -313,8 +313,11 @@ router.post("/search", async (req: Request, res: Response) => {
       res.json({ mainResult, relatedResults, source: "colecao" }); return;
     }
     const geminiResult = await searchByText(query) as ComicResultData;
+    const wikiQuery = geminiResult.revista || geminiResult.titulo || query;
+    const wikiImage = await fetchWikipediaImage(wikiQuery);
+    const coverImages = wikiImage ? [wikiImage] : [];
     const mainId = randomUUID();
-    const mainResult = buildResult(geminiResult, mainId, "text");
+    const mainResult = buildResult(geminiResult, mainId, "text", coverImages);
     const relatedResults = (geminiResult.relatedResults || []).map((r) => buildResult(r, randomUUID(), "text"));
     const response = { mainResult, relatedResults, source: "gemini" };
     await saveToSupabase(mainResult, query, response);
@@ -338,8 +341,10 @@ router.post("/character-search", async (req: Request, res: Response) => {
       res.json({ mainResult, relatedResults, source: "colecao" }); return;
     }
     const geminiResult = await searchByCharacter(character) as ComicResultData;
+    const wikiImage = await fetchWikipediaImage(`${character} personagem quadrinhos`);
+    const coverImages = wikiImage ? [wikiImage] : [];
     const mainId = randomUUID();
-    const mainResult = buildResult(geminiResult, mainId, "character");
+    const mainResult = buildResult(geminiResult, mainId, "character", coverImages);
     const relatedResults = (geminiResult.relatedResults || []).map((r) => buildResult(r, randomUUID(), "character"));
     const response = { mainResult, relatedResults, source: "gemini" };
     await saveToSupabase(mainResult, character, response);
@@ -363,8 +368,11 @@ router.post("/quote-search", async (req: Request, res: Response) => {
       res.json({ mainResult, relatedResults, source: "colecao" }); return;
     }
     const geminiResult = await searchByText(`história com a fala: "${quote}"`) as ComicResultData;
+    const wikiQuery = geminiResult.revista || geminiResult.titulo || (geminiResult.personagens?.[0] ?? quote);
+    const wikiImage = await fetchWikipediaImage(wikiQuery);
+    const coverImages = wikiImage ? [wikiImage] : [];
     const mainId = randomUUID();
-    const mainResult = buildResult(geminiResult, mainId, "quote");
+    const mainResult = buildResult(geminiResult, mainId, "quote", coverImages);
     const relatedResults = (geminiResult.relatedResults || []).map((r) => buildResult(r, randomUUID(), "quote"));
     const response = { mainResult, relatedResults, source: "gemini" };
     await saveToSupabase(mainResult, quote, response);
