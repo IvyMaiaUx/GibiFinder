@@ -1,22 +1,28 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Gibi Finder API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: search
+    description: Comic search operations
+  - name: history
+    description: Search history
+  - name: ranking
+    description: Comic rankings
+  - name: feedback
+    description: Result feedback
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +30,178 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /identify:
+    post:
+      operationId: identifyComic
+      tags: [search]
+      summary: Identify comic from images (multipart)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentifyRequest"
+      responses:
+        "200":
+          description: Identification result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /search:
+    post:
+      operationId: searchComic
+      tags: [search]
+      summary: Search comic by text
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TextSearchRequest"
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+
+  /character-search:
+    post:
+      operationId: characterSearch
+      tags: [search]
+      summary: Search comics by character
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CharacterSearchRequest"
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+
+  /quote-search:
+    post:
+      operationId: quoteSearch
+      tags: [search]
+      summary: Search comics by balloon text / quote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuoteSearchRequest"
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+
+  /history:
+    get:
+      operationId: getHistory
+      tags: [history]
+      summary: Get search history
+      parameters:
+        - name: titulo
+          in: query
+          schema:
+            type: string
+        - name: editora
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: History list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HistoryResponse"
+
+  /ranking:
+    get:
+      operationId: getRanking
+      tags: [ranking]
+      summary: Get weekly ranking of most searched comics
+      responses:
+        "200":
+          description: Ranking list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RankingResponse"
+
+  /result/{id}:
+    get:
+      operationId: getResult
+      tags: [search]
+      summary: Get a public result by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Result detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /feedback:
+    post:
+      operationId: submitFeedback
+      tags: [feedback]
+      summary: Submit feedback on a result
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeedbackRequest"
+      responses:
+        "200":
+          description: Feedback saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedbackResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +212,250 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required:
+        - error
+        - message
+
+    ComicResult:
+      type: object
+      properties:
+        id:
+          type: string
+        encontrado:
+          type: boolean
+        revista:
+          type: string
+        titulo:
+          type: string
+        editora:
+          type: string
+        ano:
+          type: string
+        pagina:
+          type: string
+        personagens:
+          type: array
+          items:
+            type: string
+        descricao:
+          type: string
+        confianca:
+          type: number
+        nota:
+          type: string
+        balloon_text:
+          type: string
+        images:
+          type: array
+          items:
+            type: string
+        search_type:
+          type: string
+        created_at:
+          type: string
+      required:
+        - id
+        - encontrado
+
+    SearchResponse:
+      type: object
+      properties:
+        mainResult:
+          $ref: "#/components/schemas/ComicResult"
+        relatedResults:
+          type: array
+          items:
+            $ref: "#/components/schemas/ComicResult"
+      required:
+        - mainResult
+        - relatedResults
+
+    IdentifyRequest:
+      type: object
+      properties:
+        images:
+          type: array
+          items:
+            type: string
+          description: Base64 encoded images
+      required:
+        - images
+
+    TextSearchRequest:
+      type: object
+      properties:
+        query:
+          type: string
+      required:
+        - query
+
+    CharacterSearchRequest:
+      type: object
+      properties:
+        character:
+          type: string
+      required:
+        - character
+
+    QuoteSearchRequest:
+      type: object
+      properties:
+        quote:
+          type: string
+      required:
+        - quote
+
+    HistoryItem:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+        search_type:
+          type: string
+        query:
+          type: string
+        revista:
+          type: string
+        titulo:
+          type: string
+        editora:
+          type: string
+        ano:
+          type: string
+        pagina:
+          type: string
+        personagens:
+          type: array
+          items:
+            type: string
+        descricao:
+          type: string
+        confianca:
+          type: number
+        nota:
+          type: string
+        balloon_text:
+          type: string
+        images:
+          type: array
+          items:
+            type: string
+        feedback_count:
+          type: number
+        correct_count:
+          type: number
+      required:
+        - id
+        - created_at
+
+    HistoryResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HistoryItem"
+        total:
+          type: number
+      required:
+        - items
+        - total
+
+    RankingItem:
+      type: object
+      properties:
+        revista:
+          type: string
+        titulo:
+          type: string
+        editora:
+          type: string
+        search_count:
+          type: number
+        images:
+          type: array
+          items:
+            type: string
+        last_searched:
+          type: string
+      required:
+        - revista
+        - search_count
+
+    RankingResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RankingItem"
+        week_start:
+          type: string
+      required:
+        - items
+        - week_start
+
+    ResultDetail:
+      type: object
+      properties:
+        result:
+          $ref: "#/components/schemas/ComicResult"
+        feedback:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeedbackItem"
+      required:
+        - result
+        - feedback
+
+    FeedbackItem:
+      type: object
+      properties:
+        id:
+          type: string
+        result_id:
+          type: string
+        is_correct:
+          type: boolean
+        correction_text:
+          type: string
+        created_at:
+          type: string
+      required:
+        - id
+        - result_id
+        - is_correct
+        - created_at
+
+    FeedbackRequest:
+      type: object
+      properties:
+        result_id:
+          type: string
+        is_correct:
+          type: boolean
+        correction_text:
+          type: string
+      required:
+        - result_id
+        - is_correct
+
+    FeedbackResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        id:
+          type: string
+      required:
+        - success
+        - id
