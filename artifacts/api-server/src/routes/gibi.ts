@@ -310,7 +310,7 @@ router.post("/search", async (req: Request, res: Response) => {
     // Search DB and Fandom in parallel
     const [dbResults, fandomCtx] = await Promise.all([
       searchCollection(terms.length > 0 ? terms : [query.trim()]),
-      fetchFandomContext(query),
+      fetchFandomContext(query, "gibi"),
     ]);
 
     if (dbResults.length > 0) {
@@ -342,7 +342,7 @@ router.post("/character-search", async (req: Request, res: Response) => {
 
     const [dbResults, fandomCtx] = await Promise.all([
       searchCollectionByCharacter(character.trim()),
-      fetchFandomContext(character),
+      fetchFandomContext(character, "character"),
     ]);
 
     if (dbResults.length > 0) {
