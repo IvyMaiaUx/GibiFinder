@@ -386,6 +386,19 @@ router.post("/quote-search", async (req: Request, res: Response) => {
 // HISTORY / RANKING / RESULT / FEEDBACK
 // ============================================================
 
+router.delete("/history/:id", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  try {
+    const { id } = req.params;
+    const { error } = await supabase.from("search_history").delete().eq("id", id);
+    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "delete_error", message: err instanceof Error ? err.message : "Erro" });
+  }
+});
+
 router.get("/history", async (req: Request, res: Response) => {
   const { titulo, editora, limit = "50", offset = "0" } = req.query as Record<string, string>;
   if (!supabase) { res.json({ items: [], total: 0 }); return; }
