@@ -158,7 +158,7 @@ router.post("/colecao", async (req: Request, res: Response) => {
     const body = req.body as {
       titulo?: string; revista?: string; editora?: string; ano?: string;
       numero?: string; personagens?: string[]; descricao?: string;
-      imagem_url?: string; tags?: string[]; notas?: string;
+      imagem_url?: string; drive_url?: string; tags?: string[]; notas?: string;
     };
     if (!body.titulo?.trim()) { res.status(400).json({ error: "invalid_input", message: "Título é obrigatório" }); return; }
 
@@ -176,6 +176,7 @@ router.post("/colecao", async (req: Request, res: Response) => {
         personagens: body.personagens || [],
         descricao: body.descricao?.trim() || null,
         imagem_url: body.imagem_url?.trim() || null,
+        drive_url: body.drive_url?.trim() || null,
         tags: body.tags || [],
         notas: body.notas?.trim() || null,
         status,
@@ -272,6 +273,116 @@ router.put("/admin/review/:id", async (req: Request, res: Response) => {
 // GET /api/admin/verify — check if admin key is valid
 router.get("/admin/verify", (req: Request, res: Response) => {
   res.json({ valid: isAdmin(req) });
+});
+
+// POST /api/admin/import-drive — bulk import from Google Drive folder
+router.post("/admin/import-drive", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  if (!supabase) { res.status(503).json({ error: "db_unavailable", message: "Banco não configurado" }); return; }
+
+  const driveApiKey = process.env["GOOGLE_DRIVE_API_KEY"];
+  if (!driveApiKey) {
+    res.status(503).json({ error: "no_drive_key", message: "GOOGLE_DRIVE_API_KEY não configurada no servidor" });
+    return;
+  }
+
+  try {
+    const { folderUrl, importStatus = "pending" } = req.body as { folderUrl?: string; importStatus?: string };
+    if (!folderUrl || typeof folderUrl !== "string") {
+      res.status(400).json({ error: "invalid_input", message: "URL da pasta é obrigatória" }); return;
+    }
+
+    const folderIdMatch = folderUrl.match(/folders\/([a-zA-Z0-9_-]+)/);
+    if (!folderIdMatch) {
+      res.status(400).json({ error: "invalid_url", message: "URL de pasta do Drive inválida. Use o link de compartilhamento da pasta." }); return;
+    }
+    const folderId = folderIdMatch[1];
+
+    // List PDF files in folder
+    const listUrl = `https://www.googleapis.com/drive/v3/files?q=%27${folderId}%27+in+parents+and+trashed%3Dfalse+and+mimeType%3D%27application%2Fpdf%27&key=${driveApiKey}&fields=files(id,name,mimeType)&pageSize=50`;
+    const listRes = await fetch(listUrl);
+    if (!listRes.ok) {
+      const errText = await listRes.text();
+      console.error("Drive API error:", errText);
+      res.status(502).json({ error: "drive_api_error", message: "Erro ao listar arquivos do Drive. Verifique se a pasta é pública e a chave da API é válida." });
+      return;
+    }
+    const listData = await listRes.json() as { files?: { id: string; name: string; mimeType: string }[] };
+    const files = listData.files || [];
+
+    if (files.length === 0) {
+      res.json({ imported: 0, skipped: 0, results: [], message: "Nenhum PDF encontrado na pasta" });
+      return;
+    }
+
+    const MAX_FILES = 20;
+    const toProcess = files.slice(0, MAX_FILES);
+    const results: { file: string; titulo: string; status: string; id?: string; error?: string }[] = [];
+    let imported = 0;
+    let skipped = 0;
+
+    for (const file of toProcess) {
+      try {
+        const thumbnailUrl = `https://drive.google.com/thumbnail?id=${file.id}&sz=w400`;
+        const driveViewUrl = `https://drive.google.com/file/d/${file.id}/view`;
+
+        // Fetch thumbnail as base64
+        const thumbRes = await fetch(thumbnailUrl);
+        if (!thumbRes.ok) {
+          results.push({ file: file.name, titulo: "", status: "skipped", error: "Thumbnail inacessível" });
+          skipped++;
+          continue;
+        }
+        const thumbBuffer = await thumbRes.arrayBuffer();
+        const base64 = Buffer.from(thumbBuffer).toString("base64");
+        const contentType = thumbRes.headers.get("content-type") || "image/jpeg";
+        const dataUrl = `data:${contentType};base64,${base64}`;
+
+        // Identify with Gemini
+        const { identifyFromImages } = await import("../lib/gemini");
+        const identified = await (identifyFromImages as (imgs: string[]) => Promise<ComicResultData>)([dataUrl]);
+
+        const titulo = identified.titulo || file.name.replace(".pdf", "");
+
+        // Insert into collection
+        const { data: inserted, error: insertErr } = await supabase
+          .from("gibis")
+          .insert({
+            titulo,
+            revista: identified.revista || null,
+            editora: identified.editora || null,
+            ano: identified.ano || null,
+            personagens: identified.personagens || [],
+            descricao: identified.descricao || null,
+            imagem_url: thumbnailUrl,
+            drive_url: driveViewUrl,
+            status: importStatus === "approved" ? "approved" : "pending",
+          })
+          .select()
+          .single();
+
+        if (insertErr) {
+          results.push({ file: file.name, titulo, status: "error", error: insertErr.message });
+          skipped++;
+        } else {
+          results.push({ file: file.name, titulo, status: "ok", id: (inserted as { id: string }).id });
+          imported++;
+        }
+      } catch (err) {
+        results.push({ file: file.name, titulo: "", status: "error", error: err instanceof Error ? err.message : "Erro desconhecido" });
+        skipped++;
+      }
+    }
+
+    const message = files.length > MAX_FILES
+      ? `Processados ${MAX_FILES} de ${files.length} arquivos (limite por importação).`
+      : undefined;
+
+    res.json({ imported, skipped, results, message });
+  } catch (err) {
+    console.error("Import drive error:", err);
+    res.status(500).json({ error: "import_error", message: err instanceof Error ? err.message : "Erro na importação" });
+  }
 });
 
 // ============================================================

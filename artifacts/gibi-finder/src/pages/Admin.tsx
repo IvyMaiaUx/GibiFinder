@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, MessageSquare, Bug, Lightbulb, Archive } from "lucide-react";
+import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, MessageSquare, Bug, Lightbulb, Archive, FolderOpen, CheckCircle2, AlertCircle } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { useToast } from "@/hooks/use-toast";
 
@@ -18,6 +18,7 @@ interface Gibi {
   personagens?: string[];
   descricao?: string;
   imagem_url?: string;
+  drive_url?: string;
   notas?: string;
   status?: string;
   created_at?: string;
@@ -35,13 +36,13 @@ interface Suggestion {
 
 interface GibiForm {
   titulo: string; revista: string; editora: string; ano: string;
-  numero: string; personagens: string; descricao: string; imagem_url: string; notas: string;
+  numero: string; personagens: string; descricao: string; imagem_url: string; drive_url: string; notas: string;
 }
 
-const emptyForm: GibiForm = { titulo: "", revista: "", editora: "", ano: "", numero: "", personagens: "", descricao: "", imagem_url: "", notas: "" };
+const emptyForm: GibiForm = { titulo: "", revista: "", editora: "", ano: "", numero: "", personagens: "", descricao: "", imagem_url: "", drive_url: "", notas: "" };
 
 function gibiToForm(g: Gibi): GibiForm {
-  return { titulo: g.titulo || "", revista: g.revista || "", editora: g.editora || "", ano: g.ano || "", numero: g.numero || "", personagens: (g.personagens || []).join(", "), descricao: g.descricao || "", imagem_url: g.imagem_url || "", notas: g.notas || "" };
+  return { titulo: g.titulo || "", revista: g.revista || "", editora: g.editora || "", ano: g.ano || "", numero: g.numero || "", personagens: (g.personagens || []).join(", "), descricao: g.descricao || "", imagem_url: g.imagem_url || "", drive_url: g.drive_url || "", notas: g.notas || "" };
 }
 
 async function adminRequest(path: string, adminKey: string, method = "GET", body?: unknown) {
@@ -67,7 +68,7 @@ function EditModal({ gibi, adminKey, onClose, onSaved }: { gibi?: Gibi; adminKey
     e.preventDefault();
     setSaving(true);
     try {
-      const body = { titulo: form.titulo.trim(), revista: form.revista.trim() || undefined, editora: form.editora.trim() || undefined, ano: form.ano.trim() || undefined, numero: form.numero.trim() || undefined, personagens: form.personagens ? form.personagens.split(",").map(s => s.trim()).filter(Boolean) : [], descricao: form.descricao.trim() || undefined, imagem_url: form.imagem_url.trim() || undefined, notas: form.notas.trim() || undefined };
+      const body = { titulo: form.titulo.trim(), revista: form.revista.trim() || undefined, editora: form.editora.trim() || undefined, ano: form.ano.trim() || undefined, numero: form.numero.trim() || undefined, personagens: form.personagens ? form.personagens.split(",").map(s => s.trim()).filter(Boolean) : [], descricao: form.descricao.trim() || undefined, imagem_url: form.imagem_url.trim() || undefined, drive_url: form.drive_url.trim() || undefined, notas: form.notas.trim() || undefined };
       if (gibi) {
         await adminRequest(`/api/colecao/${gibi.id}`, adminKey, "PUT", body);
         toast({ title: "Gibi atualizado!" });
@@ -103,6 +104,7 @@ function EditModal({ gibi, adminKey, onClose, onSaved }: { gibi?: Gibi; adminKey
             <div className="sm:col-span-2"><label className={lbl}>Personagens (vírgula)</label><input value={form.personagens} onChange={set("personagens")} className={inp} /></div>
             <div className="sm:col-span-2"><label className={lbl}>Descrição</label><textarea value={form.descricao} onChange={set("descricao")} rows={3} className={inp} /></div>
             <div className="sm:col-span-2"><label className={lbl}>URL da Capa</label><input value={form.imagem_url} onChange={set("imagem_url")} className={inp} type="url" /></div>
+            <div className="sm:col-span-2"><label className={lbl}>Link do Drive (PDF)</label><input value={form.drive_url} onChange={set("drive_url")} className={inp} type="url" placeholder="https://drive.google.com/file/d/..." /></div>
             <div className="sm:col-span-2"><label className={lbl}>Notas</label><textarea value={form.notas} onChange={set("notas")} rows={2} className={inp} /></div>
           </div>
           <div className="flex gap-4 pt-4 border-t-4 border-black">
@@ -169,7 +171,11 @@ export default function Admin() {
   const [keyInput, setKeyInput] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [tab, setTab] = useState<"pending" | "approved" | "suggestions">("pending");
+  const [tab, setTab] = useState<"pending" | "approved" | "suggestions" | "drive">("pending");
+  const [driveUrl, setDriveUrl] = useState("");
+  const [driveStatus, setDriveStatus] = useState<"pending" | "approved">("pending");
+  const [driveImporting, setDriveImporting] = useState(false);
+  const [driveResult, setDriveResult] = useState<{ imported: number; skipped: number; results: { file: string; titulo: string; status: string; error?: string }[]; message?: string } | null>(null);
   const [editModal, setEditModal] = useState<{ open: boolean; gibi?: Gibi }>({ open: false });
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
@@ -261,6 +267,26 @@ export default function Admin() {
     onError: () => toast({ title: "Erro ao remover", variant: "destructive" }),
   });
 
+  const handleDriveImport = async () => {
+    if (!driveUrl.trim()) return;
+    setDriveImporting(true);
+    setDriveResult(null);
+    try {
+      const res = await adminRequest("/api/admin/import-drive", adminKey, "POST", {
+        folderUrl: driveUrl.trim(),
+        importStatus: driveStatus,
+      });
+      setDriveResult(res);
+      queryClient.invalidateQueries({ queryKey: ["admin-pending"] });
+      queryClient.invalidateQueries({ queryKey: ["colecao-all"] });
+      queryClient.invalidateQueries({ queryKey: ["colecao"] });
+    } catch (err) {
+      toast({ title: "Erro na importação", description: err instanceof Error ? err.message : "Tente novamente", variant: "destructive" });
+    } finally {
+      setDriveImporting(false);
+    }
+  };
+
   const pendingItems = pendingData?.items || [];
   const approvedItems = approvedData?.items || [];
   const suggestionItems = suggestionsData?.items || [];
@@ -336,6 +362,11 @@ export default function Admin() {
             <MessageSquare className="w-5 h-5" strokeWidth={3} />
             FEEDBACK {newSuggestions.length > 0 && <span className="bg-primary text-white text-sm font-bold px-2 py-0.5 rounded-full">{newSuggestions.length}</span>}
           </button>
+          <button onClick={() => setTab("drive")}
+            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "drive" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
+            <FolderOpen className="w-5 h-5" strokeWidth={3} />
+            DRIVE
+          </button>
         </div>
 
         {/* Pending tab */}
@@ -381,6 +412,101 @@ export default function Admin() {
             </div>
           )
         )}
+        {/* Drive import tab */}
+        {tab === "drive" && (
+          <div className="space-y-6">
+            <div className="bg-white border-4 border-black p-6 space-y-4">
+              <div className="flex items-center gap-3 mb-2">
+                <FolderOpen className="w-8 h-8" strokeWidth={3} />
+                <div>
+                  <h2 className="font-display text-2xl leading-none">IMPORTAR DO GOOGLE DRIVE</h2>
+                  <p className="font-sans font-bold text-gray-500 text-sm mt-1">Cole o link de uma pasta pública com PDFs de gibis. O Gemini identificará cada um automaticamente.</p>
+                </div>
+              </div>
+
+              <div className="bg-secondary/30 border-l-4 border-black p-3 text-sm font-sans font-bold text-gray-700 space-y-1">
+                <p>📋 <strong>Pré-requisitos:</strong></p>
+                <p>1. A pasta deve ser pública ("qualquer pessoa com o link pode ver")</p>
+                <p>2. <code className="bg-black text-white px-1">GOOGLE_DRIVE_API_KEY</code> deve estar configurada nas variáveis de ambiente</p>
+                <p>3. Máximo de 20 PDFs por importação</p>
+              </div>
+
+              <div>
+                <label className="block font-display text-lg mb-1 uppercase">Link da Pasta do Drive</label>
+                <input
+                  value={driveUrl}
+                  onChange={e => setDriveUrl(e.target.value)}
+                  placeholder="https://drive.google.com/drive/folders/..."
+                  className="w-full border-4 border-black px-3 py-2 font-sans font-bold focus:outline-none focus:ring-4 focus:ring-secondary"
+                />
+              </div>
+
+              <div>
+                <label className="block font-display text-lg mb-2 uppercase">Status dos Gibis Importados</label>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setDriveStatus("pending")}
+                    className={`flex-1 py-2 border-4 border-black font-display text-base transition-colors ${driveStatus === "pending" ? "bg-secondary" : "bg-white hover:bg-muted"}`}
+                  >
+                    PENDENTE (revisar depois)
+                  </button>
+                  <button
+                    onClick={() => setDriveStatus("approved")}
+                    className={`flex-1 py-2 border-4 border-black font-display text-base transition-colors ${driveStatus === "approved" ? "bg-green-100" : "bg-white hover:bg-muted"}`}
+                  >
+                    APROVADO (publicar direto)
+                  </button>
+                </div>
+              </div>
+
+              <button
+                onClick={handleDriveImport}
+                disabled={driveImporting || !driveUrl.trim()}
+                className="w-full bg-primary text-white border-4 border-black py-3 font-display text-xl comic-shadow flex items-center justify-center gap-2 disabled:opacity-50 hover:brightness-110 transition-all"
+              >
+                {driveImporting ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    ANALISANDO COM GEMINI... (pode demorar)
+                  </>
+                ) : (
+                  <>
+                    <FolderOpen className="w-5 h-5" strokeWidth={3} />
+                    INICIAR IMPORTAÇÃO
+                  </>
+                )}
+              </button>
+            </div>
+
+            {driveResult && (
+              <div className="bg-white border-4 border-black p-6">
+                <h3 className="font-display text-2xl mb-4">
+                  RESULTADO: {driveResult.imported} importado{driveResult.imported !== 1 ? "s" : ""}, {driveResult.skipped} ignorado{driveResult.skipped !== 1 ? "s" : ""}
+                </h3>
+                {driveResult.message && (
+                  <p className="font-sans font-bold text-amber-700 bg-amber-50 border-2 border-black p-2 mb-4 text-sm">{driveResult.message}</p>
+                )}
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {driveResult.results.map((r, i) => (
+                    <div key={i} className={`flex items-start gap-3 p-3 border-2 border-black text-sm ${r.status === "ok" ? "bg-green-50" : "bg-red-50"}`}>
+                      {r.status === "ok" ? (
+                        <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" strokeWidth={3} />
+                      ) : (
+                        <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" strokeWidth={3} />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-display text-base leading-tight">{r.titulo || r.file}</p>
+                        {r.error && <p className="font-sans text-red-600 text-xs mt-0.5">{r.error}</p>}
+                        <p className="font-sans text-gray-400 text-xs truncate">{r.file}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Suggestions tab */}
         {tab === "suggestions" && (
           loadingSuggestions ? (

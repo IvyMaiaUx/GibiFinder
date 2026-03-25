@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, BookOpen, Search, X, Check, Loader2, Clock, Filter, ChevronDown } from "lucide-react";
+import { Plus, BookOpen, Search, X, Check, Loader2, Clock, Filter, ChevronDown, BookOpenCheck, ExternalLink } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { useToast } from "@/hooks/use-toast";
 
@@ -17,6 +17,7 @@ interface Gibi {
   personagens?: string[];
   descricao?: string;
   imagem_url?: string;
+  drive_url?: string;
   status?: string;
 }
 
@@ -174,9 +175,54 @@ function SubmitModal({ onClose, onSubmitted }: { onClose: () => void; onSubmitte
   );
 }
 
+// ── Drive Reader Modal ────────────────────────────────────────────────────────
+
+function DriveReaderModal({ gibi, onClose }: { gibi: Gibi; onClose: () => void }) {
+  const fileIdMatch = gibi.drive_url?.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  const fileId = fileIdMatch?.[1];
+  const previewUrl = fileId ? `https://drive.google.com/file/d/${fileId}/preview` : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-black/90">
+      <div className="bg-white border-b-4 border-black px-4 py-3 flex items-center gap-4 shrink-0">
+        <button onClick={onClose} className="p-2 border-4 border-black hover:bg-muted transition-colors">
+          <X className="w-5 h-5" strokeWidth={3} />
+        </button>
+        <div className="flex-1 min-w-0">
+          <h2 className="font-display text-xl text-black leading-tight truncate">{gibi.titulo}</h2>
+          <p className="font-sans font-bold text-gray-500 text-sm truncate">
+            {[gibi.revista, gibi.editora, gibi.ano].filter(Boolean).join(" · ")}
+          </p>
+        </div>
+        {gibi.drive_url && (
+          <a href={gibi.drive_url} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-2 px-4 py-2 border-4 border-black bg-secondary font-display text-base hover:bg-secondary/70 transition-colors shrink-0">
+            <ExternalLink className="w-4 h-4" strokeWidth={3} />
+            <span className="hidden sm:inline">ABRIR NO DRIVE</span>
+          </a>
+        )}
+      </div>
+      <div className="flex-1 bg-gray-900 overflow-hidden">
+        {previewUrl ? (
+          <iframe
+            src={previewUrl}
+            className="w-full h-full border-0"
+            title={gibi.titulo}
+            allow="autoplay"
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full text-white font-display text-2xl">
+            Link do Drive inválido
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Gibi Card ─────────────────────────────────────────────────────────────────
 
-function GibiCard({ gibi }: { gibi: Gibi }) {
+function GibiCard({ gibi, onRead }: { gibi: Gibi; onRead: (g: Gibi) => void }) {
   return (
     <motion.div
       layout
@@ -207,6 +253,16 @@ function GibiCard({ gibi }: { gibi: Gibi }) {
           </div>
         )}
       </div>
+      {gibi.drive_url && (
+        <button
+          onClick={() => onRead(gibi)}
+          className="shrink-0 flex flex-col items-center justify-center gap-1 bg-primary text-white border-4 border-black px-3 py-2 hover:brightness-110 transition-all comic-shadow"
+          title="Ler gibi"
+        >
+          <BookOpenCheck className="w-5 h-5" strokeWidth={3} />
+          <span className="font-display text-xs">LER</span>
+        </button>
+      )}
     </motion.div>
   );
 }
@@ -235,6 +291,7 @@ export default function Colecao() {
   const [personagemInput, setPersonagemInput] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [readerGibi, setReaderGibi] = useState<Gibi | null>(null);
 
   // Fetch all gibis once (up to 500), filter client-side
   const { data, isLoading } = useQuery({
@@ -444,7 +501,7 @@ export default function Colecao() {
         ) : (
           <div className="space-y-3">
             <AnimatePresence>
-              {gibis.map(gibi => <GibiCard key={gibi.id} gibi={gibi} />)}
+              {gibis.map(gibi => <GibiCard key={gibi.id} gibi={gibi} onRead={setReaderGibi} />)}
             </AnimatePresence>
           </div>
         )}
@@ -456,6 +513,19 @@ export default function Colecao() {
             onClose={() => setModalOpen(false)}
             onSubmitted={() => queryClient.invalidateQueries({ queryKey: ["colecao-all"] })}
           />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {readerGibi && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50"
+          >
+            <DriveReaderModal gibi={readerGibi} onClose={() => setReaderGibi(null)} />
+          </motion.div>
         )}
       </AnimatePresence>
     </Layout>
