@@ -15,53 +15,46 @@ export class MugiwarasProvider implements Provider {
 
   async search(query: string): Promise<SearchResult[]> {
     try {
-      const url = "https://mugiwarasoficial.com/wp-admin/admin-ajax.php";
-      const body = new URLSearchParams();
-      body.append("action", "wp-manga-search-manga");
-      body.append("title", query);
-
+      const url = `https://mugiwarasoficial.com/?s=${encodeURIComponent(query)}&post_type=wp-manga`;
       const res = await fetch(url, {
-        method: "POST",
         headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        },
-        body: body.toString()
+        }
       });
 
-      if (!res.ok) throw new Error(`Mugiwaras search failed: ${res.status}`);
-      const json = await res.json() as any;
+      if (!res.ok) throw new Error(`Mugiwaras search failed status: ${res.status}`);
+      const html = await res.text();
 
-      if (!json.success || !json.data || !Array.isArray(json.data)) {
-        return [];
-      }
-
+      const parts = html.split('<div class="row c-tabs-item__content">');
       const results: SearchResult[] = [];
-      const dataToProcess = json.data.slice(0, 10); // limit to 10 parallel loads
 
-      await Promise.all(
-        dataToProcess.map(async (item: any) => {
-          if (!item.url) return;
-          try {
-            // Extract slug
-            const match = item.url.match(/\/manga\/([^\/]+)/);
-            if (!match) return;
-            const slug = match[1];
+      for (let i = 1; i < parts.length; i++) {
+        const part = parts[i];
+        
+        // Extract URL and slug
+        const urlMatch = part.match(/href="([^"]+?\/manga\/([^\/]+?)\/)"/i);
+        if (!urlMatch) continue;
+        const slug = urlMatch[2];
+        if (slug === "feed") continue;
 
-            // Fetch cover and description
-            const details = await this.getDetails(slug);
-            results.push({
-              id: slug,
-              title: item.title || details.title,
-              description: details.description || "Disponível no portal Mugiwaras Oficial.",
-              coverUrl: details.coverUrl,
-              providerId: this.id
-            });
-          } catch (err) {
-            console.error("Failed to parse details during search for", item.title, err);
-          }
-        })
-      );
+        // Extract Title
+        const titleMatch = part.match(/class="post-title"[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/i) ||
+                           part.match(/title="([^"]+)"/i);
+        const title = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, "").trim() : slug.replace(/-/g, " ").toUpperCase();
+
+        // Extract Cover Image
+        const coverMatch = part.match(/<img[^>]+src="([^"]+)"/i) ||
+                           part.match(/<img[^>]+data-src="([^"]+)"/i);
+        const coverUrl = coverMatch ? coverMatch[1] : undefined;
+
+        results.push({
+          id: slug,
+          title,
+          description: `Disponível no portal Mugiwaras Oficial.`,
+          coverUrl,
+          providerId: this.id
+        });
+      }
 
       return results;
     } catch (err) {
