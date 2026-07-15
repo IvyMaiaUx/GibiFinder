@@ -1,0 +1,15 @@
+packages:
+  "framer-motion": "Animations for comic elements, floating bubbles, and layout transitions"
+  "lucide-react": "Icons for navigation and actions"
+  "react-dropzone": "Drag and drop interface for comic image identification"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility function to efficiently merge Tailwind CSS classes"
+
+images:
+  - path: "artifacts/gibi-finder/public/images/comic-placeholder.png"
+    description: "A generic retro comic book cover placeholder with bright halftone dots and dynamic action lines, no text, pop art style"
+    aspect_ratio: "3:4"
+
+notes:
+  - "Assuming the backend accepts Data URIs (data:image/jpeg;base64,...) for the images array in /api/identify"
+  - "Using generated hooks from @workspace/api-client-react"

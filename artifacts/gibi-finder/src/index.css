@@ -1,0 +1,175 @@
+@import url('https://fonts.googleapis.com/css2?family=Bangers&family=Nunito:ital,wght@0,400;0,600;0,700;0,800;1,400&display=swap');
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --font-sans: 'Nunito', sans-serif;
+  --font-display: 'Bangers', cursive;
+
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+}
+
+:root {
+  /* Off-white paper background #F7F3EA */
+  --background: 42 33% 94%; 
+  --foreground: 0 0% 0%;
+  
+  /* Thick black borders */
+  --border: 0 0% 0%;
+  --input: 0 0% 0%;
+  --ring: 0 0% 0%;
+
+  /* White cards */
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 0%;
+
+  /* Bright Red #E63946 */
+  --primary: 355 78% 56%;
+  --primary-foreground: 0 0% 100%;
+
+  /* Bright Yellow #F4D03F */
+  --secondary: 48 89% 60%;
+  --secondary-foreground: 0 0% 0%;
+
+  /* Light gray for muted */
+  --muted: 0 0% 90%;
+  --muted-foreground: 0 0% 40%;
+
+  /* Accent */
+  --accent: 210 100% 50%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased text-foreground bg-background;
+    background-image: radial-gradient(hsl(39 17% 81%) 15%, transparent 15%);
+    background-size: 12px 12px;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    @apply tracking-wide;
+  }
+}
+
+@layer components {
+  /* Comic Book Specific Styles */
+  .comic-border {
+    border-width: 4px;
+    border-style: solid;
+    border-color: #000000;
+    border-radius: 0.75rem;
+  }
+
+  .comic-shadow {
+    box-shadow: 6px 6px 0px 0px rgba(0,0,0,1);
+    transition: all 0.2s ease-in-out;
+  }
+  
+  .comic-shadow-sm {
+    box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);
+    transition: all 0.2s ease-in-out;
+  }
+
+  .comic-hover:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 8px 8px 0px 0px rgba(0,0,0,1);
+  }
+
+  .comic-active:active {
+    transform: translate(6px, 6px);
+    box-shadow: 0px 0px 0px 0px rgba(0,0,0,1);
+  }
+
+  .comic-panel {
+    background-color: white;
+    border-width: 4px;
+    border-style: solid;
+    border-color: #000000;
+    border-radius: 0.75rem;
+    box-shadow: 6px 6px 0px 0px rgba(0,0,0,1);
+    transition: all 0.2s ease-in-out;
+  }
+
+  .speech-bubble {
+    position: relative;
+    background: white;
+    border-radius: 2em;
+    border: 4px solid black;
+    box-shadow: 6px 6px 0px 0px rgba(0,0,0,1);
+    transition: all 0.2s ease-in-out;
+  }
+
+  /* tail pointing LEFT toward detective */
+  .speech-bubble:after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 58%;
+    width: 0;
+    height: 0;
+    border: 20px solid transparent;
+    border-right-color: black;
+    border-left: 0;
+    margin-top: -20px;
+    margin-left: -24px;
+  }
+
+  .speech-bubble:before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 58%;
+    width: 0;
+    height: 0;
+    border: 16px solid transparent;
+    border-right-color: white;
+    border-left: 0;
+    margin-top: -16px;
+    margin-left: -16px;
+    z-index: 2;
+  }
+  
+  /* Hide scrollbar for tabs */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

@@ -1,0 +1,31 @@
+<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Sombra comic-style -->
+  <rect x="10" y="10" width="164" height="164" rx="28" fill="black"/>
+  <!-- Fundo vermelho -->
+  <rect x="4" y="4" width="164" height="164" rx="28" fill="#E63946" stroke="black" stroke-width="8"/>
+  <!-- Letra G branca estilo quadrinhos -->
+  <text
+    x="90"
+    y="130"
+    text-anchor="middle"
+    font-family="'Bangers', 'Arial Black', Impact, sans-serif"
+    font-size="118"
+    font-weight="900"
+    letter-spacing="2"
+    fill="black"
+    stroke="black"
+    stroke-width="12"
+    stroke-linejoin="round"
+    paint-order="stroke fill"
+  >G</text>
+  <text
+    x="90"
+    y="130"
+    text-anchor="middle"
+    font-family="'Bangers', 'Arial Black', Impact, sans-serif"
+    font-size="118"
+    font-weight="900"
+    letter-spacing="2"
+    fill="white"
+  >G</text>
+</svg>

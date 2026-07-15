@@ -1,0 +1,562 @@
+Build a web app called Gibi Finder.
+
+IMPORTANT CONTEXT
+
+This project will be created and run inside Replit.
+Deployment will also be done on Replit.
+Use Supabase as the database.
+Do not build a complex monorepo.
+Do not create unnecessary package fragmentation.
+Keep the project simple, clean, and easy to run inside Replit.
+
+Use a structure that works well in Replit and is easy to understand.
+
+Preferred stack:
+- Python backend with FastAPI
+- HTML, CSS and vanilla JavaScript frontend
+- Supabase as database
+- Frontend served by the backend in production
+- Easy to run in Replit
+- Easy to deploy in Replit
+
+Environment variables must be supported:
+- GEMINI_API_KEY
+- GEMINI_MODEL
+- SUPABASE_URL
+- SUPABASE_ANON_KEY
+- PORT
+
+Default Gemini model:
+- gemini-2.5-flash
+
+=====================================
+MAIN GOAL
+=====================================
+
+Create a comic-book identification web app.
+
+The app must allow the user to:
+- upload comic images
+- upload up to 3 images in one search
+- remove uploaded images before searching
+- search by text description
+- search by character
+- search by quote / balloon text
+- see a main result
+- see related results
+- rate if the answer is correct
+- suggest a correction
+- view history
+- view ranking
+- open a public result page
+
+The app should feel like a “Shazam for comic books”.
+
+=====================================
+VISUAL STYLE — MUST MATCH THE REFERENCE
+=====================================
+
+The homepage must follow exactly this visual direction:
+
+- bright yellow top header bar
+- black thick border under the header
+- comic-style logo on the left
+- navigation on the right
+- off-white paper-like background
+- subtle dotted halftone pattern in the page background
+- large circular detective illustration on the left side
+- comic speech bubble on the right side
+- big red headline inside the bubble
+- white rectangular text box below the bubble
+- thick comic-style borders everywhere
+- polished comic-book aesthetic
+- no redesign
+- no generic startup look
+- no glassmorphism
+- no dark mode
+- no random alternative palette
+
+This must look intentional, polished and integrated.
+
+It must NOT look like:
+- a pasted screenshot
+- a random cropped detective photo
+- a generic SaaS template
+- a minimal white landing page
+
+=====================================
+EXACT HOMEPAGE HERO CONTENT
+=====================================
+
+The homepage hero section must visually resemble the reference with the following composition:
+
+LEFT SIDE:
+- one large circular detective illustration
+- the detective must look like a polished comic illustration
+- detective holding a magnifying glass
+- integrated comic style
+- thick black circular outline
+- rich internal details
+- must not look pasted or low effort
+
+RIGHT SIDE:
+1. speech bubble with the exact text:
+   "QUAL É O GIBI?!"
+
+2. below that, a white rectangular box with the exact text:
+   "Descubra qualquer quadrinho a partir de fotos, títulos ou falas!"
+
+Do not change these two phrases.
+
+=====================================
+EXACT COLOR PALETTE
+=====================================
+
+Use this exact palette:
+
+Header yellow:
+#F4D03F
+
+Primary red:
+#E63946
+
+Black:
+#000000
+
+Paper background:
+#F7F3EA
+
+Panel white:
+#FBFBFB
+
+Main text:
+#111111
+
+Halftone dot color:
+#D8D2C7
+
+Optional warm shadow tone:
+#E8DFCF
+
+Use these colors consistently.
+
+=====================================
+TYPOGRAPHY
+=====================================
+
+Use:
+- Bangers for headings / logo / comic titles
+- Nunito for body text and UI text
+
+Title styling:
+- strong comic-book energy
+- bold
+- expressive
+- red inside the speech bubble
+
+=====================================
+HEADER / NAVIGATION
+=====================================
+
+Header must contain:
+
+LEFT:
+- comic-style GIBI FINDER logo
+- “GIBI” inside a red badge shape
+- “FINDER” in bold comic lettering
+
+RIGHT:
+- BUSCAR GIBI
+- HISTÓRICO
+- RANKING
+
+The BUSCAR GIBI item should look like the active button:
+- white background
+- black border
+- search icon
+- bold text
+
+Histórico and Ranking:
+- comic-style nav items with icons
+- bold text
+- visually consistent with the screenshot
+
+=====================================
+ANIMATIONS / HOVER
+=====================================
+
+Add tasteful hover interactions.
+
+Must include:
+- header logo slight scale/tilt
+- search button slight lift and stronger shadow
+- nav items subtle lift and icon animation
+- detective circle slight scale
+- speech bubble tiny float/bounce
+- description box slight lift
+- result cards hover lift
+- buttons press effect on click
+
+Rules:
+- subtle
+- polished
+- smooth
+- not exaggerated
+- not childish
+- not cheap-looking
+
+=====================================
+SEARCH MODES
+=====================================
+
+Create these search modes:
+
+1. Por Imagem
+2. Por Texto
+3. Por Personagem
+4. Por Fala
+
+Use tabs or segmented controls in a comic-style search panel below the hero section.
+
+=====================================
+IMAGE SEARCH
+=====================================
+
+Allow uploading:
+- 1 image
+- 2 images
+- 3 images maximum
+
+UI requirements:
+- drag and drop area
+- click to upload
+- image preview
+- each preview has its own X button
+- X removes the specific image instantly
+- user can add another image after removing one
+- if user adds more than 3, show friendly error
+
+Backend:
+- send all images together to Gemini in a single request
+
+API route:
+POST /api/identify
+
+Response structure:
+{
+  "mainResult": {
+    "id": "...",
+    "encontrado": true,
+    "revista": "",
+    "titulo": "",
+    "editora": "",
+    "ano": "",
+    "pagina": "",
+    "personagens": [],
+    "descricao": "",
+    "confianca": 0,
+    "nota": "",
+    "balloon_text": ""
+  },
+  "relatedResults": []
+}
+
+=====================================
+TEXT SEARCH
+=====================================
+
+API route:
+POST /api/search
+
+Input example:
+{
+  "query": "história em que a Monica bate no Cebolinha"
+}
+
+Behavior:
+- ask Gemini for likely matches
+- also search local stored Supabase data if useful
+- return one main result and related results
+
+=====================================
+CHARACTER SEARCH
+=====================================
+
+API route:
+POST /api/character-search
+
+Input:
+{
+  "character": "Mônica"
+}
+
+Behavior:
+- show multiple stories/comics where the character appears
+- do not limit this search to just 3
+- show many results with good structure
+
+=====================================
+QUOTE SEARCH / OCR
+=====================================
+
+When images are uploaded, also ask Gemini to extract speech bubble / text box text.
+
+Store that text in the database.
+
+Create quote search:
+
+POST /api/quote-search
+
+Input:
+{
+  "quote": "some remembered phrase"
+}
+
+Search stored balloon text and return matching results.
+
+=====================================
+RESULT DISPLAY
+=====================================
+
+Do not only show a strict top 3 layout.
+
+Better result hierarchy:
+- one main highlighted result
+- related results below
+
+For character search:
+- show a larger list of results
+
+Every result card must show:
+
+- revista
+- editora
+- ano
+- página
+- personagens
+- descrição
+- confiança
+
+Example expected format:
+
+Revista: Turma da Mônica - Uma Foto do Limoeiro
+Editora: Panini
+Ano: 2019
+Página: 26
+Personagens: Mônica, Cebolinha, Magali e Milena
+
+Main result card:
+- larger
+- highlighted
+- badge like “RESULTADO PRINCIPAL”
+- confidence bar
+- more detailed layout
+
+Related results:
+- smaller cards
+- still comic styled
+- clickable
+
+=====================================
+FEEDBACK
+=====================================
+
+Each result must have:
+
+- 👍 Correto
+- 👎 Errado
+- ✏ Corrigir
+
+If user clicks corrigir:
+show a text field or textarea with label:
+
+"Qual seria o correto?"
+
+This must be saved to Supabase.
+
+=====================================
+DATABASE — SUPABASE
+=====================================
+
+Use Supabase instead of SQLite.
+
+Use:
+- SUPABASE_URL
+- SUPABASE_ANON_KEY
+
+The app must be ready to work with Supabase inside Replit.
+
+Create and use tables that support:
+
+1. search_history
+Store:
+- id
+- created_at
+- search_type
+- query
+- images
+- revista
+- titulo
+- editora
+- ano
+- pagina
+- personagens
+- descricao
+- confianca
+- nota
+- balloon_text
+- result_json
+
+2. result_feedback
+Store:
+- id
+- result_id
+- is_correct
+- correction_text
+- created_at
+
+3. optional ranking support fields if needed
+
+Use Supabase in a clean way.
+Keep database access simple and maintainable.
+
+=====================================
+HISTORY PAGE
+=====================================
+
+Create page:
+- Histórico
+
+Show all previous results as comic-style cards.
+
+Each card should include:
+- thumbnail
+- title or magazine name
+- publisher
+- date
+- confidence
+- maybe average feedback
+
+Add filters:
+- by title
+- by publisher
+
+Cards should be clickable.
+
+=====================================
+RANKING PAGE
+=====================================
+
+Create page:
+- Ranking
+
+Show top searched comics/stories for the current week.
+
+Each row/card:
+- revista or title
+- publisher
+- image thumbnail
+- search count
+
+Do not delete history to reset.
+Use timestamps to calculate the current week.
+
+=====================================
+PUBLIC RESULT PAGE
+=====================================
+
+Create public page:
+- /gibi/{id}
+
+Show:
+- thumbnail(s)
+- revista
+- titulo
+- editora
+- ano
+- pagina
+- personagens
+- descricao
+- confianca
+- note
+- balloon_text
+- copy link button
+
+=====================================
+GEMINI INTEGRATION
+=====================================
+
+Use Gemini API.
+Read key from:
+- GEMINI_API_KEY
+
+Read model from:
+- GEMINI_MODEL
+default:
+- gemini-2.5-flash
+
+All Gemini prompts must be written in Brazilian Portuguese.
+
+The image prompt must ask Gemini to return structured JSON with:
+- encontrado
+- revista
+- titulo
+- editora
+- ano
+- pagina
+- personagens
+- descricao
+- confianca
+- nota
+- balloon_text
+
+The prompts should position Gemini as:
+- specialist in Brazilian comic books
+- familiar with Turma da Mônica, Panini, Mauricio de Sousa content and related comics
+
+=====================================
+ERROR HANDLING
+=====================================
+
+If Gemini fails:
+- show friendly UI error
+- API returns safe JSON error
+
+If Supabase fails:
+- show safe message
+- app should not completely crash
+
+If image count is invalid:
+- show friendly validation message
+
+=====================================
+REPLIT REQUIREMENTS
+=====================================
+
+This app must work well in Replit.
+
+Requirements:
+- easy environment variable setup in Replit Secrets
+- easy Run workflow
+- no monorepo complexity
+- no fragmented setup
+- no unnecessary package nesting
+- simple start command
+
+Provide a clean structure that is easy to understand inside Replit.
+
+=====================================
+FINAL DELIVERABLE
+=====================================
+
+Provide:
+1. complete folder structure
+2. all main files
+3. Supabase schema / SQL
+4. .env.example
+5. instructions for Replit setup
+6. instructions for Replit deployment
+7. how to configure GEMINI_API_KEY
+8. how to configure Supabase variables
+9. how to test all routes
+10. polished UI matching the described reference
