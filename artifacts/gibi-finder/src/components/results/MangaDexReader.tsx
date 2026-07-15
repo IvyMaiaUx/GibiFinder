@@ -69,22 +69,62 @@ export function MangaDexReader({ mangaTitle, coverUrl }: MangaDexReaderProps) {
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      setIsFullscreen(
+        !!document.fullscreenElement || 
+        !!(document as any).webkitFullscreenElement ||
+        !!(document as any).mozFullScreenElement ||
+        !!(document as any).msFullscreenElement
+      );
     };
+    
     document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+    document.addEventListener("mozfullscreenchange", handleFullscreenChange);
+    document.addEventListener("MSFullscreenChange", handleFullscreenChange);
+    
     return () => {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
+      document.removeEventListener("mozfullscreenchange", handleFullscreenChange);
+      document.removeEventListener("MSFullscreenChange", handleFullscreenChange);
     };
   }, []);
 
   const toggleFullscreen = () => {
-    const element = readerRef.current || document.documentElement;
-    if (!document.fullscreenElement) {
-      element.requestFullscreen().catch(err => {
-        console.error("Error enabling fullscreen:", err);
-      });
+    const element = readerRef.current;
+    if (!element) return;
+
+    const requestMethod = 
+      element.requestFullscreen || 
+      (element as any).webkitRequestFullscreen || 
+      (element as any).mozRequestFullScreen || 
+      (element as any).msRequestFullscreen;
+
+    const exitMethod = 
+      document.exitFullscreen || 
+      (document as any).webkitExitFullscreen || 
+      (document as any).mozCancelFullScreen || 
+      (document as any).msExitFullscreen;
+
+    const isNativeFullscreen = 
+      !!document.fullscreenElement || 
+      !!(document as any).webkitFullscreenElement ||
+      !!(document as any).mozFullScreenElement ||
+      !!(document as any).msFullscreenElement;
+
+    if (requestMethod) {
+      if (!isNativeFullscreen) {
+        requestMethod.call(element).catch(err => {
+          console.error("Error enabling native fullscreen:", err);
+          // Fallback to virtual fullscreen
+          setIsFullscreen(true);
+        });
+      } else if (exitMethod) {
+        exitMethod.call(document);
+      }
     } else {
-      document.exitFullscreen();
+      // Fallback for devices without native Fullscreen API support (like iOS Safari)
+      setIsFullscreen(prev => !prev);
     }
   };
   const [chapters, setChapters] = useState<Chapter[]>([]);
