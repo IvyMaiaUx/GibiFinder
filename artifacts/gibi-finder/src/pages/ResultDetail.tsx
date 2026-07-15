@@ -353,7 +353,7 @@ export default function ResultDetail() {
                       <div>
                         <h4 className="font-display text-base text-black uppercase leading-tight">Apoie os Criadores</h4>
                         <p className="font-sans font-bold text-xs text-gray-700 leading-snug mt-1">
-                          Gostou da obra? Se ela estiver disponível oficialmente em sua região, considere apoiar os autores e as editoras adquirindo a versão física.
+                          Gostou da obra? Se ela estiver disponível oficialmente em sua região, considere apoiar os autores e as editoras adquirindo a edição física oficial.
                         </p>
                       </div>
                     </div>
