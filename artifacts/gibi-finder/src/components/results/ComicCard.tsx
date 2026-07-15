@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { ExternalLink, Star } from "lucide-react";
 import type { ComicResult } from "@workspace/api-client-react";
-import { cn } from "@/lib/utils";
+import { cn, proxyCoverUrl } from "@/lib/utils";
 
 interface ComicCardProps {
   result: ComicResult;
@@ -28,9 +28,10 @@ export function ComicCard({ result, isMain = false }: ComicCardProps) {
         )}>
           {!imgError ? (
             <img 
-              src={imageUrl} 
+              src={proxyCoverUrl(imageUrl)} 
               alt={result.titulo || "Capa do Gibi"} 
               className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
               onError={() => setImgError(true)}
             />
           ) : (
