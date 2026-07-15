@@ -1,0 +1,37 @@
+[
+  {
+    "id": "brasuka-mangas",
+    "name": "Brasuka Mangás",
+    "language": "pt",
+    "baseUrl": "https://mangasbrasuka.com.br/",
+    "active": true
+  },
+  {
+    "id": "prisma-scans",
+    "name": "Prisma Scans",
+    "language": "pt",
+    "baseUrl": "https://prisma-scans.com/",
+    "active": true
+  },
+  {
+    "id": "reaper-scans",
+    "name": "Reaper Scans",
+    "language": "pt",
+    "baseUrl": "https://reaperscans.net.br/",
+    "active": true
+  },
+  {
+    "id": "remangas",
+    "name": "Remangas",
+    "language": "pt",
+    "baseUrl": "https://remangas.top/",
+    "active": true
+  },
+  {
+    "id": "tsuki-mangas",
+    "name": "Tsuki Mangás",
+    "language": "pt",
+    "baseUrl": "https://tsuki-mangas.com/",
+    "active": true
+  }
+]
