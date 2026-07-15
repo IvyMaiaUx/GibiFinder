@@ -7,13 +7,6 @@
     "active": true
   },
   {
-    "id": "prisma-scans",
-    "name": "Prisma Scans",
-    "language": "pt",
-    "baseUrl": "https://prisma-scans.com/",
-    "active": true
-  },
-  {
     "id": "reaper-scans",
     "name": "Reaper Scans",
     "language": "pt",
