@@ -65,9 +65,9 @@ router.get("/image-proxy", async (req: Request, res: Response) => {
     return;
   }
 
-  // Only allow requests to known CDN hosts
-  if (!ALLOWED_HOSTS.includes(targetUrl.hostname)) {
-    res.status(403).json({ error: "forbidden_host", message: "Host não autorizado para proxy." });
+  // Allow any valid HTTP/HTTPS host to be proxied for covers
+  if (targetUrl.protocol !== "http:" && targetUrl.protocol !== "https:") {
+    res.status(400).json({ error: "invalid_protocol", message: "Apenas HTTP/HTTPS são permitidos." });
     return;
   }
 

@@ -10,6 +10,7 @@ import ResultDetail from "@/pages/ResultDetail";
 import Colecao from "@/pages/Colecao";
 import Admin from "@/pages/Admin";
 import Explore from "@/pages/Explore";
+import Login from "@/pages/Login";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -31,6 +32,7 @@ function Router() {
       <Route path="/colecao" component={Colecao} />
       <Route path="/admin" component={Admin} />
       <Route path="/explorar" component={Explore} />
+      <Route path="/login" component={Login} />
       <Route component={NotFound} />
     </Switch>
   );

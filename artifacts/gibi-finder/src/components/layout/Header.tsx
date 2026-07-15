@@ -1,15 +1,11 @@
-import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Search, Clock, Trophy, BookMarked, Compass, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
-import { AuthModal } from "@/components/auth/AuthModal";
-import { AnimatePresence } from "framer-motion";
 
 export function Header() {
   const [location] = useLocation();
-  const { user, login, register, logout } = useAuth();
-  const [showAuthModal, setShowAuthModal] = useState(false);
+  const { user, logout } = useAuth();
 
   const navItems = [
     { path: "/", label: "BUSCAR GIBI", icon: Search },
@@ -20,7 +16,7 @@ export function Header() {
   ];
 
   return (
-    <header className="bg-secondary border-b-8 border-black sticky top-0 z-50">
+    <header className="bg-secondary border-b-8 border-black sticky top-0 z-50 animate-in fade-in duration-100">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-20 md:h-24 flex items-center justify-between gap-2">
         
         {/* Logo */}
@@ -60,12 +56,12 @@ export function Header() {
         <div className="hidden lg:flex items-center gap-2 border-l-4 border-black/10 pl-4 ml-2">
           {user ? (
             <div className="flex items-center gap-3 animate-in fade-in duration-200">
-              <div className="flex items-center gap-1.5 font-display text-sm text-black select-none">
+              <Link href="/login" className="flex items-center gap-1.5 font-display text-sm text-black hover:translate-y-[-1px] transition-transform select-none">
                 <div className="w-8 h-8 rounded-full bg-primary border-2 border-black flex items-center justify-center text-white font-display text-sm leading-none">
                   {user.username.charAt(0).toUpperCase()}
                 </div>
                 <span className="font-sans font-bold text-black text-sm tracking-wide">{user.username}</span>
-              </div>
+              </Link>
               <button 
                 onClick={logout}
                 className="font-display text-base bg-white hover:bg-red-100 border-4 border-black px-3.5 py-1.5 rounded-lg transition-colors"
@@ -74,12 +70,12 @@ export function Header() {
               </button>
             </div>
           ) : (
-            <button 
-              onClick={() => setShowAuthModal(true)}
-              className="bg-primary text-white hover:bg-yellow-400 hover:text-black font-display text-base border-4 border-black px-4 py-2 rounded-lg comic-shadow-sm transition-colors uppercase"
+            <Link 
+              href="/login"
+              className="bg-primary text-white hover:bg-yellow-400 hover:text-black font-display text-base border-4 border-black px-4 py-2 rounded-lg comic-shadow-sm transition-colors uppercase flex items-center justify-center"
             >
               Conectar
-            </button>
+            </Link>
           )}
         </div>
 
@@ -105,35 +101,25 @@ export function Header() {
           {/* Auth Actions (Mobile) */}
           <div className="flex items-center border-l-2 border-black/10 pl-2 ml-1">
             {user ? (
-              <button 
-                onClick={logout}
-                className="w-8 h-8 rounded-full bg-primary border-2 border-black flex items-center justify-center text-white text-xs font-display select-none"
-                title={`Sair de ${user.username}`}
+              <Link 
+                href="/login"
+                className="w-8 h-8 rounded-full bg-primary border-2 border-black flex items-center justify-center text-white text-xs font-display select-none hover:translate-y-[-1px] transition-transform"
+                title={`Conta de ${user.username}`}
               >
                 {user.username.charAt(0).toUpperCase()}
-              </button>
+              </Link>
             ) : (
-              <button 
-                onClick={() => setShowAuthModal(true)}
-                className="p-1.5 border-2 border-black rounded-lg bg-primary text-white hover:bg-yellow-400 transition-colors"
+              <Link 
+                href="/login"
+                className="p-1.5 border-2 border-black rounded-lg bg-primary text-white hover:bg-yellow-400 transition-colors flex items-center justify-center"
                 title="Conectar"
               >
                 <User className="w-4.5 h-4.5" strokeWidth={3} />
-              </button>
+              </Link>
             )}
           </div>
         </nav>
       </div>
-
-      <AnimatePresence>
-        {showAuthModal && (
-          <AuthModal 
-            onClose={() => setShowAuthModal(false)}
-            onLogin={login}
-            onRegister={register}
-          />
-        )}
-      </AnimatePresence>
     </header>
   );
 }

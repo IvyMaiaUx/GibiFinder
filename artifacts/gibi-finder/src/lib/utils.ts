@@ -14,30 +14,9 @@ const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 export function proxyCoverUrl(url: string | undefined | null): string | undefined {
   if (!url) return undefined;
   try {
-    // Only proxy external URLs (http/https)
     const parsed = new URL(url);
     if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-      // List of hostnames that strictly require proxying due to CORS or Referer blocking
-      const hostsToProxy = [
-        "comicextra.se",
-        "www.comicextra.se",
-        "mangafire.to",
-        "cdn.mangafire.to",
-        "mangaplus.shueisha.co.jp",
-        "d2dq7ifhe7bu0f.cloudfront.net",
-        "s1.mangaplus.shueisha.co.jp",
-        "s2.mangaplus.shueisha.co.jp",
-        "s3.mangaplus.shueisha.co.jp",
-        "cdn.mangaplus.shueisha.co.jp"
-      ];
-      
-      const shouldProxy = hostsToProxy.some(host => 
-        parsed.hostname === host || parsed.hostname.endsWith("." + host)
-      );
-
-      if (shouldProxy) {
-        return `${BASE}/api/image-proxy?url=${encodeURIComponent(url)}`;
-      }
+      return `${BASE}/api/image-proxy?url=${encodeURIComponent(url)}`;
     }
   } catch {
     // Not a valid URL — return as-is

@@ -18,7 +18,7 @@ export function useAuth() {
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(AUTH_KEY);
+      const saved = localStorage.getItem(AUTH_KEY) || sessionStorage.getItem(AUTH_KEY);
       if (saved) {
         setUser(JSON.parse(saved));
       }
@@ -26,7 +26,7 @@ export function useAuth() {
     setLoading(false);
   }, []);
 
-  const login = async (username: string, password: string): Promise<boolean> => {
+  const login = async (username: string, password: string, rememberMe: boolean = true): Promise<boolean> => {
     try {
       const res = await fetch(`${BASE}/api/auth/login`, {
         method: "POST",
@@ -35,7 +35,11 @@ export function useAuth() {
       });
       const data = await res.json();
       if (res.ok && data.success && data.user) {
-        localStorage.setItem(AUTH_KEY, JSON.stringify(data.user));
+        if (rememberMe) {
+          localStorage.setItem(AUTH_KEY, JSON.stringify(data.user));
+        } else {
+          sessionStorage.setItem(AUTH_KEY, JSON.stringify(data.user));
+        }
         setUser(data.user);
         toast({ title: `Bem-vindo de volta, ${data.user.username}!`, description: "Seu progresso e favoritos foram sincronizados." });
         
@@ -52,7 +56,7 @@ export function useAuth() {
     }
   };
 
-  const register = async (username: string, password: string, email?: string): Promise<boolean> => {
+  const register = async (username: string, password: string, email?: string, rememberMe: boolean = true): Promise<boolean> => {
     try {
       const res = await fetch(`${BASE}/api/auth/register`, {
         method: "POST",
@@ -61,7 +65,11 @@ export function useAuth() {
       });
       const data = await res.json();
       if (res.ok && data.success && data.user) {
-        localStorage.setItem(AUTH_KEY, JSON.stringify(data.user));
+        if (rememberMe) {
+          localStorage.setItem(AUTH_KEY, JSON.stringify(data.user));
+        } else {
+          sessionStorage.setItem(AUTH_KEY, JSON.stringify(data.user));
+        }
         setUser(data.user);
         toast({ title: "Cadastro realizado!", description: `Sua conta '${data.user.username}' foi criada com sucesso.` });
         
@@ -80,8 +88,9 @@ export function useAuth() {
 
   const logout = () => {
     localStorage.removeItem(AUTH_KEY);
+    sessionStorage.removeItem(AUTH_KEY);
     setUser(null);
-    toast({ title: "Sessão encerrada", description: "Você desconectou da sua estante synced." });
+    toast({ title: "Sessão encerrada", description: "Você desconectou da sua estante." });
   };
 
   const syncFavorites = async (userId: string) => {
