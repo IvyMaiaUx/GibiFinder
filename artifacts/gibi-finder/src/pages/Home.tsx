@@ -6,6 +6,7 @@ import { ResultView } from "@/components/results/ResultView";
 import { useSearchActions } from "@/hooks/use-search-actions";
 import { useLocation } from "wouter";
 import { BookOpen, HelpCircle, Loader2, Star } from "lucide-react";
+import { proxyCoverUrl } from "@/lib/utils";
 
 interface UnifiedSearchResult {
   id: string;
@@ -140,7 +141,7 @@ export default function Home() {
                     <div className="relative aspect-[3/4] border-b-4 border-black bg-zinc-950 overflow-hidden shrink-0">
                       {item.coverUrl ? (
                         <img 
-                          src={item.coverUrl} 
+                          src={proxyCoverUrl(item.coverUrl)} 
                           alt={item.title} 
                           className="w-full h-full object-cover transition-transform group-hover:scale-105"
                           loading="lazy"
