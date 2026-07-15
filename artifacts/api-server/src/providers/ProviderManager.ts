@@ -89,6 +89,7 @@ export class ProviderManager {
     const groups: Map<string, UnifiedSearchResult> = new Map();
 
     for (const result of flatResults) {
+      if (!result || !result.title) continue;
       const norm = this.normalizeTitle(result.title);
       if (!norm) continue;
 
@@ -168,6 +169,7 @@ export class ProviderManager {
     const groups: Map<string, UnifiedSearchResult> = new Map();
 
     for (const result of flatResults) {
+      if (!result || !result.title) continue;
       const norm = this.normalizeTitle(result.title);
       if (!norm) continue;
 
