@@ -46,6 +46,7 @@ export interface UnifiedSearchResult {
   title: string;
   coverUrl?: string;
   description?: string;
+  rating?: number;
   sources: {
     providerId: string;
     id: string; // ID original do mangá no provedor

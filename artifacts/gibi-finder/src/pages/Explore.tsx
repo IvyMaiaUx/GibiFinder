@@ -225,6 +225,11 @@ export default function Explore() {
                         </div>
                         
                         <div className="mt-4 pt-3 border-t border-dashed border-black/20 flex items-center justify-between">
+                          {item.rating !== undefined && (
+                            <span className="flex items-center gap-1 font-display text-sm text-yellow-500">
+                              ⭐ {(item.rating / 2).toFixed(1)}
+                            </span>
+                          )}
                           <span className="font-display text-xs text-primary group-hover:translate-x-1 transition-transform">
                             LER AGORA →
                           </span>
