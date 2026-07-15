@@ -19,10 +19,10 @@ export function Header() {
         
         {/* Logo */}
         <Link href="/" className="flex items-center gap-1.5 group comic-hover transition-transform shrink-0">
-          <div className="bg-primary text-primary-foreground font-display text-xl md:text-3xl px-2 md:px-4 py-1 md:py-2 rounded-lg border-4 border-black comic-shadow transform -rotate-3 group-hover:rotate-0 transition-all">
+          <div className="bg-primary text-primary-foreground font-display text-lg sm:text-xl md:text-3xl px-2 md:px-4 py-1 md:py-2 rounded-lg border-2 sm:border-4 border-black comic-shadow transform -rotate-3 group-hover:rotate-0 transition-all">
             GIBI
           </div>
-          <span className="font-display text-2xl md:text-4xl text-black tracking-wider group-hover:scale-105 transition-transform drop-shadow-[2px_2px_0_white]">
+          <span className="hidden sm:inline font-display text-2xl md:text-4xl text-black tracking-wider group-hover:scale-105 transition-transform drop-shadow-[2px_2px_0_white]">
             FINDER
           </span>
         </Link>
@@ -51,20 +51,23 @@ export function Header() {
         </nav>
 
         {/* Mobile Navigation — icon only, compact */}
-        <nav className="md:hidden flex items-center gap-1">
-          {navItems.map((item) => (
-            <Link
-              key={item.path}
-              href={item.path}
-              className={cn(
-                "p-2 border-[3px] border-black rounded-lg transition-all",
-                location === item.path ? "bg-white" : "bg-transparent hover:bg-white/50"
-              )}
-              title={item.label}
-            >
-              <item.icon className="w-5 h-5" strokeWidth={3} />
-            </Link>
-          ))}
+        <nav className="md:hidden flex items-center gap-0.5 sm:gap-1">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.path}
+                href={item.path}
+                className={cn(
+                  "p-1.5 sm:p-2 border-2 sm:border-[3px] border-black rounded-lg transition-all",
+                  location === item.path ? "bg-white" : "bg-transparent hover:bg-white/50"
+                )}
+                title={item.label}
+              >
+                <Icon className="w-4 h-4 sm:w-5 sm:h-5" strokeWidth={3} />
+              </Link>
+            );
+          })}
         </nav>
       </div>
     </header>

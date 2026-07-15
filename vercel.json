@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "cd artifacts/gibi-finder && pnpm install --frozen-lockfile=false && pnpm run build",
+  "buildCommand": "pnpm run build",
   "outputDirectory": "artifacts/gibi-finder/dist/public",
   "installCommand": "pnpm install --frozen-lockfile=false",
   "framework": null,

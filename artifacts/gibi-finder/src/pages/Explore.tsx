@@ -105,8 +105,7 @@ export default function Explore() {
 
         <div className="space-y-6">
           
-          {/* Filter controls bar */}
-          <div className="flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center bg-white p-4 border-4 border-black rounded-xl comic-shadow-sm">
+          <div className="flex flex-col lg:flex-row gap-4 justify-between items-stretch lg:items-center bg-white p-4 border-4 border-black rounded-xl comic-shadow-sm">
             <span className="font-display text-lg text-black uppercase">
               Descobrir Quadrinhos/Mangás:
             </span>
@@ -186,7 +185,7 @@ export default function Explore() {
           ) : (
             <>
               {/* Grid catalog list */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
                 {paginatedItems.map((item) => {
                   const hasPt = item.sources.some(s => s.providerId !== "comicextra");
                   const hasEn = true; // all active sources support English

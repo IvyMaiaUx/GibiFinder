@@ -655,7 +655,9 @@ export function MangaDexReader({ mangaTitle }: MangaDexReaderProps) {
                 {selectedChapter.providerId.toUpperCase()}
               </span>
               <div>
-                <h4 className="font-display text-lg md:text-xl leading-none">{selectedResult?.title}</h4>
+                <h4 className="font-display text-base md:text-xl leading-none line-clamp-1 max-w-[150px] sm:max-w-xs md:max-w-md" title={selectedResult?.title || mangaTitle}>
+                  {selectedResult?.title || mangaTitle}
+                </h4>
                 <p className="font-sans text-xs font-bold text-gray-400">Capítulo {selectedChapter.chapterNum} · {currentPage + 1} / {pages.length}</p>
               </div>
             </div>

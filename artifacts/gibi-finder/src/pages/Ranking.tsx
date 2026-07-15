@@ -102,11 +102,11 @@ export default function Ranking() {
                 <div 
                   key={item.id}
                   onClick={() => handleOpenItem(item)}
-                  className="cursor-pointer bg-white border-4 border-black rounded-xl overflow-hidden comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:translate-y-[-4px] transition-all duration-200 flex items-center p-4 gap-6"
+                  className="cursor-pointer bg-white border-4 border-black rounded-xl overflow-hidden comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:translate-y-[-4px] transition-all duration-200 flex items-center p-4 gap-3 sm:gap-6"
                 >
                   {/* Rank Badge */}
-                  <div className="w-16 md:w-20 shrink-0 flex justify-center">
-                    <span className="font-display text-5xl md:text-6xl" style={{
+                  <div className="w-12 sm:w-16 md:w-20 shrink-0 flex justify-center">
+                    <span className="font-display text-3xl sm:text-5xl md:text-6xl" style={{
                       color: rankColor,
                       WebkitTextStroke: '2px black',
                       textShadow: '3px 3px 0px black'
@@ -116,7 +116,7 @@ export default function Ranking() {
                   </div>
 
                   {/* Thumbnail Cover */}
-                  <div className="w-20 h-28 bg-zinc-950 border-4 border-black shrink-0 relative overflow-hidden rounded-md">
+                  <div className="w-14 h-20 sm:w-20 sm:h-28 bg-zinc-950 border-4 border-black shrink-0 relative overflow-hidden rounded-md">
                     {item.coverUrl && !brokenImages[imgKey] ? (
                       <img 
                         src={item.coverUrl} 
@@ -136,7 +136,7 @@ export default function Ranking() {
                     <span className="font-sans font-extrabold text-3xs bg-primary text-white border border-black px-2 py-0.5 rounded uppercase tracking-wider">
                       {providersString}
                     </span>
-                    <h3 className="font-display text-2xl md:text-3xl leading-tight truncate mt-1 group-hover:text-primary transition-colors">
+                    <h3 className="font-display text-lg sm:text-2xl md:text-3xl leading-tight truncate mt-1 group-hover:text-primary transition-colors">
                       {item.title}
                     </h3>
                     <p className="font-sans text-xs text-gray-500 font-bold line-clamp-1 mt-1">
