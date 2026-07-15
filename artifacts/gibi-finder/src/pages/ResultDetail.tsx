@@ -114,6 +114,53 @@ export default function ResultDetail() {
     }
   };
 
+  const [stats, setStats] = useState<any | null>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
+
+  const loadStats = async () => {
+    if (!itemMangaId || !itemProviderId) return;
+    setLoadingStats(true);
+    try {
+      const res = await fetch(`${BASE}/api/providers/statistics?providerId=${itemProviderId}&id=${encodeURIComponent(itemMangaId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setStats(data);
+      }
+    } catch (err) {
+      console.error("Failed to load statistics:", err);
+    } finally {
+      setLoadingStats(false);
+    }
+  };
+
+  useEffect(() => {
+    if (itemMangaId) {
+      loadStats();
+    }
+  }, [itemMangaId, itemProviderId]);
+
+  const renderStars = (rating: number) => {
+    const starValue = rating / 2;
+    const stars = [];
+    for (let i = 1; i <= 5; i++) {
+      if (i <= starValue) {
+        stars.push(<Star key={i} className="w-5 h-5 text-yellow-400 fill-yellow-400" strokeWidth={3} />);
+      } else if (i - 0.5 <= starValue) {
+        stars.push(
+          <div key={i} className="relative inline-block leading-none">
+            <Star className="w-5 h-5 text-gray-300 fill-gray-300" strokeWidth={3} />
+            <div className="absolute top-0 left-0 overflow-hidden w-[50%] h-full leading-none">
+              <Star className="w-5 h-5 text-yellow-400 fill-yellow-400" strokeWidth={3} />
+            </div>
+          </div>
+        );
+      } else {
+        stars.push(<Star key={i} className="w-5 h-5 text-gray-300" strokeWidth={3} />);
+      }
+    }
+    return stars;
+  };
+
   const isLoading = isOnlineResult ? loadingOnline : loadingDb;
   const hasError = isOnlineResult ? (!mangaId) : (dbError || !dbData);
 
@@ -172,6 +219,39 @@ export default function ResultDetail() {
                 </button>
               </div>
             </div>
+
+            {/* Stats / Rating Bar */}
+            {stats && (
+              <div className="bg-white p-4 border-4 border-black rounded-xl comic-shadow flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 font-sans font-bold select-none animate-in fade-in slide-in-from-bottom duration-200">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="font-display text-xl uppercase text-black">AVALIAÇÃO:</span>
+                  <div className="flex items-center gap-0.5">
+                    {renderStars(stats.rating)}
+                  </div>
+                  <span className="text-lg text-black font-extrabold ml-1">
+                    {stats.rating ? `${(stats.rating / 2).toFixed(1)} / 5` : "Sem notas"}
+                  </span>
+                  <span className="text-xs text-gray-400 font-extrabold uppercase">
+                    ({stats.votes.toLocaleString()} votos)
+                  </span>
+                </div>
+                
+                <div className="flex gap-6 text-sm text-gray-700 w-full sm:w-auto justify-between sm:justify-start">
+                  {stats.follows !== undefined && (
+                    <div>
+                      <span className="text-gray-400 uppercase text-xs block">Seguidores</span>
+                      <span className="text-black font-extrabold text-base">{stats.follows.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div>
+                    <span className="text-gray-400 uppercase text-xs block">Popularidade</span>
+                    <span className="text-primary font-display text-lg tracking-wider">
+                      {stats.rating >= 8 ? "🔥 ALTA" : stats.rating >= 6 ? "⚡ MÉDIA" : "❄️ BAIXA"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <ComicCard result={resultData as any} isMain />
             
