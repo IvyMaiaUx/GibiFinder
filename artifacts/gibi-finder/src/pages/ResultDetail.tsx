@@ -15,6 +15,7 @@ export default function ResultDetail() {
   const [, params] = useRoute("/gibi/:id");
   const id = params?.id || "";
   const { toast } = useToast();
+  const [detailTab, setDetailTab] = useState<"read" | "buy">("read");
 
   // Search parameters for virtual aggregator view
   const searchParams = new URLSearchParams(window.location.search);
@@ -253,35 +254,144 @@ export default function ResultDetail() {
               </div>
             )}
 
-            {/* Support the Author Affiliate Card */}
-            <div className="bg-amber-50 border-4 border-black p-5 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4 comic-shadow relative overflow-hidden select-none animate-in fade-in slide-in-from-bottom duration-200">
-              <div className="absolute top-0 right-0 w-24 h-24 opacity-5 bg-[radial-gradient(black_1px,transparent_1px)] [background-size:6px_6px] pointer-events-none" />
-              <div className="flex items-center gap-3">
-                <BookOpen className="w-10 h-10 text-primary shrink-0" strokeWidth={3} />
-                <div>
-                  <h4 className="font-display text-lg text-black uppercase leading-tight">Apoie o Autor Original!</h4>
-                  <p className="font-sans font-bold text-xs text-gray-700 leading-snug mt-0.5">
-                    Gostou da obra? Compre o volume físico original para apoiar o autor e a editora!
-                  </p>
-                </div>
-              </div>
-              <a 
-                href={`https://www.amazon.com.br/s?k=manga+${encodeURIComponent((resultData as any).revista || (resultData as any).titulo || "")}&tag=gibifinder-20`}
-                target="_blank"
-                rel="noreferrer"
-                className="bg-primary text-white font-display text-sm px-6 py-2.5 border-2 border-black rounded hover:bg-yellow-400 hover:text-black transition-colors shrink-0 uppercase tracking-wide flex items-center gap-2"
+            {/* Tabs Navigation Bar */}
+            <div className="flex border-4 border-black bg-white overflow-hidden select-none comic-shadow-sm">
+              <button 
+                onClick={() => setDetailTab("read")}
+                className={cn(
+                  "flex-1 py-3.5 font-display text-lg flex items-center justify-center gap-2 transition-colors border-r-4 border-black",
+                  detailTab === "read" ? "bg-primary text-white" : "bg-white text-gray-500 hover:bg-muted"
+                )}
               >
-                Comprar Mangá Físico <ExternalLink className="w-4 h-4" strokeWidth={3} />
-              </a>
+                <BookOpen className="w-5 h-5" strokeWidth={3} />
+                LER CAPÍTULOS
+              </button>
+              
+              <button 
+                onClick={() => setDetailTab("buy")}
+                className={cn(
+                  "flex-1 py-3.5 font-display text-lg flex items-center justify-center gap-2 transition-colors",
+                  detailTab === "buy" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"
+                )}
+              >
+                <Star className="w-5 h-5" strokeWidth={3} />
+                ONDE COMPRAR (OFICIAL)
+              </button>
             </div>
 
-            <ComicCard result={resultData as any} isMain />
-            
-            <MangaDexReader 
-              mangaTitle={(resultData as any).revista || (resultData as any).titulo || ""} 
-              coverUrl={(resultData as any).coverUrl || (resultData as any).images?.[0]} 
-              description={(resultData as any).sinopse || (resultData as any).description}
-            />
+            {detailTab === "read" && (
+              <div className="space-y-12 animate-in fade-in duration-200">
+                <ComicCard result={resultData as any} isMain />
+                
+                <MangaDexReader 
+                  mangaTitle={(resultData as any).revista || (resultData as any).titulo || ""} 
+                  coverUrl={(resultData as any).coverUrl || (resultData as any).images?.[0]} 
+                  description={(resultData as any).sinopse || (resultData as any).description}
+                />
+              </div>
+            )}
+
+            {detailTab === "buy" && (() => {
+              const mangaTitle = (resultData as any).revista || (resultData as any).titulo || initialTitle || "";
+              const pubStatus = getPublicationStatus(mangaTitle);
+              const buyLinks = [
+                {
+                  store: "Amazon Brasil",
+                  url: `https://www.amazon.com.br/s?k=manga+${encodeURIComponent(mangaTitle)}&tag=gibifinder-20`,
+                  description: "Frete grátis com Prime, entrega rápida e cupons diários.",
+                  badge: "Melhor preço"
+                },
+                {
+                  store: "Loja Panini",
+                  url: `https://panini.com.br/catalogsearch/result/?q=${encodeURIComponent(mangaTitle)}`,
+                  description: "Adquira volumes físicos diretamente da editora Panini Brasil.",
+                  badge: "Oficial"
+                },
+                {
+                  store: "Editora JBC",
+                  url: `https://editorajbc.com.br/?s=${encodeURIComponent(mangaTitle)}`,
+                  description: "Catálogo oficial de títulos publicados e distribuídos pela JBC.",
+                  badge: "Oficial"
+                },
+                {
+                  store: "Mercado Livre",
+                  url: `https://lista.mercadolivre.com.br/manga-${encodeURIComponent(mangaTitle)}`,
+                  description: "Busque edições raras e coleções completas de outros colecionadores.",
+                  badge: "Coleções"
+                },
+                {
+                  store: "Shopee Brasil",
+                  url: `https://shopee.com.br/search?keyword=manga%20${encodeURIComponent(mangaTitle)}`,
+                  description: "Cupons de frete grátis e descontos em lojas geeks oficiais.",
+                  badge: "Cupons"
+                }
+              ];
+
+              return (
+                <div className="space-y-8 animate-in fade-in duration-200">
+                  {/* Official Status Indicator */}
+                  <div className="bg-white border-4 border-black p-5 rounded-xl comic-shadow flex items-center justify-between gap-4 select-none">
+                    <div>
+                      <span className="font-display text-2xs text-gray-400 uppercase block mb-1">Status de Publicação no Brasil:</span>
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "w-4 h-4 rounded-full border-2 border-black inline-block",
+                          pubStatus.status === "green" ? "bg-green-500 animate-pulse" : "bg-yellow-400"
+                        )} />
+                        <span className="font-display text-xl text-black uppercase">
+                          {pubStatus.text}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Main Support message */}
+                  <div className="bg-amber-50 border-4 border-black p-6 rounded-xl comic-shadow relative overflow-hidden select-none">
+                    <div className="absolute top-0 right-0 w-24 h-24 opacity-5 bg-[radial-gradient(black_1px,transparent_1px)] [background-size:6px_6px] pointer-events-none" />
+                    <div className="flex items-center gap-3">
+                      <BookOpen className="w-10 h-10 text-primary shrink-0" strokeWidth={3} />
+                      <div>
+                        <h4 className="font-display text-lg text-black uppercase leading-tight">Apoie os Criadores</h4>
+                        <p className="font-sans font-bold text-xs text-gray-700 leading-snug mt-1">
+                          Gostou da obra? Se ela estiver disponível oficialmente em sua região, considere apoiar os autores e as editoras adquirindo a versão oficial.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Comparator Links */}
+                  <div className="space-y-3">
+                    <span className="font-display text-sm text-gray-500 uppercase block select-none">Onde comprar (Canais de Venda):</span>
+                    <div className="grid grid-cols-1 gap-3">
+                      {buyLinks.map((link) => (
+                        <a
+                          key={link.store}
+                          href={link.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="bg-white border-4 border-black p-4 rounded-xl flex items-center justify-between gap-4 hover:bg-muted/30 transition-all hover:translate-x-1 comic-shadow-2xs group text-black select-none"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h4 className="font-display text-xl leading-none">{link.store}</h4>
+                              <span className="bg-secondary text-black text-3xs font-display px-2 py-0.5 border border-black uppercase">
+                                {link.badge}
+                              </span>
+                            </div>
+                            <p className="font-sans text-xs text-gray-500 font-bold truncate">
+                              {link.description}
+                            </p>
+                          </div>
+                          <span className="font-display text-sm text-primary flex items-center gap-1 shrink-0 group-hover:translate-x-1 transition-transform">
+                            IR PARA LOJA <ExternalLink className="w-4.5 h-4.5" strokeWidth={3} />
+                          </span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             
             {!isOnlineResult && (
               <>
@@ -322,4 +432,19 @@ export default function ResultDetail() {
       </div>
     </Layout>
   );
+}
+
+function getPublicationStatus(title: string): { status: "green" | "yellow"; text: string } {
+  const t = title.toLowerCase();
+  const licensed = [
+    "one piece", "naruto", "boruto", "jujutsu", "demon slayer", "kimetsu", 
+    "frieren", "chainsaw", "my hero academia", "boku no hero", "spy x family", 
+    "kaiju", "hunter x hunter", "dragon ball", "death note", "tokyo ghoul", 
+    "attack on titan", "shingeki", "berserk", "haikyu", "sakamoto days", 
+    "dandadan", "blue lock", "kagurabachi", "chainsaw man"
+  ];
+  if (licensed.some(l => t.includes(l))) {
+    return { status: "green", text: "Disponível oficialmente no Brasil" };
+  }
+  return { status: "yellow", text: "Sem publicação oficial brasileira cadastrada" };
 }
