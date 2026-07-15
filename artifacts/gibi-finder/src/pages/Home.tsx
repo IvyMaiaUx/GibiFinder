@@ -5,13 +5,14 @@ import { SearchPanel } from "@/components/home/SearchPanel";
 import { ResultView } from "@/components/results/ResultView";
 import { useSearchActions } from "@/hooks/use-search-actions";
 import { useLocation } from "wouter";
-import { BookOpen, HelpCircle, Loader2 } from "lucide-react";
+import { BookOpen, HelpCircle, Loader2, Star } from "lucide-react";
 
 interface UnifiedSearchResult {
   id: string;
   title: string;
   coverUrl?: string;
   description?: string;
+  rating?: number;
   sources: {
     providerId: string;
     id: string;
@@ -166,8 +167,9 @@ export default function Home() {
                       
                       <div className="mt-4 pt-3 border-t border-dashed border-black/20 flex items-center justify-between">
                         {item.rating !== undefined && (
-                          <span className="flex items-center gap-1 font-display text-sm text-yellow-500">
-                            ⭐ {(item.rating / 2).toFixed(1)}
+                          <span className="flex items-center gap-1 bg-[#FFD166] text-black px-2 py-0.5 border-2 border-black rounded-lg font-display text-xs font-black shadow-[2px_2px_0_rgba(0,0,0,1)]">
+                            <Star className="w-3 h-3 fill-black text-black" strokeWidth={2.5} />
+                            {(item.rating / 2).toFixed(1)}
                           </span>
                         )}
                         <span className="font-display text-xs text-primary group-hover:translate-x-1 transition-transform">

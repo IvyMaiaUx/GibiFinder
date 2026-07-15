@@ -19,10 +19,6 @@ export function proxyCoverUrl(url: string | undefined | null): string | undefine
     if (parsed.protocol === "http:" || parsed.protocol === "https:") {
       // List of hostnames that strictly require proxying due to CORS or Referer blocking
       const hostsToProxy = [
-        "uploads.mangadex.org",
-        "mangadex.org",
-        "og.mangadex.org",
-        "cmdxd98sb0x3yprd.mangadex.network",
         "comicextra.se",
         "www.comicextra.se",
         "mangafire.to",
