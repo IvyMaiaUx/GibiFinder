@@ -68,7 +68,7 @@ export class MangaFireProvider implements Provider {
   }
 
   async getPages(chapterId: string): Promise<Page[]> {
-    return Array.from({ length: 6 }).map((_, i) => ({
+    return Array.from({ length: 30 }).map((_, i) => ({
       url: `https://images.unsplash.com/photo-1612036782180-6f0b6cd846fe?w=800&q=80&text=MangaFire+Page+${i+1}`,
       pageNumber: i + 1
     }));
