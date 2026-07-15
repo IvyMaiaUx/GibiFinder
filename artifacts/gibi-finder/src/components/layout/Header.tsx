@@ -74,7 +74,7 @@ export function Header() {
               href="/login"
               className="bg-primary text-white hover:bg-yellow-400 hover:text-black font-display text-base border-4 border-black px-4 py-2 rounded-lg comic-shadow-sm transition-colors uppercase flex items-center justify-center"
             >
-              Conectar
+              LOGIN
             </Link>
           )}
         </div>
@@ -112,7 +112,7 @@ export function Header() {
               <Link 
                 href="/login"
                 className="p-1.5 border-2 border-black rounded-lg bg-primary text-white hover:bg-yellow-400 transition-colors flex items-center justify-center"
-                title="Conectar"
+                title="Login"
               >
                 <User className="w-4.5 h-4.5" strokeWidth={3} />
               </Link>
