@@ -162,9 +162,11 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
       const data = await res.json() as UnifiedSearchResult[];
       
       setUnifiedResults(data);
-      if (data.length > 0) {
-        // Auto-select the first result group for convenience
+      if (data.length === 1) {
         setSelectedResult(data[0]);
+      } else if (data.length > 1) {
+        // Let the user select from the list
+        setSelectedResult(null);
       } else {
         setError("Nenhuma obra encontrada nos provedores habilitados.");
       }

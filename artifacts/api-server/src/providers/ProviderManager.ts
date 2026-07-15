@@ -3,6 +3,7 @@ import { MangaDexProvider } from "./MangaDexProvider";
 import { ComicExtraProvider } from "./ComicExtraProvider";
 import { MangaPlusProvider } from "./MangaPlusProvider";
 import { MangaFireProvider } from "./MangaFireProvider";
+import { MugiwarasProvider } from "./MugiwarasProvider";
 
 class StubProvider implements Provider {
   constructor(public id: string, public name: string, public language: string) {}
@@ -20,6 +21,7 @@ export class ProviderManager {
     ["comicextra", true],
     ["mangaplus", true],
     ["mangafire", true],
+    ["mugiwaras", true],
     ["bato", false],
     ["hqnow", false]
   ]);
@@ -30,6 +32,7 @@ export class ProviderManager {
     this.registerProvider(new ComicExtraProvider());
     this.registerProvider(new MangaPlusProvider());
     this.registerProvider(new MangaFireProvider());
+    this.registerProvider(new MugiwarasProvider());
     
     // Register stub/future providers
     this.registerProvider(new StubProvider("bato", "Bato", "multi"));
