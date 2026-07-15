@@ -11,12 +11,15 @@ import {
   AlertCircle,
   Globe,
   Database,
-  Play
+  Play,
+  Maximize,
+  Minimize
 } from "lucide-react";
 import { cn, proxyCoverUrl } from "@/lib/utils";
 
 interface MangaDexReaderProps {
   mangaTitle: string;
+  coverUrl?: string;
 }
 
 interface UnifiedSearchResult {
@@ -46,7 +49,7 @@ interface Page {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-export function MangaDexReader({ mangaTitle }: MangaDexReaderProps) {
+export function MangaDexReader({ mangaTitle, coverUrl }: MangaDexReaderProps) {
   // Tab/Source Navigation
   const [activeTab, setActiveTab] = useState<"aggregator" | "external">("aggregator");
   
@@ -58,6 +61,30 @@ export function MangaDexReader({ mangaTitle }: MangaDexReaderProps) {
   
   const [selectedSource, setSelectedSource] = useState<{ providerId: string; id: string; title: string } | null>(null);
   const [loadingChapters, setLoadingChapters] = useState(false);
+
+  // Fullscreen States & Handlers
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []);
+
+  const toggleFullscreen = () => {
+    const element = document.documentElement;
+    if (!document.fullscreenElement) {
+      element.requestFullscreen().catch(err => {
+        console.error("Error enabling fullscreen:", err);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null);
   const [langFilter, setLangFilter] = useState<"pt" | "en" | "all">("all");
@@ -651,15 +678,24 @@ export function MangaDexReader({ mangaTitle }: MangaDexReaderProps) {
         <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col">
           {/* Header controls */}
           <div className="bg-black border-b-4 border-white/20 p-4 text-white flex justify-between items-center select-none">
-            <div className="flex items-center gap-3">
-              <span className="bg-primary text-white font-display text-sm px-2 py-0.5 border-2 border-white transform -rotate-2">
+            <div className="flex items-center gap-2 sm:gap-3">
+              {/* Cover Thumbnail */}
+              {(coverUrl || selectedResult?.coverUrl) && (
+                <img 
+                  src={coverUrl || selectedResult?.coverUrl} 
+                  alt={mangaTitle} 
+                  className="w-8 h-11 sm:w-10 sm:h-14 object-cover border border-white/40 shrink-0 rounded"
+                  referrerPolicy="no-referrer"
+                />
+              )}
+              <span className="bg-primary text-white font-display text-xs sm:text-sm px-2 py-0.5 border-2 border-white transform -rotate-2 hidden xs:inline-block">
                 {selectedChapter.providerId.toUpperCase()}
               </span>
               <div>
-                <h4 className="font-display text-base md:text-xl leading-none line-clamp-1 max-w-[150px] sm:max-w-xs md:max-w-md" title={selectedResult?.title || mangaTitle}>
+                <h4 className="font-display text-base md:text-xl leading-none line-clamp-1 max-w-[120px] sm:max-w-xs md:max-w-md" title={selectedResult?.title || mangaTitle}>
                   {selectedResult?.title || mangaTitle}
                 </h4>
-                <p className="font-sans text-xs font-bold text-gray-400">Capítulo {selectedChapter.chapterNum} · {currentPage + 1} / {pages.length}</p>
+                <p className="font-sans text-2xs sm:text-xs font-bold text-gray-400 mt-1">Capítulo {selectedChapter.chapterNum} · {currentPage + 1} / {pages.length}</p>
               </div>
             </div>
 
@@ -770,6 +806,19 @@ export function MangaDexReader({ mangaTitle }: MangaDexReaderProps) {
               </div>
             )}
           </div>
+
+          {/* Floating Fullscreen Button in the bottom right */}
+          <button
+            onClick={toggleFullscreen}
+            className="fixed bottom-6 right-6 z-[110] bg-black/80 hover:bg-black text-white p-3 border-2 border-white/20 rounded-full transition-all hover:scale-105"
+            title="Alternar Tela Cheia"
+          >
+            {isFullscreen ? (
+              <Minimize className="w-5 h-5" strokeWidth={3} />
+            ) : (
+              <Maximize className="w-5 h-5" strokeWidth={3} />
+            )}
+          </button>
         </div>
       )}
     </div>

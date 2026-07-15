@@ -36,7 +36,7 @@ export function SearchPanel({
   return (
     <div className="comic-panel max-w-4xl mx-auto overflow-hidden">
       {/* Tabs Header */}
-      <div className="flex flex-wrap sm:flex-nowrap border-b-4 border-black bg-muted/30">
+      <div className="flex overflow-x-auto flex-nowrap no-scrollbar border-b-4 border-black bg-muted/30">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = mode === tab.id;
@@ -46,7 +46,7 @@ export function SearchPanel({
               onClick={() => setMode(tab.id)}
               disabled={isPending}
               className={cn(
-                "flex-1 flex items-center justify-center gap-2 py-4 px-2 font-display text-lg transition-colors border-b-4",
+                "flex-1 flex-shrink-0 min-w-[140px] sm:min-w-[160px] flex items-center justify-center gap-2 py-4 px-3 font-display text-base sm:text-lg transition-colors border-b-4",
                 isActive 
                   ? "bg-white text-black border-primary" 
                   : "text-gray-500 border-transparent hover:bg-white/50 hover:text-black",

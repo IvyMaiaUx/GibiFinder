@@ -5,8 +5,9 @@ import { Layout } from "@/components/layout/Layout";
 import { ComicCard } from "@/components/results/ComicCard";
 import { FeedbackActions } from "@/components/results/FeedbackActions";
 import { MangaDexReader } from "@/components/results/MangaDexReader";
-import { Link2, AlertCircle, Loader2 } from "lucide-react";
+import { Link2, AlertCircle, Loader2, Star } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -65,6 +66,54 @@ export default function ResultDetail() {
     });
   };
 
+  const itemMangaId = isOnlineResult ? mangaId : id;
+  const itemProviderId = isOnlineResult ? providerId : "local";
+  const [isFavorited, setIsFavorited] = useState(false);
+
+  useEffect(() => {
+    if (!itemMangaId) return;
+    try {
+      const favorites = JSON.parse(localStorage.getItem("gibi-finder:favorites") || "[]") as any[];
+      const favorited = favorites.some((f: any) => f.mangaId === itemMangaId && f.providerId === itemProviderId);
+      setIsFavorited(favorited);
+    } catch {}
+  }, [itemMangaId, itemProviderId]);
+
+  const toggleFavorite = () => {
+    if (!itemMangaId) return;
+    try {
+      const favorites = JSON.parse(localStorage.getItem("gibi-finder:favorites") || "[]") as any[];
+      const existsIndex = favorites.findIndex((f: any) => f.mangaId === itemMangaId && f.providerId === itemProviderId);
+      
+      let newFavorites = [...favorites];
+      if (existsIndex > -1) {
+        newFavorites.splice(existsIndex, 1);
+        setIsFavorited(false);
+        toast({
+          title: "Removido dos favoritos",
+          description: "O gibi foi removido da sua coleção.",
+        });
+      } else {
+        newFavorites.push({
+          providerId: itemProviderId,
+          mangaId: itemMangaId,
+          title: resultData?.titulo || resultData?.revista || initialTitle || "Sem título",
+          coverUrl: resultData?.coverUrl || resultData?.images?.[0] || initialCoverUrl || undefined,
+          description: resultData?.sinopse || resultData?.descricao || initialDescription || "",
+          timestamp: Date.now()
+        });
+        setIsFavorited(true);
+        toast({
+          title: "Adicionado aos favoritos!",
+          description: "O gibi foi salvo na sua coleção.",
+        });
+      }
+      localStorage.setItem("gibi-finder:favorites", JSON.stringify(newFavorites));
+    } catch (err) {
+      console.error("Error toggling favorite:", err);
+    }
+  };
+
   const isLoading = isOnlineResult ? loadingOnline : loadingDb;
   const hasError = isOnlineResult ? (!mangaId) : (dbError || !dbData);
 
@@ -101,18 +150,35 @@ export default function ResultDetail() {
               <span className="font-display text-2xl text-gray-600">
                 {isOnlineResult ? `PROVEDOR: ${providerId.toUpperCase()}` : `ARQUIVO #${id.slice(0,8).toUpperCase()}`}
               </span>
-              <button 
-                onClick={handleCopyLink}
-                className="flex items-center gap-2 font-sans font-extrabold text-sm uppercase bg-secondary px-4 py-2 border-2 border-black rounded hover:bg-secondary/80 transition-colors"
-              >
-                <Link2 className="w-4 h-4" strokeWidth={3} />
-                COPIAR LINK
-              </button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={toggleFavorite}
+                  className={cn(
+                    "flex items-center gap-2 font-sans font-extrabold text-sm uppercase px-4 py-2 border-2 border-black rounded transition-colors",
+                    isFavorited 
+                      ? "bg-yellow-400 text-black hover:bg-yellow-500" 
+                      : "bg-white text-black hover:bg-gray-100"
+                  )}
+                >
+                  <Star className={cn("w-4 h-4", isFavorited && "fill-black")} strokeWidth={3} />
+                  {isFavorited ? "FAVORITADO" : "FAVORITAR"}
+                </button>
+                <button 
+                  onClick={handleCopyLink}
+                  className="flex items-center gap-2 font-sans font-extrabold text-sm uppercase bg-secondary px-4 py-2 border-2 border-black rounded hover:bg-secondary/80 transition-colors"
+                >
+                  <Link2 className="w-4 h-4" strokeWidth={3} />
+                  COPIAR LINK
+                </button>
+              </div>
             </div>
 
             <ComicCard result={resultData as any} isMain />
             
-            <MangaDexReader mangaTitle={(resultData as any).revista || (resultData as any).titulo || ""} />
+            <MangaDexReader 
+              mangaTitle={(resultData as any).revista || (resultData as any).titulo || ""} 
+              coverUrl={(resultData as any).coverUrl || (resultData as any).images?.[0]} 
+            />
             
             {!isOnlineResult && (
               <>

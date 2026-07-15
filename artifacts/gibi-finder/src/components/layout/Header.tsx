@@ -28,7 +28,7 @@ export function Header() {
         </Link>
 
         {/* Desktop Navigation */}
-        <nav className="hidden md:flex items-center gap-4">
+        <nav className="hidden lg:flex items-center gap-4">
           {navItems.map((item) => {
             const isActive = location === item.path;
             const Icon = item.icon;
@@ -51,7 +51,7 @@ export function Header() {
         </nav>
 
         {/* Mobile Navigation — icon only, compact */}
-        <nav className="md:hidden flex items-center gap-0.5 sm:gap-1">
+        <nav className="lg:hidden flex items-center gap-0.5 sm:gap-1">
           {navItems.map((item) => {
             const Icon = item.icon;
             return (
