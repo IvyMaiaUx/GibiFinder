@@ -27,7 +27,7 @@ export function Hero() {
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
         >
-          <p className="font-sans font-bold text-lg md:text-xl text-gray-800 leading-snug">Descubra qualquer HQ a partir de fotos, títulos ou falas!</p>
+          <p className="font-sans font-bold text-lg md:text-xl text-gray-800 leading-snug">Descubra qualquer gibi, mangá ou HQ a partir de fotos, títulos ou falas!</p>
         </motion.div>
 
       </div>

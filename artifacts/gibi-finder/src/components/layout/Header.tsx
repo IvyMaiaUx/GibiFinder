@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Search, Clock, Trophy, BookMarked } from "lucide-react";
+import { Search, Clock, Trophy, BookMarked, Compass } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function Header() {
@@ -7,6 +7,7 @@ export function Header() {
 
   const navItems = [
     { path: "/", label: "BUSCAR GIBI", icon: Search },
+    { path: "/explorar", label: "EXPLORAR", icon: Compass },
     { path: "/colecao", label: "MINHA COLEÇÃO", icon: BookMarked },
     { path: "/historico", label: "HISTÓRICO", icon: Clock },
     { path: "/ranking", label: "RANKING", icon: Trophy },

@@ -9,6 +9,7 @@ import Ranking from "@/pages/Ranking";
 import ResultDetail from "@/pages/ResultDetail";
 import Colecao from "@/pages/Colecao";
 import Admin from "@/pages/Admin";
+import Explore from "@/pages/Explore";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -29,6 +30,7 @@ function Router() {
       <Route path="/gibi/:id" component={ResultDetail} />
       <Route path="/colecao" component={Colecao} />
       <Route path="/admin" component={Admin} />
+      <Route path="/explorar" component={Explore} />
       <Route component={NotFound} />
     </Switch>
   );

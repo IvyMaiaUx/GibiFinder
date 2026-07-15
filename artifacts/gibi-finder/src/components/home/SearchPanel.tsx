@@ -1,16 +1,17 @@
 import { useState } from "react";
-import { Camera, Type, Users, MessageSquare } from "lucide-react";
+import { Camera, Type, Users, MessageSquare, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ImageDropzone } from "./ImageDropzone";
 import { TextInputSearch } from "./TextInputSearch";
 
-type SearchMode = 'image' | 'text' | 'character' | 'quote';
+type SearchMode = 'online' | 'image' | 'text' | 'character' | 'quote';
 
 interface SearchPanelProps {
   onSearchImage: (files: File[]) => void;
   onSearchText: (query: string) => void;
   onSearchCharacter: (character: string) => void;
   onSearchQuote: (quote: string) => void;
+  onSearchOnline: (query: string) => void;
   isPending: boolean;
 }
 
@@ -19,15 +20,17 @@ export function SearchPanel({
   onSearchText, 
   onSearchCharacter, 
   onSearchQuote, 
+  onSearchOnline,
   isPending 
 }: SearchPanelProps) {
-  const [mode, setMode] = useState<SearchMode>('image');
+  const [mode, setMode] = useState<SearchMode>('online');
 
   const tabs = [
-    { id: 'image', label: 'Por Imagem', icon: Camera },
-    { id: 'text', label: 'Por Descrição', icon: Type },
-    { id: 'character', label: 'Por Personagem', icon: Users },
-    { id: 'quote', label: 'Por Fala', icon: MessageSquare },
+    { id: 'online', label: 'Busca Direta', icon: Globe },
+    { id: 'image', label: 'Por Imagem (IA)', icon: Camera },
+    { id: 'text', label: 'Por Descrição (IA)', icon: Type },
+    { id: 'character', label: 'Por Personagem (IA)', icon: Users },
+    { id: 'quote', label: 'Por Fala (IA)', icon: MessageSquare },
   ] as const;
 
   return (
@@ -43,7 +46,7 @@ export function SearchPanel({
               onClick={() => setMode(tab.id)}
               disabled={isPending}
               className={cn(
-                "flex-1 flex items-center justify-center gap-2 py-4 px-2 font-display text-xl transition-colors border-b-4",
+                "flex-1 flex items-center justify-center gap-2 py-4 px-2 font-display text-lg transition-colors border-b-4",
                 isActive 
                   ? "bg-white text-black border-primary" 
                   : "text-gray-500 border-transparent hover:bg-white/50 hover:text-black",
@@ -59,6 +62,15 @@ export function SearchPanel({
 
       {/* Tab Content */}
       <div className="p-6 md:p-8 bg-white">
+        {mode === 'online' && (
+          <TextInputSearch 
+            onSearch={onSearchOnline} 
+            isPending={isPending}
+            placeholder="Digite o título do mangá, gibi ou HQ (ex: One Piece, Naruto, Spider-Man, Watchmen)..."
+            buttonText="BUSCAR"
+          />
+        )}
+
         {mode === 'image' && (
           <ImageDropzone onImagesReady={onSearchImage} isPending={isPending} />
         )}
@@ -67,7 +79,7 @@ export function SearchPanel({
           <TextInputSearch 
             onSearch={onSearchText} 
             isPending={isPending}
-            placeholder="Ex: gibi da Mônica com capa azul, editora Globo, anos 80, história na praia..."
+            placeholder="Ex: gibi da Mônica, mangá do Naruto com capa laranja, HQ do Batman nos anos 90..."
             buttonText="BUSCAR POR DESCRIÇÃO"
             hint="💡 Quanto mais detalhes você der, melhor o resultado! Editora, ano, cor da capa, tema da história — tudo ajuda."
           />
@@ -77,7 +89,7 @@ export function SearchPanel({
           <TextInputSearch 
             onSearch={onSearchCharacter} 
             isPending={isPending}
-            placeholder="Ex: Cebolinha, Astronauta, Menino Maluquinho..."
+            placeholder="Ex: Cebolinha, Luffy, Goku, Batman, Menino Maluquinho..."
             buttonText="BUSCAR POR PERSONAGEM"
           />
         )}
@@ -86,7 +98,7 @@ export function SearchPanel({
           <TextInputSearch 
             onSearch={onSearchQuote} 
             isPending={isPending}
-            placeholder="Ex: 'Mas o que é isso, Cascão?!'"
+            placeholder="Ex: 'Eu vou ser o Rei dos Piratas!', 'Com grandes poderes...', 'Mas o que é isso, Cascão?!'"
             buttonText="BUSCAR POR FALA"
           />
         )}

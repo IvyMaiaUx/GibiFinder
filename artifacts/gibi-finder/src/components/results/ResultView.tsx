@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { BookOpen } from "lucide-react";
-import type { SearchResponse } from "@workspace/api-client-react/src/generated/api.schemas";
+import type { SearchResponse } from "@workspace/api-client-react";
 import { ComicCard } from "./ComicCard";
 import { FeedbackActions } from "./FeedbackActions";
 
@@ -54,7 +54,7 @@ export function ResultView({ results, source }: ResultViewProps) {
           </h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {relatedResults.map((result) => (
+            {relatedResults.map((result: any) => (
               <motion.div 
                 key={result.id}
                 whileHover={{ y: -4 }}

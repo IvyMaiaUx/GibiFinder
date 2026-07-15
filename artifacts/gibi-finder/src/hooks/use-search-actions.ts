@@ -3,9 +3,9 @@ import {
   useIdentifyComic, 
   useSearchComic, 
   useCharacterSearch, 
-  useQuoteSearch 
+  useQuoteSearch,
+  type SearchResponse
 } from "@workspace/api-client-react";
-import type { SearchResponse } from "@workspace/api-client-react/src/generated/api.schemas";
 import { fileToBase64 } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { addToLocalHistory } from "@/hooks/use-local-history";

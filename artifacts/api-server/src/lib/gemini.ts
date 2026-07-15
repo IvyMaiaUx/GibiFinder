@@ -98,14 +98,13 @@ async function withKeyRotation<T>(fn: () => Promise<T>): Promise<T> {
   throw lastErr;
 }
 
-const COMIC_EXPERT_CONTEXT = `Você é um especialista em histórias em quadrinhos brasileiras, com profundo conhecimento sobre:
-- Turma da Mônica, Cebolinha, Cascão, Magali, Bidu e toda a turma do Mauricio de Sousa
-- Gibis da Editora Abril (Monica, Cebolinha, Pato Donald, Homem-Aranha, etc.)
-- Gibis da Panini Comics Brasil
-- Gibis da Editora Globo
-- HQs nacionais e internacionais publicadas no Brasil
-- Turma da Mônica Jovem
-- Clássicos do quadrinho brasileiro`;
+const COMIC_EXPERT_CONTEXT = `Você é um especialista em histórias em quadrinhos (gibis, HQs e mangás) publicadas no Brasil, com profundo conhecimento sobre:
+- Turma da Mônica, Cebolinha, Cascão, Magali, Bidu e toda a turma do Mauricio de Sousa (incluindo Turma da Mônica Jovem)
+- Mangás japoneses publicados no Brasil (como Naruto, One Piece, Dragon Ball, Death Note, Bleach, Sailor Moon, My Hero Academia, Jujutsu Kaisen, etc.)
+- HQs de super-heróis americanas (Marvel, DC Comics) publicadas no Brasil pela Panini, Abril, EBAL, etc.
+- Quadrinhos franco-belgas e europeus publicados no Brasil (Asterix, Tintim, etc.)
+- Gibis históricos da Editora Abril, Globo, Bloch, etc.
+- HQs nacionais independentes e clássicos do quadrinho brasileiro (Menino Maluquinho, Senninha, Chiclete com Banana, etc.)`;
 
 const IDENTIFY_PROMPT = `${COMIC_EXPERT_CONTEXT}
 
@@ -142,16 +141,16 @@ O campo "confianca" deve ser um número de 0 a 100 indicando sua certeza.`;
 
 const IDENTIFY_COVER_PROMPT = `${COMIC_EXPERT_CONTEXT}
 
-Você está analisando a CAPA de um gibi/HQ para catalogação. Seu objetivo é identificar a EDIÇÃO (não a história interna).
+Você está analisando a CAPA de um gibi, mangá ou HQ para catalogação. Seu objetivo é identificar a EDIÇÃO (não a história interna).
 
 Retorne APENAS um objeto JSON válido, sem markdown, sem explicações:
 
 {
   "encontrado": true,
-  "revista": "Nome da série/revista (ex: Mônica, Cebolinha, Turma da Mônica)",
-  "titulo": "Número ou nome da edição SE visível na capa (ex: 'Nº 45', 'Edição Especial', 'Coleção X'). Se não houver número específico, use o nome da série.",
-  "editora": "Nome da editora (ex: Editora Abril, Editora Globo, Panini Comics)",
-  "ano": "Ano de publicação SE visível (ex: 1985). Deixe vazio se não souber.",
+  "revista": "Nome da série/revista (ex: Mônica, Naruto, One Piece, Batman)",
+  "titulo": "Número ou nome da edição SE visível na capa (ex: 'Nº 45', 'Vol. 12', 'Edição Especial'). Se não houver número específico, use o nome da série.",
+  "editora": "Nome da editora (ex: Editora Globo, Panini Comics, JBC, Conrad)",
+  "ano": "Ano de publicação SE visível (ex: 1985, 2012). Deixe vazio se não souber.",
   "personagens": ["Personagens visíveis na capa"],
   "descricao": "",
   "confianca": 80,

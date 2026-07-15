@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, MessageSquare, Bug, Lightbulb, Archive, FolderOpen, CheckCircle2, AlertCircle, Trophy, AlertTriangle } from "lucide-react";
+import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, MessageSquare, Bug, Lightbulb, Archive, CheckCircle2, AlertCircle, Trophy, AlertTriangle, Database } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { useToast } from "@/hooks/use-toast";
 
@@ -104,7 +104,6 @@ function EditModal({ gibi, adminKey, onClose, onSaved }: { gibi?: Gibi; adminKey
             <div className="sm:col-span-2"><label className={lbl}>Personagens (vírgula)</label><input value={form.personagens} onChange={set("personagens")} className={inp} /></div>
             <div className="sm:col-span-2"><label className={lbl}>Descrição</label><textarea value={form.descricao} onChange={set("descricao")} rows={3} className={inp} /></div>
             <div className="sm:col-span-2"><label className={lbl}>URL da Capa</label><input value={form.imagem_url} onChange={set("imagem_url")} className={inp} type="url" /></div>
-            <div className="sm:col-span-2"><label className={lbl}>Link do Drive (PDF)</label><input value={form.drive_url} onChange={set("drive_url")} className={inp} type="url" placeholder="https://drive.google.com/file/d/..." /></div>
             <div className="sm:col-span-2"><label className={lbl}>Notas</label><textarea value={form.notas} onChange={set("notas")} rows={2} className={inp} /></div>
           </div>
           <div className="flex gap-4 pt-4 border-t-4 border-black">
@@ -171,12 +170,51 @@ export default function Admin() {
   const [keyInput, setKeyInput] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [tab, setTab] = useState<"pending" | "approved" | "suggestions" | "drive" | "ranking">("pending");
+  const [tab, setTab] = useState<"pending" | "approved" | "suggestions" | "ranking" | "providers">("pending");
   const [confirmClearRanking, setConfirmClearRanking] = useState(false);
-  const [driveUrl, setDriveUrl] = useState("");
-  const [driveStatus, setDriveStatus] = useState<"pending" | "approved">("pending");
-  const [driveImporting, setDriveImporting] = useState(false);
-  const [driveResult, setDriveResult] = useState<{ imported: number; skipped: number; results: { file: string; titulo: string; status: string; error?: string }[]; message?: string } | null>(null);
+  const [providers, setProviders] = useState<any[]>([]);
+  const [loadingProviders, setLoadingProviders] = useState(false);
+
+  const fetchProviders = async () => {
+    setLoadingProviders(true);
+    try {
+      const res = await fetch(`${BASE}/api/providers`);
+      if (res.ok) {
+        const data = await res.json();
+        setProviders(data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingProviders(false);
+    }
+  };
+
+  const toggleProvider = async (providerId: string, currentStatus: boolean) => {
+    const nextStatus = !currentStatus;
+    setProviders(prev => prev.map(p => p.id === providerId ? { ...p, active: nextStatus } : p));
+    try {
+      const res = await fetch(`${BASE}/api/providers/toggle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerId, active: nextStatus })
+      });
+      if (res.ok) {
+        toast({ title: nextStatus ? "Provedor ativado!" : "Provedor desativado!" });
+      } else {
+        throw new Error();
+      }
+    } catch {
+      setProviders(prev => prev.map(p => p.id === providerId ? { ...p, active: currentStatus } : p));
+      toast({ title: "Erro ao atualizar provedor", variant: "destructive" });
+    }
+  };
+
+  useEffect(() => {
+    if (tab === "providers" && unlocked) {
+      fetchProviders();
+    }
+  }, [tab, unlocked]);
   const [editModal, setEditModal] = useState<{ open: boolean; gibi?: Gibi }>({ open: false });
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
@@ -297,25 +335,6 @@ export default function Admin() {
     onError: () => toast({ title: "Erro ao remover", variant: "destructive" }),
   });
 
-  const handleDriveImport = async () => {
-    if (!driveUrl.trim()) return;
-    setDriveImporting(true);
-    setDriveResult(null);
-    try {
-      const res = await adminRequest("/api/admin/import-drive", adminKey, "POST", {
-        folderUrl: driveUrl.trim(),
-        importStatus: driveStatus,
-      });
-      setDriveResult(res);
-      queryClient.invalidateQueries({ queryKey: ["admin-pending"] });
-      queryClient.invalidateQueries({ queryKey: ["colecao-all"] });
-      queryClient.invalidateQueries({ queryKey: ["colecao"] });
-    } catch (err) {
-      toast({ title: "Erro na importação", description: err instanceof Error ? err.message : "Tente novamente", variant: "destructive" });
-    } finally {
-      setDriveImporting(false);
-    }
-  };
 
   const pendingItems = pendingData?.items || [];
   const approvedItems = approvedData?.items || [];
@@ -392,15 +411,15 @@ export default function Admin() {
             <MessageSquare className="w-5 h-5" strokeWidth={3} />
             FEEDBACK {newSuggestions.length > 0 && <span className="bg-primary text-white text-sm font-bold px-2 py-0.5 rounded-full">{newSuggestions.length}</span>}
           </button>
-          <button onClick={() => setTab("drive")}
-            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "drive" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
-            <FolderOpen className="w-5 h-5" strokeWidth={3} />
-            DRIVE
-          </button>
           <button onClick={() => setTab("ranking")}
             className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "ranking" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
             <Trophy className="w-5 h-5" strokeWidth={3} />
             RANKING
+          </button>
+          <button onClick={() => setTab("providers")}
+            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "providers" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
+            <Database className="w-5 h-5" strokeWidth={3} />
+            PROVEDORES
           </button>
         </div>
 
@@ -447,104 +466,7 @@ export default function Admin() {
             </div>
           )
         )}
-        {/* Drive import tab */}
-        {tab === "drive" && (
-          <div className="space-y-6">
-            <div className="bg-white border-4 border-black p-6 space-y-4">
-              <div className="flex items-center gap-3 mb-2">
-                <FolderOpen className="w-8 h-8" strokeWidth={3} />
-                <div>
-                  <h2 className="font-display text-2xl leading-none">IMPORTAR DO GOOGLE DRIVE</h2>
-                  <p className="font-sans font-bold text-gray-500 text-sm mt-1">Cole o link de uma pasta pública com PDFs de gibis. O Gemini identificará cada um automaticamente.</p>
-                </div>
-              </div>
 
-              <div className="bg-secondary/30 border-l-4 border-black p-3 text-sm font-sans font-bold text-gray-700 space-y-1">
-                <p>📋 <strong>Pré-requisitos:</strong></p>
-                <p>1. A pasta deve ser pública ("qualquer pessoa com o link pode ver")</p>
-                <p>2. <code className="bg-black text-white px-1">GOOGLE_DRIVE_API_KEY</code> deve estar configurada nas variáveis de ambiente</p>
-                <p>3. Máximo de 5 PDFs por rodada (rode múltiplas vezes para importar mais)</p>
-              </div>
-
-              <div>
-                <label className="block font-display text-lg mb-1 uppercase">Link da Pasta do Drive</label>
-                <input
-                  value={driveUrl}
-                  onChange={e => setDriveUrl(e.target.value)}
-                  placeholder="https://drive.google.com/drive/folders/..."
-                  className="w-full border-4 border-black px-3 py-2 font-sans font-bold focus:outline-none focus:ring-4 focus:ring-secondary"
-                />
-              </div>
-
-              <div>
-                <label className="block font-display text-lg mb-2 uppercase">Status dos Gibis Importados</label>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setDriveStatus("pending")}
-                    className={`flex-1 py-2 border-4 border-black font-display text-base transition-colors ${driveStatus === "pending" ? "bg-secondary" : "bg-white hover:bg-muted"}`}
-                  >
-                    PENDENTE (revisar depois)
-                  </button>
-                  <button
-                    onClick={() => setDriveStatus("approved")}
-                    className={`flex-1 py-2 border-4 border-black font-display text-base transition-colors ${driveStatus === "approved" ? "bg-green-100" : "bg-white hover:bg-muted"}`}
-                  >
-                    APROVADO (publicar direto)
-                  </button>
-                </div>
-              </div>
-
-              <button
-                onClick={handleDriveImport}
-                disabled={driveImporting || !driveUrl.trim()}
-                className="w-full bg-primary text-white border-4 border-black py-3 font-display text-xl comic-shadow flex items-center justify-center gap-2 disabled:opacity-50 hover:brightness-110 transition-all"
-              >
-                {driveImporting ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    ANALISANDO COM GEMINI... (pode demorar)
-                  </>
-                ) : (
-                  <>
-                    <FolderOpen className="w-5 h-5" strokeWidth={3} />
-                    INICIAR IMPORTAÇÃO
-                  </>
-                )}
-              </button>
-            </div>
-
-            {driveResult && (
-              <div className="bg-white border-4 border-black p-6">
-                <h3 className="font-display text-2xl mb-4">
-                  RESULTADO: {driveResult.imported} importado{driveResult.imported !== 1 ? "s" : ""}, {driveResult.skipped} ignorado{driveResult.skipped !== 1 ? "s" : ""}
-                </h3>
-                {driveResult.message && (
-                  <p className="font-sans font-bold text-amber-700 bg-amber-50 border-2 border-black p-2 mb-4 text-sm">{driveResult.message}</p>
-                )}
-                <div className="space-y-2 max-h-80 overflow-y-auto">
-                  {driveResult.results.map((r, i) => (
-                    <div key={i} className={`flex items-start gap-3 p-3 border-2 border-black text-sm ${r.status === "ok" ? "bg-green-50" : r.status === "skipped" ? "bg-amber-50" : "bg-red-50"}`}>
-                      {r.status === "ok" ? (
-                        <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" strokeWidth={3} />
-                      ) : r.status === "skipped" ? (
-                        <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" strokeWidth={3} />
-                      ) : (
-                        <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" strokeWidth={3} />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="font-display text-base leading-tight">{r.titulo || r.file}</p>
-                        {r.error && <p className={`font-sans text-xs mt-0.5 ${r.status === "skipped" ? "text-amber-700" : "text-red-600"}`}>{r.error}</p>}
-                        <p className="font-sans text-gray-400 text-xs truncate">{r.file}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Suggestions tab */}
         {tab === "suggestions" && (
           loadingSuggestions ? (
             <div className="flex items-center justify-center py-24"><Loader2 className="w-12 h-12 animate-spin text-primary" /></div>
@@ -672,6 +594,42 @@ export default function Admin() {
               </div>
             )}
           </div>
+        )}
+
+        {/* Providers tab */}
+        {tab === "providers" && (
+          loadingProviders ? (
+            <div className="flex items-center justify-center py-24"><Loader2 className="w-12 h-12 animate-spin text-primary" /></div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {providers.map(p => (
+                <div key={p.id} className={`bg-white border-4 border-black p-4 relative flex flex-col justify-between ${p.active ? "comic-shadow-sm" : "opacity-75"}`}>
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                    <span className={`w-3.5 h-3.5 rounded-full border-2 border-black inline-block ${p.active ? "bg-green-500 animate-pulse" : "bg-gray-400"}`} />
+                    <span className="font-display text-xs text-gray-500 uppercase">{p.active ? "ON" : "OFF"}</span>
+                  </div>
+                  <div>
+                    <h3 className="font-display text-2xl text-black">{p.name}</h3>
+                    <p className="text-2xs text-gray-500 font-bold uppercase mb-2">Idioma: {p.language.toUpperCase()}</p>
+                    <p className="text-xs text-gray-600 font-semibold font-sans leading-tight">
+                      {p.id === "mangadex" && "Agregador global multilingue de mangás com API integrada em tempo real."}
+                      {p.id === "comicextra" && "Fonte de HQs americanas digitalizadas em inglês de forma direta."}
+                      {["bato", "mangafire", "hqnow"].includes(p.id) && `Provedor de contingência para o catálogo do ${p.name} (Plugin inativo).`}
+                    </p>
+                  </div>
+                  <div className="mt-4 pt-3 border-t-2 border-dashed border-black/10 flex justify-between items-center">
+                    <span className="font-sans font-bold text-2xs text-gray-400 uppercase">ID: {p.id}</span>
+                    <button
+                      onClick={() => toggleProvider(p.id, p.active)}
+                      className={`font-display text-sm px-4 py-1 border-2 border-black rounded ${p.active ? "bg-primary text-white hover:bg-red-600" : "bg-secondary text-black hover:bg-yellow-400"}`}
+                    >
+                      {p.active ? "DESATIVAR" : "ATIVAR"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
         )}
       </div>
 

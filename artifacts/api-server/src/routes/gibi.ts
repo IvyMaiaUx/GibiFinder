@@ -378,7 +378,7 @@ router.post("/admin/import-drive", async (req: Request, res: Response) => {
       let lastErr = "";
 
       try {
-        identified = await (identifyFromCover as (img: string) => Promise<ComicResultData>)(thumb.dataUrl);
+        identified = await (identifyFromCover as (img: string) => Promise<ComicResultData>)(thumb.dataUrl as string);
       } catch (err) {
         lastErr = err instanceof Error ? err.message : "Erro Gemini";
         if (lastErr.includes("429") || lastErr.toLowerCase().includes("quota")) {

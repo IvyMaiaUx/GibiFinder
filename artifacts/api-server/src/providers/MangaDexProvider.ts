@@ -1,0 +1,153 @@
+import { Provider, SearchResult, MangaDetails, Chapter, Page } from "./types";
+
+export class MangaDexProvider implements Provider {
+  id = "mangadex";
+  name = "MangaDex";
+  language = "multi";
+
+  async search(query: string): Promise<SearchResult[]> {
+    try {
+      const url = `https://api.mangadex.org/manga?title=${encodeURIComponent(query)}&limit=15&includes[]=cover_art`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`MangaDex search error: ${res.status}`);
+      const data = await res.json() as any;
+
+      return data.data.map((item: any) => {
+        const id = item.id;
+        const titleMap = item.attributes.title;
+        const title = titleMap.en || titleMap.ja || Object.values(titleMap)[0] || "Sem título";
+        const descMap = item.attributes.description;
+        const description = descMap.en || descMap["pt-br"] || Object.values(descMap)[0] || "";
+        
+        const coverRel = item.relationships.find((r: any) => r.type === "cover_art");
+        const coverFileName = coverRel?.attributes?.fileName;
+        const coverUrl = coverFileName 
+          ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.256.jpg` 
+          : undefined;
+
+        return { id, title, description, coverUrl, providerId: this.id };
+      });
+    } catch (err) {
+      console.error("MangaDex search failed:", err);
+      return [];
+    }
+  }
+
+  async getDetails(id: string): Promise<MangaDetails> {
+    const url = `https://api.mangadex.org/manga/${id}?includes[]=cover_art`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`MangaDex details error: ${res.status}`);
+    const data = await res.json() as any;
+    const item = data.data;
+
+    const titleMap = item.attributes.title;
+    const title = titleMap.en || titleMap.ja || Object.values(titleMap)[0] || "Sem título";
+    const descMap = item.attributes.description;
+    const description = descMap.en || descMap["pt-br"] || Object.values(descMap)[0] || "";
+    
+    const coverRel = item.relationships.find((r: any) => r.type === "cover_art");
+    const coverFileName = coverRel?.attributes?.fileName;
+    const coverUrl = coverFileName 
+      ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.512.jpg` 
+      : undefined;
+
+    const status = item.attributes.status;
+
+    return { id, title, description, coverUrl, status, providerId: this.id };
+  }
+
+  async getChapters(id: string): Promise<Chapter[]> {
+    try {
+      let allData: any[] = [];
+      let offset = 0;
+      let limit = 500;
+      let hasMore = true;
+
+      while (hasMore) {
+        // Fetch chapters in Portuguese and English
+        const url = `https://api.mangadex.org/manga/${id}/feed?translatedLanguage[]=pt-br&translatedLanguage[]=pt&translatedLanguage[]=en&order[chapter]=asc&limit=${limit}&offset=${offset}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`MangaDex chapters error: ${res.status}`);
+        const data = await res.json() as any;
+        
+        allData = allData.concat(data.data || []);
+        offset += limit;
+        hasMore = (data.data || []).length === limit && allData.length < (data.total || 0);
+
+        if (offset > 2500) break; // safety breaker
+      }
+
+      const results: Chapter[] = allData.map((item: any) => {
+        const chapterId = item.id;
+        const chapterNum = item.attributes.chapter || "Especial";
+        const title = item.attributes.title || `Capítulo ${chapterNum}`;
+        const language = item.attributes.translatedLanguage;
+        
+        return { id: chapterId, chapterNum, title, language, providerId: this.id };
+      });
+
+      // De-duplicate same chapter number per language
+      const uniqueChapters: Chapter[] = [];
+      const seen = new Set<string>();
+      for (const ch of results) {
+        const key = `${ch.language}-${ch.chapterNum}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          uniqueChapters.push(ch);
+        }
+      }
+
+      return uniqueChapters;
+    } catch (err) {
+      console.error("MangaDex chapters load failed:", err);
+      return [];
+    }
+  }
+
+  async getPages(chapterId: string): Promise<Page[]> {
+    const url = `https://api.mangadex.org/at-home/server/${chapterId}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`MangaDex pages error: ${res.status}`);
+    const data = await res.json() as any;
+
+    const baseUrl = data.baseUrl;
+    const hash = data.chapter.hash;
+    const fileNames = data.chapter.data;
+
+    return fileNames.map((fn: string, index: number) => ({
+      url: `${baseUrl}/data/${hash}/${fn}`,
+      pageNumber: index + 1
+    }));
+  }
+
+  async getCatalog(listType: "popular" | "latest"): Promise<SearchResult[]> {
+    try {
+      const orderQuery = listType === "popular" 
+        ? "order[followedCount]=desc" 
+        : "order[latestUploadedChapter]=desc";
+      const url = `https://api.mangadex.org/manga?limit=100&includes[]=cover_art&${orderQuery}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`MangaDex catalog error: ${res.status}`);
+      const data = await res.json() as any;
+
+      return (data.data || []).map((item: any) => {
+        const id = item.id;
+        const titleMap = item.attributes.title;
+        const title = titleMap.en || titleMap.ja || Object.values(titleMap)[0] || "Sem título";
+        const descMap = item.attributes.description;
+        const description = descMap.en || descMap["pt-br"] || Object.values(descMap)[0] || "";
+        
+        const coverRel = item.relationships.find((r: any) => r.type === "cover_art");
+        const coverFileName = coverRel?.attributes?.fileName;
+        const coverUrl = coverFileName 
+          ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.256.jpg` 
+          : undefined;
+
+        return { id, title, description, coverUrl, providerId: this.id };
+      });
+    } catch (err) {
+      console.error("MangaDex catalog failed:", err);
+      return [];
+    }
+  }
+}

@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { Link } from "wouter";
 import { ExternalLink, Star } from "lucide-react";
-import type { ComicResult } from "@workspace/api-client-react/src/generated/api.schemas";
+import type { ComicResult } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 
 interface ComicCardProps {
@@ -9,6 +10,7 @@ interface ComicCardProps {
 }
 
 export function ComicCard({ result, isMain = false }: ComicCardProps) {
+  const [imgError, setImgError] = useState(false);
   const hasImage = result.images && result.images.length > 0;
   const imageUrl = result.images?.[0];
   const confianca = result.confianca ? Math.round(result.confianca) : 0;
@@ -24,11 +26,18 @@ export function ComicCard({ result, isMain = false }: ComicCardProps) {
           "bg-muted relative border-b-4 sm:border-b-0 sm:border-r-4 border-black shrink-0",
           isMain ? "w-full sm:w-64 md:w-80 h-80 sm:h-auto" : "w-full sm:w-40 h-48 sm:h-auto"
         )}>
-          <img 
-            src={imageUrl} 
-            alt={result.titulo || "Capa do Gibi"} 
-            className="w-full h-full object-cover"
-          />
+          {!imgError ? (
+            <img 
+              src={imageUrl} 
+              alt={result.titulo || "Capa do Gibi"} 
+              className="w-full h-full object-cover"
+              onError={() => setImgError(true)}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center font-display text-5xl text-white/20 select-none bg-gradient-to-br from-zinc-900 to-zinc-950">
+              {(result.titulo || result.revista || "?").charAt(0).toUpperCase()}
+            </div>
+          )}
           
           {isMain && (
             <div className="absolute top-4 left-[-10px] bg-primary text-white font-display text-xl px-4 py-1 border-4 border-black transform -rotate-6 shadow-[4px_4px_0_rgba(0,0,0,1)]">
@@ -61,7 +70,7 @@ export function ComicCard({ result, isMain = false }: ComicCardProps) {
             </div>
             
             {/* Confidence Badge */}
-            {isMain && (
+            {isMain && result.confianca !== undefined && result.confianca > 0 && (
               <div className="hidden sm:flex flex-col items-center bg-secondary p-3 border-4 border-black rounded-xl shrink-0 comic-shadow-sm transform rotate-3">
                 <Star className="w-8 h-8 text-black fill-black mb-1" />
                 <span className="font-display text-2xl leading-none">{confianca}%</span>
@@ -93,7 +102,7 @@ export function ComicCard({ result, isMain = false }: ComicCardProps) {
               <div className={cn(isMain && "md:col-span-2")}>
                 <span className="text-gray-500 font-bold text-sm uppercase">Personagens</span>
                 <div className="flex flex-wrap gap-2 mt-1">
-                  {result.personagens.map((p, i) => (
+                  {result.personagens.map((p: string, i: number) => (
                     <span key={i} className="bg-muted px-2 py-1 text-sm font-bold border-2 border-black rounded-md">
                       {p}
                     </span>

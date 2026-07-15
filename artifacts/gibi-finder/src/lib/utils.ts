@@ -5,6 +5,26 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+
+/**
+ * Returns the cover URL routed through our image proxy to bypass
+ * hotlinking/CORS restrictions from external CDNs (MangaDex, ComicExtra, etc.)
+ */
+export function proxyCoverUrl(url: string | undefined | null): string | undefined {
+  if (!url) return undefined;
+  try {
+    // Only proxy external URLs (http/https)
+    const parsed = new URL(url);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return `${BASE}/api/image-proxy?url=${encodeURIComponent(url)}`;
+    }
+  } catch {
+    // Not a valid URL — return as-is
+  }
+  return url;
+}
+
 export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const MAX_PX = 1280;
