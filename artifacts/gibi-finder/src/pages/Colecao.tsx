@@ -150,6 +150,7 @@ export default function Colecao() {
                       alt={item.title} 
                       className="w-full h-full object-cover transition-transform group-hover:scale-105"
                       loading="lazy"
+                      referrerPolicy="no-referrer"
                       onError={() => setBrokenImages(prev => ({ ...prev, [`${item.providerId}-${item.gibiId}`]: true }))}
                     />
                   ) : (

@@ -143,6 +143,7 @@ export default function Home() {
                           alt={item.title} 
                           className="w-full h-full object-cover transition-transform group-hover:scale-105"
                           loading="lazy"
+                          referrerPolicy="no-referrer"
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center font-display text-4xl text-white/20 select-none">

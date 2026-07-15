@@ -395,7 +395,7 @@ export function MangaDexReader({ mangaTitle }: MangaDexReaderProps) {
                     className="flex items-center gap-3 p-3 border-2 border-black hover:bg-muted/30 text-left font-sans font-bold transition-colors bg-white"
                   >
                     {r.coverUrl ? (
-                      <img src={proxyCoverUrl(r.coverUrl)} alt={r.title} className="w-10 h-14 object-cover border border-black shrink-0" />
+                      <img src={proxyCoverUrl(r.coverUrl)} alt={r.title} className="w-10 h-14 object-cover border border-black shrink-0" referrerPolicy="no-referrer" />
                     ) : (
                       <div className="w-10 h-14 bg-muted border border-black shrink-0 flex items-center justify-center">?</div>
                     )}
@@ -418,6 +418,7 @@ export function MangaDexReader({ mangaTitle }: MangaDexReaderProps) {
                     src={proxyCoverUrl(selectedResult.coverUrl)} 
                     alt={selectedResult.title} 
                     className="w-24 h-36 object-cover border-4 border-black shrink-0 mx-auto sm:mx-0"
+                    referrerPolicy="no-referrer"
                   />
                 )}
                 <div className="flex-1 min-w-0">

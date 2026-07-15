@@ -122,6 +122,7 @@ export default function Ranking() {
                         src={item.coverUrl} 
                         alt={item.title} 
                         className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
                         onError={() => setBrokenImages(prev => ({ ...prev, [imgKey]: true }))}
                       />
                     ) : (
