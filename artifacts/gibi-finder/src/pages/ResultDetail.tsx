@@ -5,7 +5,7 @@ import { Layout } from "@/components/layout/Layout";
 import { ComicCard } from "@/components/results/ComicCard";
 import { FeedbackActions } from "@/components/results/FeedbackActions";
 import { MangaDexReader } from "@/components/results/MangaDexReader";
-import { Link2, AlertCircle, Loader2, Star } from "lucide-react";
+import { Link2, AlertCircle, Loader2, Star, BookOpen, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -252,6 +252,28 @@ export default function ResultDetail() {
                 </div>
               </div>
             )}
+
+            {/* Support the Author Affiliate Card */}
+            <div className="bg-amber-50 border-4 border-black p-5 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4 comic-shadow relative overflow-hidden select-none animate-in fade-in slide-in-from-bottom duration-200">
+              <div className="absolute top-0 right-0 w-24 h-24 opacity-5 bg-[radial-gradient(black_1px,transparent_1px)] [background-size:6px_6px] pointer-events-none" />
+              <div className="flex items-center gap-3">
+                <BookOpen className="w-10 h-10 text-primary shrink-0" strokeWidth={3} />
+                <div>
+                  <h4 className="font-display text-lg text-black uppercase leading-tight">Apoie o Autor Original!</h4>
+                  <p className="font-sans font-bold text-xs text-gray-700 leading-snug mt-0.5">
+                    Gostou da obra? Compre o volume físico original para apoiar o autor e a editora!
+                  </p>
+                </div>
+              </div>
+              <a 
+                href={`https://www.amazon.com.br/s?k=manga+${encodeURIComponent((resultData as any).revista || (resultData as any).titulo || "")}&tag=gibifinder-20`}
+                target="_blank"
+                rel="noreferrer"
+                className="bg-primary text-white font-display text-sm px-6 py-2.5 border-2 border-black rounded hover:bg-yellow-400 hover:text-black transition-colors shrink-0 uppercase tracking-wide flex items-center gap-2"
+              >
+                Comprar Mangá Físico <ExternalLink className="w-4 h-4" strokeWidth={3} />
+              </a>
+            </div>
 
             <ComicCard result={resultData as any} isMain />
             
