@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { BookOpen, Trash2, Compass, Clock, BookOpenCheck, Star } from "lucide-react";
 import { useLocation } from "wouter";
-import { cn } from "@/lib/utils";
+import { cn, proxyCoverUrl } from "@/lib/utils";
 
 interface ReadingProgress {
   providerId: string;
@@ -207,7 +207,7 @@ export default function Colecao() {
                     <div className="relative aspect-[3/4] border-b-4 border-black bg-zinc-950 overflow-hidden shrink-0">
                       {item.coverUrl && !brokenImages[imgKey] ? (
                         <img 
-                          src={item.coverUrl} 
+                          src={proxyCoverUrl(item.coverUrl)} 
                           alt={item.title} 
                           className="w-full h-full object-cover transition-transform group-hover:scale-105"
                           loading="lazy"
@@ -290,7 +290,7 @@ export default function Colecao() {
                     <div className="relative aspect-[3/4] border-b-4 border-black bg-zinc-950 overflow-hidden shrink-0">
                       {item.coverUrl && !brokenImages[imgKey] ? (
                         <img 
-                          src={item.coverUrl} 
+                          src={proxyCoverUrl(item.coverUrl)} 
                           alt={item.title} 
                           className="w-full h-full object-cover transition-transform group-hover:scale-105"
                           loading="lazy"
