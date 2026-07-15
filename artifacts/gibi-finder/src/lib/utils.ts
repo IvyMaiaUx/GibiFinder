@@ -17,6 +17,10 @@ export function proxyCoverUrl(url: string | undefined | null): string | undefine
     // Only proxy external URLs (http/https)
     const parsed = new URL(url);
     if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      // Bypass proxy for hosts that allow direct client hotlinking (MangaDex and Unsplash)
+      if (parsed.hostname === "uploads.mangadex.org" || parsed.hostname.endsWith("unsplash.com")) {
+        return url;
+      }
       return `${BASE}/api/image-proxy?url=${encodeURIComponent(url)}`;
     }
   } catch {
