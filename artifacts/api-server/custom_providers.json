@@ -33,5 +33,12 @@
     "language": "pt",
     "baseUrl": "https://tsuki-mangas.com/",
     "active": true
+  },
+  {
+    "id": "tiamanhwa",
+    "name": "TiaManhwa",
+    "language": "pt",
+    "baseUrl": "https://tiamanhwa.com/",
+    "active": true
   }
 ]
