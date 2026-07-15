@@ -111,3 +111,7 @@ CREATE TABLE IF NOT EXISTS user_favorites (
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_favorites_user_id ON user_favorites(user_id);
+
+-- Disable Row Level Security (RLS) to match anonymous schema design
+ALTER TABLE user_profiles DISABLE ROW LEVEL SECURITY;
+ALTER TABLE user_favorites DISABLE ROW LEVEL SECURITY;
