@@ -81,7 +81,13 @@ router.get("/image-proxy", async (req: Request, res: Response) => {
     const result = await fetchImage(targetUrl.toString(), headers);
 
     if (result.status >= 400) {
-      res.status(result.status).json({ error: "upstream_error", message: `Upstream retornou ${result.status}` });
+      res.status(result.status).json({ 
+        error: "upstream_error", 
+        message: `Upstream retornou ${result.status}`,
+        targetUrl: targetUrl.toString(),
+        headersSent: headers,
+        upstreamBody: result.buffer.toString("utf8").slice(0, 500)
+      });
       return;
     }
 
