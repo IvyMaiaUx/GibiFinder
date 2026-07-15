@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, MessageSquare, Bug, Lightbulb, Archive, CheckCircle2, AlertCircle, Trophy, AlertTriangle, Database } from "lucide-react";
+import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, MessageSquare, Bug, Lightbulb, Archive, CheckCircle2, AlertCircle, Trophy, AlertTriangle, Database, User } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { useToast } from "@/hooks/use-toast";
 
@@ -166,7 +166,8 @@ function GibiAdminCard({ gibi, adminKey, onReview, onEdit, onDelete }: { gibi: G
 export default function Admin() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [adminKey, setAdminKey] = useState(() => localStorage.getItem(STORAGE_KEY) || "");
+  const [adminKey, setAdminKey] = useState(localStorage.getItem(STORAGE_KEY) || "");
+  const [userInput, setUserInput] = useState("");
   const [keyInput, setKeyInput] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -237,6 +238,10 @@ export default function Admin() {
   };
 
   const verify = async () => {
+    if (userInput.trim().toLowerCase() !== "admin") {
+      toast({ title: "Usuário incorreto", description: "O usuário administrador deve ser 'admin'", variant: "destructive" });
+      return;
+    }
     setVerifying(true);
     try {
       const res = await adminRequest("/api/admin/verify", keyInput);
@@ -245,10 +250,10 @@ export default function Admin() {
         setAdminKey(keyInput);
         setUnlocked(true);
       } else {
-        toast({ title: "Chave inválida", description: "Verifique a chave de administrador", variant: "destructive" });
+        toast({ title: "Senha inválida", description: "Verifique a senha de administrador", variant: "destructive" });
       }
     } catch {
-      toast({ title: "Chave inválida", variant: "destructive" });
+      toast({ title: "Senha inválida", variant: "destructive" });
     } finally { setVerifying(false); }
   };
 
@@ -362,26 +367,63 @@ export default function Admin() {
   if (!unlocked) {
     return (
       <Layout>
-        <div className="max-w-md mx-auto mt-16">
-          <div className="bg-white comic-border comic-shadow p-8 text-center">
-            <div className="w-16 h-16 bg-black rounded-full flex items-center justify-center mx-auto mb-4">
-              <Lock className="w-8 h-8 text-white" strokeWidth={3} />
+        <div className="max-w-md mx-auto mt-16 px-4 animate-in fade-in duration-200">
+          <div className="bg-white border-4 border-black p-8 text-center comic-shadow relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 opacity-5 bg-[radial-gradient(black_1px,transparent_1px)] [background-size:6px_6px] pointer-events-none" />
+            
+            <div className="w-20 h-20 bg-primary border-4 border-black rounded-full flex items-center justify-center mx-auto mb-4 comic-shadow-sm transform -rotate-3">
+              <Lock className="w-10 h-10 text-white" strokeWidth={3} />
             </div>
-            <h1 className="font-display text-4xl text-black mb-2">ADMIN</h1>
-            <p className="font-sans font-bold text-gray-600 mb-6">Digite a chave de administrador para continuar</p>
-            <div className="flex flex-col gap-4">
-              <input
-                type="password"
-                value={keyInput}
-                onChange={e => setKeyInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && verify()}
-                placeholder="Chave de admin..."
-                className="w-full border-4 border-black px-4 py-3 font-sans font-bold text-black text-center text-xl focus:outline-none focus:ring-4 focus:ring-secondary"
-              />
-              <button onClick={verify} disabled={verifying || !keyInput}
-                className="w-full bg-primary text-white border-4 border-black py-3 font-display text-xl comic-shadow flex items-center justify-center gap-2 disabled:opacity-50">
-                {verifying ? <Loader2 className="w-5 h-5 animate-spin" /> : <Lock className="w-5 h-5" strokeWidth={3} />}
-                ENTRAR
+            
+            <h1 className="font-display text-4xl text-black mb-1 uppercase tracking-wider">Painel Admin</h1>
+            <p className="font-sans font-bold text-xs text-gray-500 mb-8 uppercase">Acesso Restrito do Gibi Finder</p>
+            
+            <div className="flex flex-col gap-4 text-left">
+              <div className="space-y-1.5">
+                <span className="font-display text-xs text-gray-500 uppercase">Usuário</span>
+                <div className="relative">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" strokeWidth={3} />
+                  <input
+                    type="text"
+                    value={userInput}
+                    onChange={e => setUserInput(e.target.value)}
+                    placeholder="Nome de usuário..."
+                    className="w-full border-4 border-black pl-12 pr-4 py-3.5 font-sans font-bold text-black text-lg focus:outline-none focus:ring-4 focus:ring-secondary"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5 mb-2">
+                <span className="font-display text-xs text-gray-500 uppercase">Senha</span>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" strokeWidth={3} />
+                  <input
+                    type="password"
+                    value={keyInput}
+                    onChange={e => setKeyInput(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && verify()}
+                    placeholder="Chave secreta..."
+                    className="w-full border-4 border-black pl-12 pr-4 py-3.5 font-sans font-bold text-black text-lg focus:outline-none focus:ring-4 focus:ring-secondary"
+                  />
+                </div>
+              </div>
+
+              <button 
+                onClick={verify} 
+                disabled={verifying || !userInput || !keyInput}
+                className="w-full bg-primary text-white border-4 border-black py-4 font-display text-xl comic-shadow flex items-center justify-center gap-2 hover:bg-yellow-400 hover:text-black transition-colors disabled:opacity-50 mt-4 uppercase tracking-wider"
+              >
+                {verifying ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    AUTENTICANDO...
+                  </>
+                ) : (
+                  <>
+                    <Lock className="w-5 h-5" strokeWidth={3} />
+                    ENTRAR NO PAINEL
+                  </>
+                )}
               </button>
             </div>
           </div>
