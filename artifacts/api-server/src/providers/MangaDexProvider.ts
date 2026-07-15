@@ -17,7 +17,7 @@ export class MangaDexProvider implements Provider {
         const titleMap = item.attributes?.title || {};
         const title = titleMap.en || titleMap.ja || (Object.values(titleMap).length > 0 ? Object.values(titleMap)[0] : "Sem título");
         const descMap = item.attributes?.description || {};
-        const description = descMap.en || descMap["pt-br"] || (Object.values(descMap).length > 0 ? Object.values(descMap)[0] : "");
+        const description = descMap["pt-br"] || descMap.pt || descMap.en || (Object.values(descMap).length > 0 ? Object.values(descMap)[0] : "");
         
         const coverRel = item.relationships.find((r: any) => r.type === "cover_art");
         const coverFileName = coverRel?.attributes?.fileName;
@@ -43,7 +43,7 @@ export class MangaDexProvider implements Provider {
     const titleMap = item.attributes?.title || {};
     const title = titleMap.en || titleMap.ja || (Object.values(titleMap).length > 0 ? Object.values(titleMap)[0] : "Sem título");
     const descMap = item.attributes?.description || {};
-    const description = descMap.en || descMap["pt-br"] || (Object.values(descMap).length > 0 ? Object.values(descMap)[0] : "");
+    const description = descMap["pt-br"] || descMap.pt || descMap.en || (Object.values(descMap).length > 0 ? Object.values(descMap)[0] : "");
     
     const coverRel = item.relationships.find((r: any) => r.type === "cover_art");
     const coverFileName = coverRel?.attributes?.fileName;
