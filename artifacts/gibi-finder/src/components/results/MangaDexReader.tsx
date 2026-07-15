@@ -13,13 +13,15 @@ import {
   Database,
   Play,
   Maximize,
-  Minimize
+  Minimize,
+  Info
 } from "lucide-react";
 import { cn, proxyCoverUrl } from "@/lib/utils";
 
 interface MangaDexReaderProps {
   mangaTitle: string;
   coverUrl?: string;
+  description?: string;
 }
 
 interface UnifiedSearchResult {
@@ -50,7 +52,7 @@ interface Page {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-export function MangaDexReader({ mangaTitle, coverUrl }: MangaDexReaderProps) {
+export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexReaderProps) {
   // Tab/Source Navigation
   const [activeTab, setActiveTab] = useState<"aggregator" | "external">("aggregator");
   
@@ -138,6 +140,7 @@ export function MangaDexReader({ mangaTitle, coverUrl }: MangaDexReaderProps) {
   const [readerMode, setReaderMode] = useState<"page" | "scroll">("scroll");
   const [error, setError] = useState<string | null>(null);
   const [lastReadProgress, setLastReadProgress] = useState<any>(null);
+  const [showInfo, setShowInfo] = useState(false);
 
 
 
@@ -272,6 +275,24 @@ export function MangaDexReader({ mangaTitle, coverUrl }: MangaDexReaderProps) {
         
         setPages(pagesData);
         setShowReader(true);
+        setIsFullscreen(true);
+
+        // Try to trigger native browser fullscreen after mount
+        setTimeout(() => {
+          const element = readerRef.current;
+          if (element) {
+            const requestMethod = 
+              element.requestFullscreen || 
+              (element as any).webkitRequestFullscreen || 
+              (element as any).mozRequestFullScreen || 
+              (element as any).msRequestFullscreen;
+            if (requestMethod) {
+              requestMethod.call(element).catch(() => {
+                // Ignore security exceptions, virtual fullscreen handles the layout
+              });
+            }
+          }
+        }, 150);
       } else {
         // Fallback: If exact chapter not found, set default lang filter
         if (source.providerId === "comicextra") {
@@ -765,6 +786,18 @@ export function MangaDexReader({ mangaTitle, coverUrl }: MangaDexReaderProps) {
                   </button>
                 </div>
 
+                {/* Synopsis Info Button */}
+                {(description || selectedResult?.description) && (
+                  <button
+                    onClick={() => setShowInfo(prev => !prev)}
+                    className="bg-zinc-800 border-2 border-white/20 p-2 text-white rounded hover:bg-zinc-700 transition-colors flex items-center gap-1.5 font-sans font-bold text-xs"
+                    title="Ver Sinopse"
+                  >
+                    <Info className="w-5 h-5 text-secondary" strokeWidth={3} />
+                    <span className="hidden md:inline">SINOPSE</span>
+                  </button>
+                )}
+
                 {/* Close Button */}
                 <button 
                   onClick={() => setShowReader(false)}
@@ -865,6 +898,24 @@ export function MangaDexReader({ mangaTitle, coverUrl }: MangaDexReaderProps) {
               <Maximize className="w-5 h-5" strokeWidth={3} />
             )}
           </button>
+
+          {/* Synopsis Popup Modal */}
+          {showInfo && (
+            <div className="fixed inset-0 z-[120] bg-black/70 flex items-center justify-center p-4" onClick={() => setShowInfo(false)}>
+              <div className="bg-white border-4 border-black p-6 rounded-xl max-w-lg w-full comic-shadow relative text-black animate-in zoom-in-95 duration-150" onClick={(e) => e.stopPropagation()}>
+                <button 
+                  onClick={() => setShowInfo(false)}
+                  className="absolute top-4 right-4 text-gray-400 hover:text-black transition-colors"
+                >
+                  <X className="w-5 h-5" strokeWidth={3} />
+                </button>
+                <h4 className="font-display text-2xl mb-4 uppercase text-primary">Sinopse</h4>
+                <p className="font-sans font-bold text-gray-700 text-sm max-h-[300px] overflow-y-auto pr-2 leading-relaxed whitespace-pre-line">
+                  {description || selectedResult?.description || "Nenhuma sinopse disponível."}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
