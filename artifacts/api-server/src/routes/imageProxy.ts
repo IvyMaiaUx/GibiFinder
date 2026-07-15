@@ -16,6 +16,8 @@ const ALLOWED_HOSTS = [
   "s2.mangaplus.shueisha.co.jp",
   "s3.mangaplus.shueisha.co.jp",
   "cdn.mangaplus.shueisha.co.jp",
+  "animesbr.lat",
+  "www.animesbr.lat",
 ];
 
 // GET /api/image-proxy?url=<encoded_url>
