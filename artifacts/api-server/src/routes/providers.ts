@@ -107,7 +107,11 @@ router.get("/providers/catalog", async (req: Request, res: Response) => {
     const items = await ProviderManager.getCatalog(listType);
     res.json(items);
   } catch (err) {
-    res.status(500).json({ error: "catalog_failed", message: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ 
+      error: "catalog_failed", 
+      message: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined
+    });
   }
 });
 
