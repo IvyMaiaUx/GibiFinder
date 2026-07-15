@@ -214,4 +214,57 @@ router.get("/providers/statistics", async (req: Request, res: Response) => {
   }
 });
 
+const ADMIN_KEY = process.env["ADMIN_KEY"] || "gibi-admin-2024";
+function requireAdmin(req: Request, res: Response): boolean {
+  if (req.headers["x-admin-key"] !== ADMIN_KEY) {
+    res.status(401).json({ error: "unauthorized", message: "Chave de administrador inválida" });
+    return false;
+  }
+  return true;
+}
+
+// POST /api/providers/custom - Add a custom provider (requires admin key)
+router.post("/providers/custom", (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  const { name, language, baseUrl } = req.body;
+  if (!name || !language || !baseUrl) {
+    res.status(400).json({ error: "missing_params", message: "Os campos 'name', 'language' e 'baseUrl' são obrigatórios." });
+    return;
+  }
+
+  try {
+    const provider = ProviderManager.addCustomProvider(name, language, baseUrl);
+    res.json({
+      success: true,
+      provider: {
+        id: provider.id,
+        name: provider.name,
+        language: provider.language,
+        active: true,
+        isCustom: true,
+        baseUrl
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: "add_custom_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// DELETE /api/providers/custom/:id - Delete a custom provider (requires admin key)
+router.delete("/providers/custom/:id", (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  const { id } = req.params;
+  if (!id) {
+    res.status(400).json({ error: "missing_id", message: "ID do provedor é obrigatório." });
+    return;
+  }
+
+  try {
+    ProviderManager.deleteCustomProvider(id);
+    res.json({ success: true, id });
+  } catch (err) {
+    res.status(500).json({ error: "delete_custom_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 export default router;

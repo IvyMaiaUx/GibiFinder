@@ -1,0 +1,229 @@
+import { Provider, SearchResult, MangaDetails, Chapter, Page } from "./types";
+
+export class MadaraProvider implements Provider {
+  constructor(
+    public id: string,
+    public name: string,
+    public language: string,
+    public baseUrl: string
+  ) {
+    // Ensure baseUrl has a trailing slash
+    if (!this.baseUrl.endsWith("/")) {
+      this.baseUrl += "/";
+    }
+  }
+
+  async search(query: string): Promise<SearchResult[]> {
+    try {
+      const url = `${this.baseUrl}wp-admin/admin-ajax.php`;
+      const body = new URLSearchParams();
+      body.append("action", "wp-manga-search-manga");
+      body.append("title", query);
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        },
+        body: body.toString()
+      });
+
+      if (!res.ok) throw new Error(`Search failed status: ${res.status}`);
+      const json = await res.json() as any;
+
+      if (!json.success || !json.data || !Array.isArray(json.data)) {
+        return [];
+      }
+
+      const results: SearchResult[] = [];
+      const dataToProcess = json.data.slice(0, 10); // limit parallel loads
+
+      await Promise.all(
+        dataToProcess.map(async (item: any) => {
+          if (!item.url) return;
+          try {
+            const match = item.url.match(/\/manga\/([^\/]+)/);
+            if (!match) return;
+            const slug = match[1];
+
+            const details = await this.getDetails(slug);
+            results.push({
+              id: slug,
+              title: item.title || details.title,
+              description: details.description || `Disponível no portal ${this.name}.`,
+              coverUrl: details.coverUrl,
+              providerId: this.id
+            });
+          } catch (err) {
+            console.error("Failed to parse search item details", item.title, err);
+          }
+        })
+      );
+
+      return results;
+    } catch (err) {
+      console.error(`MadaraProvider [${this.id}] search failed:`, err);
+      return [];
+    }
+  }
+
+  async getDetails(id: string): Promise<MangaDetails> {
+    try {
+      const url = `${this.baseUrl}manga/${id}/`;
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+      });
+      if (!res.ok) throw new Error(`Details status: ${res.status}`);
+      const html = await res.text();
+
+      const coverMatch = html.match(/class="wp-post-image"[^>]+src="([^"]+)"/i) ||
+                         html.match(/class="summary_image"[\s\S]*?<img[^>]+src="([^"]+)"/i) ||
+                         html.match(/class="tab-summary"[\s\S]*?<img[^>]+src="([^"]+)"/i) ||
+                         html.match(/<div[^>]+class="[^"]*summary_image[^"]*"[\s\S]*?<img[^>]+src="([^"]+)"/i);
+
+      const descMatch = html.match(/class="summary__content"[\s\S]*?<p>([\s\S]*?)<\/p>/i) ||
+                        html.match(/class="description-summary"[\s\S]*?<p>([\s\S]*?)<\/p>/i) ||
+                        html.match(/class="manga-excerpt"[\s\S]*?<p>([\s\S]*?)<\/p>/i);
+
+      const titleMatch = html.match(/<div[^>]+class="post-title"[\s\S]*?<h1>([\s\S]*?)<\/h1>/i);
+
+      return {
+        id,
+        title: titleMatch ? titleMatch[1].trim() : id.replace(/-/g, " ").toUpperCase(),
+        description: descMatch ? descMatch[1].replace(/<[^>]*>/g, "").trim() : `Mangá disponível no portal ${this.name}.`,
+        coverUrl: coverMatch ? coverMatch[1] : undefined,
+        providerId: this.id
+      };
+    } catch (err) {
+      console.error(`MadaraProvider [${this.id}] getDetails failed:`, err);
+      return {
+        id,
+        title: id.replace(/-/g, " ").toUpperCase(),
+        description: `Mangá disponível no portal ${this.name}.`,
+        providerId: this.id
+      };
+    }
+  }
+
+  async getChapters(id: string): Promise<Chapter[]> {
+    try {
+      const url = `${this.baseUrl}manga/${id}/ajax/chapters/`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+      });
+      if (!res.ok) throw new Error(`Chapters status: ${res.status}`);
+      const html = await res.text();
+
+      const chapters: Chapter[] = [];
+      const matches = html.matchAll(/<li[^>]*class="[^"]*wp-manga-chapter[^"]*"[\s\S]*?<a[^>]+href="([^"]+)"[\s\S]*?>([\s\S]*?)<\/a>/gi);
+
+      for (const m of matches) {
+        const href = m[1];
+        const rawTitle = m[2].trim();
+        
+        const slugMatch = href.match(/\/manga\/([^\/]+)\/([^\/]+)/);
+        if (!slugMatch) continue;
+        const chapSlug = `${slugMatch[1]}/${slugMatch[2]}`;
+
+        const numMatch = rawTitle.match(/capitulo\s+(\d+)/i) || rawTitle.match(/cap\.?\s*(\d+)/i);
+        const chapterNum = numMatch ? numMatch[1] : rawTitle.replace(/[^0-9]/g, "") || "Especial";
+
+        chapters.push({
+          id: chapSlug,
+          chapterNum,
+          title: rawTitle,
+          language: this.language === "multi" ? "pt" : this.language,
+          providerId: this.id
+        });
+      }
+
+      return chapters.reverse();
+    } catch (err) {
+      console.error(`MadaraProvider [${this.id}] getChapters failed:`, err);
+      return [];
+    }
+  }
+
+  async getPages(chapterId: string): Promise<Page[]> {
+    try {
+      const url = `${this.baseUrl}manga/${chapterId}/`;
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+      });
+      if (!res.ok) throw new Error(`Pages status: ${res.status}`);
+      const html = await res.text();
+
+      const match = html.match(/a=(https?%3A%2F%2F[^\s"&]+|https?:\/\/[^\s"&]+)/i) ||
+                    html.match(/src="([^"]+001\.(?:webp|jpg|jpeg|png))"/i) ||
+                    html.match(/data-src="([^"]+001\.(?:webp|jpg|jpeg|png))"/i) ||
+                    html.match(/data-lazy-src="([^"]+001\.(?:webp|jpg|jpeg|png))"/i);
+                    
+      if (!match) throw new Error("Could not find base/001 image URL inside page.");
+      
+      const firstPageUrl = decodeURIComponent(match[1]);
+      const numMatch = firstPageUrl.match(/(\d+)\.(webp|jpg|jpeg|png)$/i);
+      if (!numMatch) throw new Error("Image name does not match sequential pattern.");
+
+      const numStr = numMatch[1];
+      const ext = numMatch[2];
+      const basePart = firstPageUrl.slice(0, firstPageUrl.lastIndexOf(numStr + "." + ext));
+      const padLength = numStr.length;
+
+      const pages: Page[] = [];
+      let pageNum = 1;
+      let hasMore = true;
+
+      while (hasMore) {
+        const batchSize = 10;
+        const batchPromises = [];
+
+        for (let i = 0; i < batchSize; i++) {
+          const currentNum = String(pageNum + i).padStart(padLength, "0");
+          const pageUrl = `${basePart}${currentNum}.${ext}`;
+          batchPromises.push(
+            fetch(pageUrl, { 
+              method: "HEAD",
+              headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Referer": this.baseUrl
+              }
+            })
+              .then(res => ({ url: pageUrl, ok: res.ok }))
+              .catch(() => ({ url: pageUrl, ok: false }))
+          );
+        }
+
+        const results = await Promise.all(batchPromises);
+        for (const r of results) {
+          if (r.ok) {
+            pages.push({ url: r.url, pageNumber: pageNum });
+            pageNum++;
+          } else {
+            hasMore = false;
+            break;
+          }
+        }
+
+        if (pageNum > 300) break; // safety limit
+      }
+
+      return pages;
+    } catch (err) {
+      console.error(`MadaraProvider [${this.id}] getPages failed:`, err);
+      return [];
+    }
+  }
+
+  async getCatalog(listType: "popular" | "latest"): Promise<SearchResult[]> {
+    // Return empty or dynamic popular list if catalog list requested
+    return [];
+  }
+}

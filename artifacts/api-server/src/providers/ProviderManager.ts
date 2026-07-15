@@ -4,6 +4,9 @@ import { ComicExtraProvider } from "./ComicExtraProvider";
 import { MangaPlusProvider } from "./MangaPlusProvider";
 import { MangaFireProvider } from "./MangaFireProvider";
 import { MugiwarasProvider } from "./MugiwarasProvider";
+import { MadaraProvider } from "./MadaraProvider";
+import * as fs from "fs";
+import * as path from "path";
 
 class StubProvider implements Provider {
   constructor(public id: string, public name: string, public language: string) {}
@@ -26,6 +29,27 @@ export class ProviderManager {
     ["hqnow", false]
   ]);
 
+  private static getCustomProvidersPath(): string {
+    return path.join(process.cwd(), "custom_providers.json");
+  }
+
+  static loadCustomProviders() {
+    try {
+      const filePath = this.getCustomProvidersPath();
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, "utf-8");
+        const list = JSON.parse(content) as Array<{ id: string; name: string; language: string; baseUrl: string; active?: boolean }>;
+        for (const item of list) {
+          const provider = new MadaraProvider(item.id, item.name, item.language, item.baseUrl);
+          this.registerProvider(provider);
+          this.activeStates.set(item.id, item.active !== false);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load custom providers:", err);
+    }
+  }
+
   static {
     // Register active providers
     this.registerProvider(new MangaDexProvider());
@@ -37,6 +61,9 @@ export class ProviderManager {
     // Register stub/future providers
     this.registerProvider(new StubProvider("bato", "Bato", "multi"));
     this.registerProvider(new StubProvider("hqnow", "HQ Now", "pt"));
+
+    // Load custom providers
+    this.loadCustomProviders();
   }
 
   static registerProvider(provider: Provider) {
@@ -50,6 +77,70 @@ export class ProviderManager {
   static toggleProvider(id: string, active: boolean) {
     if (this.providers.has(id)) {
       this.activeStates.set(id, active);
+
+      // Persist toggled state for custom providers
+      try {
+        const filePath = this.getCustomProvidersPath();
+        if (fs.existsSync(filePath)) {
+          const list = JSON.parse(fs.readFileSync(filePath, "utf-8")) as any[];
+          const itemIndex = list.findIndex(item => item.id === id);
+          if (itemIndex > -1) {
+            list[itemIndex].active = active;
+            fs.writeFileSync(filePath, JSON.stringify(list, null, 2), "utf-8");
+          }
+        }
+      } catch (err) {
+        console.error("Failed to persist toggle state for custom provider:", err);
+      }
+    }
+  }
+
+  static addCustomProvider(name: string, language: string, baseUrl: string): Provider {
+    const id = name
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\w\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .trim();
+
+    if (this.providers.has(id)) {
+      throw new Error("Já existe um provedor com este nome/identificador.");
+    }
+
+    const provider = new MadaraProvider(id, name, language, baseUrl);
+    this.registerProvider(provider);
+    this.activeStates.set(id, true);
+
+    try {
+      const filePath = this.getCustomProvidersPath();
+      let list: any[] = [];
+      if (fs.existsSync(filePath)) {
+        list = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      }
+      list.push({ id, name, language, baseUrl, active: true });
+      fs.writeFileSync(filePath, JSON.stringify(list, null, 2), "utf-8");
+    } catch (err) {
+      console.error("Failed to save custom provider:", err);
+    }
+
+    return provider;
+  }
+
+  static deleteCustomProvider(id: string) {
+    if (!this.providers.has(id)) return;
+    this.providers.delete(id);
+    this.activeStates.delete(id);
+
+    try {
+      const filePath = this.getCustomProvidersPath();
+      if (fs.existsSync(filePath)) {
+        let list = JSON.parse(fs.readFileSync(filePath, "utf-8")) as any[];
+        list = list.filter(item => item.id !== id);
+        fs.writeFileSync(filePath, JSON.stringify(list, null, 2), "utf-8");
+      }
+    } catch (err) {
+      console.error("Failed to delete custom provider:", err);
     }
   }
 
@@ -58,7 +149,9 @@ export class ProviderManager {
       id: p.id,
       name: p.name,
       language: p.language,
-      active: this.activeStates.get(p.id) === true
+      active: this.activeStates.get(p.id) === true,
+      isCustom: p instanceof MadaraProvider,
+      baseUrl: p instanceof MadaraProvider ? (p as MadaraProvider).baseUrl : undefined
     }));
   }
 

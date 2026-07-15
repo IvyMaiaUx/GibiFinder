@@ -217,6 +217,24 @@ export default function Admin() {
   }, [tab, unlocked]);
   const [editModal, setEditModal] = useState<{ open: boolean; gibi?: Gibi }>({ open: false });
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [customProviderModal, setCustomProviderModal] = useState(false);
+
+  const deleteProvider = async (providerId: string) => {
+    try {
+      const res = await fetch(`${BASE}/api/providers/custom/${providerId}`, {
+        method: "DELETE",
+        headers: { "x-admin-key": adminKey }
+      });
+      if (res.ok) {
+        toast({ title: "Provedor customizado removido!" });
+        setProviders(prev => prev.filter(p => p.id !== providerId));
+      } else {
+        throw new Error();
+      }
+    } catch {
+      toast({ title: "Erro ao remover provedor", variant: "destructive" });
+    }
+  };
 
   const verify = async () => {
     setVerifying(true);
@@ -383,8 +401,16 @@ export default function Admin() {
             </p>
           </div>
           <div className="flex gap-3">
-            <button onClick={() => setEditModal({ open: true })}
-              className="flex items-center gap-2 bg-primary text-white font-display text-lg px-4 py-3 border-4 border-black comic-shadow hover:translate-y-[-2px] transition-transform">
+            <button 
+              onClick={() => {
+                if (tab === "providers") {
+                  setCustomProviderModal(true);
+                } else {
+                  setEditModal({ open: true });
+                }
+              }}
+              className="flex items-center gap-2 bg-primary text-white font-display text-lg px-4 py-3 border-4 border-black comic-shadow hover:translate-y-[-2px] transition-transform"
+            >
               <Plus className="w-5 h-5" strokeWidth={3} /> ADICIONAR
             </button>
             <button onClick={() => { localStorage.removeItem(STORAGE_KEY); setUnlocked(false); setAdminKey(""); setKeyInput(""); }}
@@ -614,17 +640,30 @@ export default function Admin() {
                     <p className="text-xs text-gray-600 font-semibold font-sans leading-tight">
                       {p.id === "mangadex" && "Agregador global multilingue de mangás com API integrada em tempo real."}
                       {p.id === "comicextra" && "Fonte de HQs americanas digitalizadas em inglês de forma direta."}
+                      {p.id === "mugiwaras" && "Provedor nacional focado em mangás de One Piece e lançamentos populares."}
                       {["bato", "mangafire", "hqnow"].includes(p.id) && `Provedor de contingência para o catálogo do ${p.name} (Plugin inativo).`}
+                      {p.isCustom && `Provedor customizado autogerenciado conectado via Madara API em ${p.baseUrl}`}
                     </p>
                   </div>
                   <div className="mt-4 pt-3 border-t-2 border-dashed border-black/10 flex justify-between items-center">
                     <span className="font-sans font-bold text-2xs text-gray-400 uppercase">ID: {p.id}</span>
-                    <button
-                      onClick={() => toggleProvider(p.id, p.active)}
-                      className={`font-display text-sm px-4 py-1 border-2 border-black rounded ${p.active ? "bg-primary text-white hover:bg-red-600" : "bg-secondary text-black hover:bg-yellow-400"}`}
-                    >
-                      {p.active ? "DESATIVAR" : "ATIVAR"}
-                    </button>
+                    <div className="flex gap-2">
+                      {p.isCustom && (
+                        <button
+                          onClick={() => deleteProvider(p.id)}
+                          className="bg-red-100 hover:bg-red-200 text-red-700 font-display text-xs px-3 py-1.5 border-2 border-black rounded transition-colors"
+                          title="Remover Provedor Customizado"
+                        >
+                          EXCLUIR
+                        </button>
+                      )}
+                      <button
+                        onClick={() => toggleProvider(p.id, p.active)}
+                        className={`font-display text-sm px-4 py-1.5 border-2 border-black rounded transition-all ${p.active ? "bg-primary text-white hover:bg-red-600" : "bg-secondary text-black hover:bg-yellow-400"}`}
+                      >
+                        {p.active ? "DESATIVAR" : "ATIVAR"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -664,6 +703,17 @@ export default function Admin() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Add Custom Provider modal */}
+      <AnimatePresence>
+        {customProviderModal && (
+          <CustomProviderModal 
+            adminKey={adminKey}
+            onClose={() => setCustomProviderModal(false)}
+            onSaved={() => fetchProviders()}
+          />
+        )}
+      </AnimatePresence>
     </Layout>
   );
 }
@@ -672,4 +722,116 @@ async function apiRequestWithKey(path: string, adminKey: string) {
   const res = await fetch(`${BASE}${path}`, { headers: { "x-admin-key": adminKey } });
   if (!res.ok) throw new Error(`Erro ${res.status}`);
   return res.json();
+}
+
+function CustomProviderModal({ adminKey, onClose, onSaved }: { adminKey: string; onClose: () => void; onSaved: () => void }) {
+  const { toast } = useToast();
+  const [name, setName] = useState("");
+  const [language, setLanguage] = useState("pt");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !baseUrl.trim()) {
+      toast({ title: "Preencha todos os campos", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`${BASE}/api/providers/custom`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-key": adminKey
+        },
+        body: JSON.stringify({
+          name: name.trim(),
+          language,
+          baseUrl: baseUrl.trim()
+        })
+      });
+      
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Erro ao adicionar");
+      }
+
+      toast({ title: "Provedor adicionado com sucesso!" });
+      onSaved();
+      onClose();
+    } catch (err) {
+      toast({
+        title: "Erro ao adicionar",
+        description: err instanceof Error ? err.message : "Erro desconhecido",
+        variant: "destructive"
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inp = "w-full border-4 border-black px-3 py-2 font-sans font-bold text-black bg-white focus:outline-none focus:ring-4 focus:ring-secondary rounded-none";
+  const lbl = "block font-display text-base text-black mb-1 uppercase";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+        className="relative bg-white comic-border comic-shadow max-w-md w-full z-10 text-black">
+        <div className="bg-secondary border-b-4 border-black px-6 py-4 flex items-center justify-between">
+          <h2 className="font-display text-2xl text-black">ADICIONAR PROVEDOR</h2>
+          <button onClick={onClose}><X className="w-6 h-6" strokeWidth={3} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className={lbl}>Nome do Provedor *</label>
+            <input 
+              value={name} 
+              onChange={e => setName(e.target.value)} 
+              placeholder="Ex: MangaLivre Oficial, Scan Top" 
+              required 
+              className={inp} 
+            />
+          </div>
+          <div>
+            <label className={lbl}>Idioma *</label>
+            <select 
+              value={language} 
+              onChange={e => setLanguage(e.target.value)} 
+              className={inp}
+            >
+              <option value="pt">Português (pt)</option>
+              <option value="en">Inglês (en)</option>
+              <option value="multi">Multi-idioma (multi)</option>
+            </select>
+          </div>
+          <div>
+            <label className={lbl}>URL do Site (WordPress/Madara) *</label>
+            <input 
+              value={baseUrl} 
+              onChange={e => setBaseUrl(e.target.value)} 
+              placeholder="Ex: https://meusite.com/" 
+              required 
+              className={inp} 
+            />
+            <p className="text-2xs text-gray-500 font-bold uppercase mt-1">
+              Deve ser um site com tema Madara estruturado.
+            </p>
+          </div>
+          
+          <div className="pt-2">
+            <button 
+              type="submit" 
+              disabled={saving}
+              className="w-full bg-primary text-white border-4 border-black py-3 font-display text-xl comic-shadow hover:translate-y-[-2px] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" strokeWidth={3} />}
+              SALVAR PROVEDOR
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
 }
