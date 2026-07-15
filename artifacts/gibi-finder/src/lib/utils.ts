@@ -17,7 +17,31 @@ export function proxyCoverUrl(url: string | undefined | null): string | undefine
     // Only proxy external URLs (http/https)
     const parsed = new URL(url);
     if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-      return `${BASE}/api/image-proxy?url=${encodeURIComponent(url)}`;
+      // List of hostnames that strictly require proxying due to CORS or Referer blocking
+      const hostsToProxy = [
+        "uploads.mangadex.org",
+        "mangadex.org",
+        "og.mangadex.org",
+        "cmdxd98sb0x3yprd.mangadex.network",
+        "comicextra.se",
+        "www.comicextra.se",
+        "mangafire.to",
+        "cdn.mangafire.to",
+        "mangaplus.shueisha.co.jp",
+        "d2dq7ifhe7bu0f.cloudfront.net",
+        "s1.mangaplus.shueisha.co.jp",
+        "s2.mangaplus.shueisha.co.jp",
+        "s3.mangaplus.shueisha.co.jp",
+        "cdn.mangaplus.shueisha.co.jp"
+      ];
+      
+      const shouldProxy = hostsToProxy.some(host => 
+        parsed.hostname === host || parsed.hostname.endsWith("." + host)
+      );
+
+      if (shouldProxy) {
+        return `${BASE}/api/image-proxy?url=${encodeURIComponent(url)}`;
+      }
     }
   } catch {
     // Not a valid URL — return as-is

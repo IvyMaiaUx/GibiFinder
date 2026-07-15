@@ -18,6 +18,7 @@ const ALLOWED_HOSTS = [
   "cdn.mangaplus.shueisha.co.jp",
   "animesbr.lat",
   "www.animesbr.lat",
+  "images.unsplash.com",
 ];
 
 // GET /api/image-proxy?url=<encoded_url>
