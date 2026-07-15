@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { identifyFromImages, searchByText, searchByCharacter } from "../lib/gemini";
 import { fetchFandomContext } from "../lib/fandom";
 import { supabase } from "../lib/supabase";
-import { randomUUID } from "crypto";
+import { randomUUID, createHash } from "crypto";
 
 const router: IRouter = Router();
 
@@ -789,6 +789,133 @@ router.get("/pdf/:fileId", async (req: Request, res: Response) => {
     console.error("PDF proxy error:", err);
     res.status(500).json({ error: "Falha ao buscar PDF" });
   }
+});
+
+// ── Authentication & User Sync Endpoints ─────────────────────────────────────
+
+// POST /api/auth/register - register a new user
+router.post("/auth/register", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const { username, password, email } = req.body;
+  if (!username || !password) {
+    res.status(400).json({ error: "bad_request", message: "Usuário e senha são obrigatórios" });
+    return;
+  }
+  try {
+    const password_hash = createHash("sha256").update(password).digest("hex");
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .insert({ username, password_hash, email: email || null })
+      .select("id, username, email, created_at")
+      .single();
+    
+    if (error) {
+      if (error.code === "23505") {
+        res.status(409).json({ error: "username_taken", message: "Este nome de usuário já está em uso" });
+      } else {
+        res.status(500).json({ error: "db_error", message: error.message });
+      }
+      return;
+    }
+    res.json({ success: true, user: data });
+  } catch (err) {
+    res.status(500).json({ error: "server_error", message: err instanceof Error ? err.message : "Erro desconhecido" });
+  }
+});
+
+// POST /api/auth/login - login an existing user
+router.post("/auth/login", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const { username, password } = req.body;
+  if (!username || !password) {
+    res.status(400).json({ error: "bad_request", message: "Usuário e senha são obrigatórios" });
+    return;
+  }
+  try {
+    const password_hash = createHash("sha256").update(password).digest("hex");
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .select("id, username, email, created_at, password_hash")
+      .eq("username", username)
+      .single();
+    
+    if (error || !data || data.password_hash !== password_hash) {
+      res.status(401).json({ error: "invalid_credentials", message: "Usuário ou senha incorretos" });
+      return;
+    }
+    
+    const { password_hash: _, ...user } = data;
+    res.json({ success: true, user });
+  } catch (err) {
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+// GET /api/auth/favorites - get synced user favorites
+router.get("/auth/favorites", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const userId = req.query.userId as string;
+  if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
+  try {
+    const { data, error } = await supabase
+      .from("user_favorites")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+    
+    if (error) { res.status(500).json({ error: "db_error" }); return; }
+    
+    const mapped = data.map(f => ({
+      providerId: f.provider_id,
+      mangaId: f.manga_id,
+      title: f.title,
+      coverUrl: f.cover_url,
+      description: f.description,
+      timestamp: Number(f.timestamp)
+    }));
+    res.json(mapped);
+  } catch { res.status(500).json({ error: "server_error" }); }
+});
+
+// POST /api/auth/favorites/sync - sync favorites to database
+router.post("/auth/favorites/sync", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const { userId, favorites } = req.body;
+  if (!userId || !Array.isArray(favorites)) { res.status(400).json({ error: "bad_request" }); return; }
+  try {
+    await supabase.from("user_favorites").delete().eq("user_id", userId);
+    
+    if (favorites.length > 0) {
+      const rows = favorites.map((f: any) => ({
+        user_id: userId,
+        provider_id: f.providerId,
+        manga_id: f.mangaId,
+        title: f.title,
+        cover_url: f.coverUrl || null,
+        description: f.description || null,
+        timestamp: f.timestamp || Date.now()
+      }));
+      await supabase.from("user_favorites").insert(rows);
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+// GET /api/admin/users - list registered users (admin only)
+router.get("/admin/users", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  try {
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .select("id, username, email, created_at")
+      .order("created_at", { ascending: false });
+    
+    if (error) { res.status(500).json({ error: "db_error" }); return; }
+    res.json({ items: data, total: data.length });
+  } catch { res.status(500).json({ error: "server_error" }); }
 });
 
 export default router;

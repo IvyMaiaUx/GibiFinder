@@ -171,7 +171,7 @@ export default function Admin() {
   const [keyInput, setKeyInput] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [tab, setTab] = useState<"pending" | "approved" | "suggestions" | "ranking" | "providers">("pending");
+  const [tab, setTab] = useState<"pending" | "approved" | "suggestions" | "ranking" | "providers" | "users">("pending");
   const [confirmClearRanking, setConfirmClearRanking] = useState(false);
   const [providers, setProviders] = useState<any[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(false);
@@ -289,6 +289,13 @@ export default function Admin() {
     queryFn: () => adminRequest("/api/admin/ranking", adminKey),
     enabled: unlocked && tab === "ranking",
     select: (d: { items: { revista: string; titulo: string; editora: string; search_count: number; last_searched: string }[]; total: number }) => d,
+  });
+
+  const { data: usersData, isLoading: loadingUsers } = useQuery({
+    queryKey: ["admin-users", adminKey],
+    queryFn: () => adminRequest("/api/admin/users", adminKey),
+    enabled: unlocked && tab === "users",
+    select: (d: { items: { id: string; username: string; email?: string; created_at: string }[]; total: number }) => d,
   });
 
   const deleteRankingEntryMutation = useMutation({
@@ -488,6 +495,11 @@ export default function Admin() {
             className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "providers" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
             <Database className="w-5 h-5" strokeWidth={3} />
             PROVEDORES
+          </button>
+          <button onClick={() => setTab("users")}
+            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "users" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
+            <User className="w-5 h-5" strokeWidth={3} />
+            USUÁRIOS
           </button>
         </div>
 
@@ -709,6 +721,57 @@ export default function Admin() {
                   </div>
                 </div>
               ))}
+            </div>
+          )
+        )}
+
+        {/* Users tab */}
+        {tab === "users" && (
+          loadingUsers ? (
+            <div className="flex items-center justify-center py-24"><Loader2 className="w-12 h-12 animate-spin text-primary" /></div>
+          ) : !usersData || usersData.items.length === 0 ? (
+            <div className="text-center py-24 border-4 border-dashed border-black bg-white">
+              <User className="w-16 h-16 mx-auto text-gray-300 mb-4" strokeWidth={3} />
+              <p className="font-display text-3xl text-black/50">NENHUM USUÁRIO</p>
+              <p className="font-sans font-bold text-gray-500">Nenhum leitor se cadastrou ainda.</p>
+            </div>
+          ) : (
+            <div className="bg-white border-4 border-black p-6 comic-shadow animate-in fade-in duration-200">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left font-sans select-none border-collapse">
+                  <thead>
+                    <tr className="border-b-4 border-black text-xs font-display uppercase tracking-wider text-gray-500">
+                      <th className="pb-3 pr-4">Nome de Usuário</th>
+                      <th className="pb-3 pr-4">E-mail</th>
+                      <th className="pb-3 pr-4 text-right">Data de Cadastro</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y-2 divide-dashed divide-gray-200">
+                    {usersData.items.map((user: any) => (
+                      <tr key={user.id} className="text-black font-bold text-sm">
+                        <td className="py-4 pr-4 flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-secondary border-2 border-black flex items-center justify-center">
+                            <span className="font-display text-sm leading-none">{user.username.charAt(0).toUpperCase()}</span>
+                          </div>
+                          <span className="font-sans text-base">{user.username}</span>
+                        </td>
+                        <td className="py-4 pr-4 font-medium text-gray-600">
+                          {user.email || "Não informado"}
+                        </td>
+                        <td className="py-4 pr-4 text-right font-medium text-gray-500">
+                          {new Date(user.created_at).toLocaleDateString("pt-BR", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit"
+                          })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )
         )}

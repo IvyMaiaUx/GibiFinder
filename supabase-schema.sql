@@ -81,3 +81,33 @@ CREATE INDEX IF NOT EXISTS idx_result_feedback_result_id ON result_feedback(resu
 -- CREATE POLICY "Allow all" ON gibis FOR ALL USING (true) WITH CHECK (true);
 -- CREATE POLICY "Allow all" ON search_history FOR ALL USING (true) WITH CHECK (true);
 -- CREATE POLICY "Allow all" ON result_feedback FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- Table: user_profiles (registered reader accounts)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  email TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_profiles_username ON user_profiles(username);
+
+-- ============================================================
+-- Table: user_favorites (synced estante / collection)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_favorites (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  provider_id TEXT NOT NULL,
+  manga_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  cover_url TEXT,
+  description TEXT,
+  timestamp NUMERIC NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_favorites_user_id ON user_favorites(user_id);
