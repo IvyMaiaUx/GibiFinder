@@ -48,9 +48,9 @@ router.get("/image-proxy", async (req: Request, res: Response) => {
   try {
     const response = await fetch(targetUrl.toString(), {
       headers: {
-        // Don't send Referer so CDNs don't block the request
-        "User-Agent": "Mozilla/5.0 (compatible; GibiFinder/1.0)",
-        Accept: "image/webp,image/avif,image/jpeg,image/png,image/*,*/*",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7",
       },
       redirect: "follow",
     });
