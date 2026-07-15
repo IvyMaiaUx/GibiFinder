@@ -13,6 +13,7 @@ const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
  */
 export function proxyCoverUrl(url: string | undefined | null): string | undefined {
   if (!url) return undefined;
+  if (url.includes("/api/image-proxy")) return url;
   try {
     const parsed = new URL(url);
     if (parsed.protocol === "http:" || parsed.protocol === "https:") {
