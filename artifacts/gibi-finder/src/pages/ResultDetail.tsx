@@ -5,11 +5,14 @@ import { Layout } from "@/components/layout/Layout";
 import { ComicCard } from "@/components/results/ComicCard";
 import { FeedbackActions } from "@/components/results/FeedbackActions";
 import { MangaDexReader } from "@/components/results/MangaDexReader";
-import { Link2, AlertCircle, Loader2, Star, BookOpen, ExternalLink } from "lucide-react";
+import { Link2, AlertCircle, Loader2, Star, BookOpen, ExternalLink, ShoppingCart } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+// ✏️  Troque pelo seu ID de afiliado real da Amazon Brasil
+const AMAZON_TAG = import.meta.env.VITE_AMAZON_TAG || "gibifinder-20";
 
 export default function ResultDetail() {
   const [, params] = useRoute("/gibi/:id");
@@ -294,64 +297,79 @@ export default function ResultDetail() {
             {detailTab === "buy" && (() => {
               const mangaTitle = (resultData as any).revista || (resultData as any).titulo || initialTitle || "";
               const pubStatus = getPublicationStatus(mangaTitle);
+              const q = encodeURIComponent(mangaTitle);
               const buyLinks = [
                 {
                   store: "Amazon Brasil",
-                  url: `https://www.amazon.com.br/s?k=manga+${encodeURIComponent(mangaTitle)}&tag=gibifinder-20`,
-                  description: "Frete grátis com Prime, entrega rápida e cupons diários.",
-                  badge: "Melhor preço"
+                  emoji: "📦",
+                  color: "bg-orange-50 border-orange-400 hover:bg-orange-100",
+                  badgeColor: "bg-orange-400 text-white",
+                  url: `https://www.amazon.com.br/s?k=manga+${q}&tag=${AMAZON_TAG}`,
+                  description: "Frete grátis com Prime · Entrega rápida · Link de afiliado",
+                  badge: "Afiliado"
                 },
                 {
                   store: "Loja Panini",
-                  url: `https://panini.com.br/catalogsearch/result/?q=${encodeURIComponent(mangaTitle)}`,
-                  description: "Adquira volumes físicos diretamente da editora Panini Brasil.",
-                  badge: "Oficial"
+                  emoji: "🏪",
+                  color: "bg-blue-50 border-blue-400 hover:bg-blue-100",
+                  badgeColor: "bg-blue-500 text-white",
+                  url: `https://panini.com.br/catalogsearch/result/?q=${q}`,
+                  description: "Volume físico direto da editora oficial no Brasil",
+                  badge: "Editora Oficial"
                 },
                 {
                   store: "Editora JBC",
-                  url: `https://editorajbc.com.br/?s=${encodeURIComponent(mangaTitle)}`,
-                  description: "Catálogo oficial de títulos publicados e distribuídos pela JBC.",
-                  badge: "Oficial"
+                  emoji: "📚",
+                  color: "bg-indigo-50 border-indigo-400 hover:bg-indigo-100",
+                  badgeColor: "bg-indigo-500 text-white",
+                  url: `https://editorajbc.com.br/?s=${q}`,
+                  description: "Catálogo oficial JBC — mangás, light novels e HQs",
+                  badge: "Editora Oficial"
                 },
                 {
                   store: "Mercado Livre",
-                  url: `https://lista.mercadolivre.com.br/manga-${encodeURIComponent(mangaTitle)}`,
-                  description: "Busque edições raras e coleções completas de outros colecionadores.",
-                  badge: "Coleções"
+                  emoji: "🛒",
+                  color: "bg-yellow-50 border-yellow-400 hover:bg-yellow-100",
+                  badgeColor: "bg-yellow-400 text-black",
+                  url: `https://lista.mercadolivre.com.br/manga-${q}`,
+                  description: "Edições raras, coleções completas e sebos online",
+                  badge: "Colecionadores"
                 },
                 {
                   store: "Shopee Brasil",
-                  url: `https://shopee.com.br/search?keyword=manga%20${encodeURIComponent(mangaTitle)}`,
-                  description: "Cupons de frete grátis e descontos em lojas geeks oficiais.",
+                  emoji: "🛍️",
+                  color: "bg-red-50 border-red-400 hover:bg-red-100",
+                  badgeColor: "bg-red-500 text-white",
+                  url: `https://shopee.com.br/search?keyword=manga%20${q}`,
+                  description: "Lojas geeks com cupons de frete grátis e descontos",
                   badge: "Cupons"
                 }
               ];
 
               return (
-                <div className="space-y-8 animate-in fade-in duration-200">
-                  {/* Official Status Indicator */}
-                  <div className="bg-white border-4 border-black p-5 rounded-xl comic-shadow flex items-center justify-between gap-4 select-none">
+                <div className="space-y-6 animate-in fade-in duration-200">
+                  {/* Official Status Banner */}
+                  <div className={`border-4 border-black p-4 flex items-center gap-4 ${
+                    pubStatus.status === "green" ? "bg-green-50" : "bg-yellow-50"
+                  }`}>
+                    <span className="text-3xl leading-none select-none">
+                      {pubStatus.status === "green" ? "🟢" : "🟡"}
+                    </span>
                     <div>
-                      <span className="font-display text-2xs text-gray-400 uppercase block mb-1">Status de Publicação no Brasil:</span>
-                      <div className="flex items-center gap-2">
-                        <span className={cn(
-                          "w-4 h-4 rounded-full border-2 border-black inline-block",
-                          pubStatus.status === "green" ? "bg-green-500 animate-pulse" : "bg-yellow-400"
-                        )} />
-                        <span className="font-display text-xl text-black uppercase">
-                          {pubStatus.text}
-                        </span>
-                      </div>
+                      <span className="font-display text-2xs text-gray-500 uppercase block">Status de Publicação no Brasil</span>
+                      <span className="font-display text-xl text-black uppercase leading-tight">
+                        {pubStatus.text}
+                      </span>
                     </div>
                   </div>
 
-                  {/* Main Support message */}
-                  <div className="bg-amber-50 border-4 border-black p-6 rounded-xl comic-shadow relative overflow-hidden select-none">
-                    <div className="absolute top-0 right-0 w-24 h-24 opacity-5 bg-[radial-gradient(black_1px,transparent_1px)] [background-size:6px_6px] pointer-events-none" />
-                    <div className="flex items-center gap-3">
-                      <BookOpen className="w-10 h-10 text-primary shrink-0" strokeWidth={3} />
+                  {/* Support message */}
+                  <div className="bg-amber-50 border-4 border-black p-5 relative overflow-hidden">
+                    <div className="absolute -top-2 -right-2 w-20 h-20 opacity-5 bg-[radial-gradient(black_1px,transparent_1px)] [background-size:5px_5px] pointer-events-none" />
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl leading-none select-none mt-0.5">💡</span>
                       <div>
-                        <h4 className="font-display text-lg text-black uppercase leading-tight">Apoie os Criadores</h4>
+                        <h4 className="font-display text-base text-black uppercase leading-tight">Apoie os Criadores</h4>
                         <p className="font-sans font-bold text-xs text-gray-700 leading-snug mt-1">
                           Gostou da obra? Se ela estiver disponível oficialmente em sua região, considere apoiar os autores e as editoras adquirindo a versão oficial.
                         </p>
@@ -359,9 +377,12 @@ export default function ResultDetail() {
                     </div>
                   </div>
 
-                  {/* Comparator Links */}
+                  {/* Store cards */}
                   <div className="space-y-3">
-                    <span className="font-display text-sm text-gray-500 uppercase block select-none">Onde comprar (Canais de Venda):</span>
+                    <span className="font-display text-sm text-gray-500 uppercase block">
+                      <ShoppingCart className="inline w-4 h-4 mr-1.5 mb-0.5" strokeWidth={3} />
+                      Canais de Venda:
+                    </span>
                     <div className="grid grid-cols-1 gap-3">
                       {buyLinks.map((link) => (
                         <a
@@ -369,21 +390,22 @@ export default function ResultDetail() {
                           href={link.url}
                           target="_blank"
                           rel="noreferrer"
-                          className="bg-white border-4 border-black p-4 rounded-xl flex items-center justify-between gap-4 hover:bg-muted/30 transition-all hover:translate-x-1 comic-shadow-2xs group text-black select-none"
+                          className={`border-4 ${link.color} p-4 flex items-center justify-between gap-4 transition-all hover:translate-x-1 group text-black select-none`}
                         >
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h4 className="font-display text-xl leading-none">{link.store}</h4>
-                              <span className="bg-secondary text-black text-3xs font-display px-2 py-0.5 border border-black uppercase">
-                                {link.badge}
-                              </span>
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <span className="text-2xl leading-none shrink-0 select-none">{link.emoji}</span>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                                <h4 className="font-display text-xl leading-none">{link.store}</h4>
+                                <span className={`${link.badgeColor} text-3xs font-display px-2 py-0.5 border-2 border-black uppercase shrink-0`}>
+                                  {link.badge}
+                                </span>
+                              </div>
+                              <p className="font-sans text-xs text-gray-500 font-bold truncate">{link.description}</p>
                             </div>
-                            <p className="font-sans text-xs text-gray-500 font-bold truncate">
-                              {link.description}
-                            </p>
                           </div>
                           <span className="font-display text-sm text-primary flex items-center gap-1 shrink-0 group-hover:translate-x-1 transition-transform">
-                            IR PARA LOJA <ExternalLink className="w-4.5 h-4.5" strokeWidth={3} />
+                            IR <ExternalLink className="w-4 h-4" strokeWidth={3} />
                           </span>
                         </a>
                       ))}
