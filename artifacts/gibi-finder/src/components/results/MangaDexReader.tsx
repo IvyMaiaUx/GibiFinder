@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -64,6 +64,7 @@ export function MangaDexReader({ mangaTitle, coverUrl }: MangaDexReaderProps) {
   const [loadingChapters, setLoadingChapters] = useState(false);
 
   // Fullscreen States & Handlers
+  const readerRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
@@ -77,7 +78,7 @@ export function MangaDexReader({ mangaTitle, coverUrl }: MangaDexReaderProps) {
   }, []);
 
   const toggleFullscreen = () => {
-    const element = document.documentElement;
+    const element = readerRef.current || document.documentElement;
     if (!document.fullscreenElement) {
       element.requestFullscreen().catch(err => {
         console.error("Error enabling fullscreen:", err);
@@ -676,7 +677,7 @@ export function MangaDexReader({ mangaTitle, coverUrl }: MangaDexReaderProps) {
 
       {/* ==================== COMMON READER MODAL OVERLAY ==================== */}
       {showReader && pages.length > 0 && selectedChapter && (
-        <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col">
+        <div ref={readerRef} className="fixed inset-0 z-[100] bg-black/95 flex flex-col">
           {/* Header controls */}
           {!isFullscreen && (
             <div className="bg-black border-b-4 border-white/20 p-4 text-white flex justify-between items-center select-none animate-in fade-in slide-in-from-top duration-200">
