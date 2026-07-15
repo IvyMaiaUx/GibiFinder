@@ -151,10 +151,7 @@ export default function Home() {
                         </div>
                       )}
                       
-                      {/* Provider list badge count */}
-                      <span className="absolute top-2 right-2 bg-primary border-2 border-black text-white text-2xs font-display px-2 py-0.5 transform rotate-2">
-                        {item.sources.length} FONTES
-                      </span>
+
                     </div>
 
                     <div className="p-4 flex-1 flex flex-col justify-between min-w-0">

@@ -211,24 +211,7 @@ export default function Explore() {
                           </div>
                         )}
                         
-                        {/* Language badges inside card */}
-                        <div className="absolute top-2 left-2 flex gap-1">
-                          {hasPt && (
-                            <span className="bg-green-500 text-white text-3xs font-sans font-black px-1 py-0.5 border border-black rounded">
-                              PT 🇧🇷
-                            </span>
-                          )}
-                          {hasEn && (
-                            <span className="bg-blue-500 text-white text-3xs font-sans font-black px-1 py-0.5 border border-black rounded">
-                              EN 🇺🇸
-                            </span>
-                          )}
-                        </div>
 
-                        {/* Badge showing available source providers count */}
-                        <span className="absolute top-2 right-2 bg-primary border-2 border-black text-white text-2xs font-display px-2 py-0.5 transform rotate-2">
-                          {item.sources.length} FONTES
-                        </span>
                       </div>
 
                       <div className="p-4 flex-1 flex flex-col justify-between min-w-0">
