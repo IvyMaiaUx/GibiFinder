@@ -326,24 +326,6 @@ export default function ResultDetail() {
                   description: "Catálogo oficial JBC — mangás, light novels e HQs",
                   badge: "Editora Oficial"
                 },
-                {
-                  store: "Mercado Livre",
-                  emoji: "🛒",
-                  color: "bg-yellow-50 border-yellow-400 hover:bg-yellow-100",
-                  badgeColor: "bg-yellow-400 text-black",
-                  url: `https://lista.mercadolivre.com.br/manga-${q}`,
-                  description: "Edições raras, coleções completas e sebos online",
-                  badge: "Colecionadores"
-                },
-                {
-                  store: "Shopee Brasil",
-                  emoji: "🛍️",
-                  color: "bg-red-50 border-red-400 hover:bg-red-100",
-                  badgeColor: "bg-red-500 text-white",
-                  url: `https://shopee.com.br/search?keyword=manga%20${q}`,
-                  description: "Lojas geeks com cupons de frete grátis e descontos",
-                  badge: "Cupons"
-                }
               ];
 
               return (
@@ -371,7 +353,7 @@ export default function ResultDetail() {
                       <div>
                         <h4 className="font-display text-base text-black uppercase leading-tight">Apoie os Criadores</h4>
                         <p className="font-sans font-bold text-xs text-gray-700 leading-snug mt-1">
-                          Gostou da obra? Se ela estiver disponível oficialmente em sua região, considere apoiar os autores e as editoras adquirindo a versão oficial.
+                          Gostou da obra? Se ela estiver disponível oficialmente em sua região, considere apoiar os autores e as editoras adquirindo a versão física.
                         </p>
                       </div>
                     </div>
