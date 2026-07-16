@@ -155,5 +155,13 @@
     "baseUrl": "https://batcave.biz/",
     "engine": "wordpress-comic",
     "active": true
+  },
+  {
+    "id": "pluma-comics",
+    "name": "Pluma Comics",
+    "language": "pt",
+    "baseUrl": "https://plumacomics.cloud/",
+    "engine": "orion",
+    "active": true
   }
 ]

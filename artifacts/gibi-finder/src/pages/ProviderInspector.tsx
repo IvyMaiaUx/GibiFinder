@@ -105,6 +105,7 @@ const ENGINE_COPY: Record<string, string> = {
   comiccms: "Engine comum de leitor/catalogo; boa candidata para provider por configuracao.",
   foolslide: "Engine de leitor antiga/popular; costuma renderizar capitulos e paginas de forma previsivel.",
   genkan: "Engine/API moderna de manga; geralmente vale procurar endpoints JSON.",
+  orion: "Engine Next.js/Orion com /api/obras e paginas /view/:obra/:capitulo.",
   "mangakakalot-like": "Familia com catalogo e imagens protegidas por Referer; pode precisar de proxy.",
   "mangareader-like": "Familia moderna de manga reader; pode exigir parser de capitulos e imagens.",
   manual: "Sem engine clara; precisa investigacao manual."

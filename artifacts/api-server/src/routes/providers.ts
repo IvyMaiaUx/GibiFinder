@@ -430,6 +430,9 @@ function detectHtmlEngine(origin: string, html: string): string | null {
   if (/genkan/i.test(host) || /genkan|__NEXT_DATA__[\s\S]{0,5000}(manga|chapter)|\/api\/manga/i.test(html)) {
     return "genkan";
   }
+  if (/plumacomics/i.test(host) || /orionmanhuas|cdn\.orionmanhuas\.com|\/api\/obras|\/viewer\/bootstrap/i.test(html)) {
+    return "orion";
+  }
   if (/mangakakalot|manganato|chapmanganato/i.test(host) || /2xstorage\.com|chapter-list|panel-story-info/i.test(html)) {
     return "mangakakalot-like";
   }
