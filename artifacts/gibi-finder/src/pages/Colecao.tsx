@@ -3,6 +3,7 @@ import { Layout } from "@/components/layout/Layout";
 import { BookOpen, Trash2, Compass, Clock, BookOpenCheck, Star } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn, proxyCoverUrl } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
 
 interface ReadingProgress {
   providerId: string;
@@ -26,6 +27,7 @@ interface FavoriteItem {
 
 export default function Colecao() {
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"progress" | "favorites">("progress");
   const [shelfItems, setShelfItems] = useState<ReadingProgress[]>([]);
   const [favoriteItems, setFavoriteItems] = useState<FavoriteItem[]>([]);
@@ -113,8 +115,17 @@ export default function Colecao() {
     try {
       const favorites = JSON.parse(localStorage.getItem("gibi-finder:favorites") || "[]") as FavoriteItem[];
       const filtered = favorites.filter(f => !(f.mangaId === item.mangaId && f.providerId === item.providerId));
-      localStorage.setItem("gibi-finder:favorites", JSON.stringify(filtered));
+       localStorage.setItem("gibi-finder:favorites", JSON.stringify(filtered));
       loadFavorites();
+
+      if (user) {
+        const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+        fetch(`${BASE}/api/auth/favorites/sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: user.id, favorites: filtered })
+        }).catch(err => console.error("Error syncing favorites after deletion:", err));
+      }
     } catch (err) {
       console.error("Error removing favorite:", err);
     }

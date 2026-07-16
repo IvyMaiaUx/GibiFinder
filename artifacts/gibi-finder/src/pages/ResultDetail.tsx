@@ -8,6 +8,7 @@ import { MangaDexReader } from "@/components/results/MangaDexReader";
 import { Link2, AlertCircle, Loader2, Star, BookOpen, ExternalLink, ShoppingCart } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -18,6 +19,7 @@ export default function ResultDetail() {
   const [, params] = useRoute("/gibi/:id");
   const id = params?.id || "";
   const { toast } = useToast();
+  const { user } = useAuth();
   const [detailTab, setDetailTab] = useState<"read" | "buy">("read");
 
   // Search parameters for virtual aggregator view
@@ -113,6 +115,14 @@ export default function ResultDetail() {
         });
       }
       localStorage.setItem("gibi-finder:favorites", JSON.stringify(newFavorites));
+
+      if (user) {
+        fetch(`${BASE}/api/auth/favorites/sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: user.id, favorites: newFavorites })
+        }).catch(err => console.error("Error syncing favorite to server:", err));
+      }
     } catch (err) {
       console.error("Error toggling favorite:", err);
     }
