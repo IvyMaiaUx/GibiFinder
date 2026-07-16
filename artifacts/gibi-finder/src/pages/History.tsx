@@ -3,22 +3,18 @@ import { Layout } from "@/components/layout/Layout";
 import { Link, useLocation } from "wouter";
 import { Search, ChevronRight, FileX, Trash2, RotateCcw, BookOpen, Clock } from "lucide-react";
 import { formatComicDate, cn } from "@/lib/utils";
-import { getLocalHistory, removeFromLocalHistory, clearLocalHistory, type LocalHistoryItem } from "@/hooks/use-local-history";
+import type { LocalHistoryItem } from "@/hooks/use-local-history";
+import { useAuth } from "@/hooks/use-auth";
+import {
+  clearReadingHistory,
+  clearSearchHistory,
+  getSyncedReadingHistory,
+  getSyncedSearchHistory,
+  removeReadingHistoryItem,
+  removeSearchHistoryItem,
+  type ReadingHistoryItem
+} from "@/lib/user-history";
 import { SafeImage } from "@/components/ui/SafeImage";
-
-interface ReadingHistoryItem {
-  id: string;
-  title: string;
-  coverUrl?: string;
-  chapterId: string;
-  chapterNum: string;
-  chapterTitle?: string;
-  providerId: string;
-  mangaId: string;
-  language?: string;
-  pageNumber: number;
-  timestamp: number;
-}
 
 const TYPE_LABELS: Record<string, string> = {
   image: "📷 Imagem",
@@ -29,10 +25,11 @@ const TYPE_LABELS: Record<string, string> = {
 
 export default function History() {
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"search" | "reading">("search");
   
   // Search history states
-  const [searchItems, setSearchItems] = useState<LocalHistoryItem[]>(() => getLocalHistory());
+  const [searchItems, setSearchItems] = useState<LocalHistoryItem[]>([]);
   
   // Reading history states
   const [readingItems, setReadingItems] = useState<ReadingHistoryItem[]>([]);
@@ -40,20 +37,23 @@ export default function History() {
   const [filter, setFilter] = useState("");
   const [filterInput, setFilterInput] = useState("");
 
-  // Load reading history
-  const loadReadingHistory = () => {
+  // Load local history, or synced account history when logged in.
+  const loadHistories = async () => {
     try {
-      const historyKey = "gibi-finder:reading-history";
-      const list = JSON.parse(localStorage.getItem(historyKey) || "[]") as ReadingHistoryItem[];
-      setReadingItems(list);
+      const [searchHistory, readingHistory] = await Promise.all([
+        getSyncedSearchHistory(user?.id),
+        getSyncedReadingHistory(user?.id)
+      ]);
+      setSearchItems(searchHistory);
+      setReadingItems(readingHistory);
     } catch (err) {
-      console.error("Failed to load reading history:", err);
+      console.error("Failed to load history:", err);
     }
   };
 
   useEffect(() => {
-    loadReadingHistory();
-  }, []);
+    loadHistories();
+  }, [user?.id]);
 
   const handleSearchFilter = (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,13 +65,13 @@ export default function History() {
     e.preventDefault();
     e.stopPropagation();
     if (!window.confirm("Remover esta busca do seu histórico?")) return;
-    setSearchItems(removeFromLocalHistory(id));
+    removeSearchHistoryItem(id, user?.id).then(setSearchItems);
   };
 
   // Clear all search history
   const handleClearAllSearch = () => {
     if (!window.confirm("Limpar todo o histórico de buscas? Isso não pode ser desfeito.")) return;
-    clearLocalHistory();
+    clearSearchHistory(user?.id);
     setSearchItems([]);
   };
 
@@ -79,26 +79,14 @@ export default function History() {
   const handleDeleteReading = (item: ReadingHistoryItem, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!window.confirm("Remover este item do seu histórico de leitura?")) return;
-    try {
-      const historyKey = "gibi-finder:reading-history";
-      const list = JSON.parse(localStorage.getItem(historyKey) || "[]") as ReadingHistoryItem[];
-      const updated = list.filter(i => i.id !== item.id);
-      localStorage.setItem(historyKey, JSON.stringify(updated));
-      setReadingItems(updated);
-    } catch (err) {
-      console.error(err);
-    }
+    removeReadingHistoryItem(item.id, user?.id).then(setReadingItems);
   };
 
   // Clear all reading history
   const handleClearAllReading = () => {
     if (!window.confirm("Limpar todo o histórico de leitura? Isso não pode ser desfeito.")) return;
-    try {
-      localStorage.removeItem("gibi-finder:reading-history");
-      setReadingItems([]);
-    } catch (err) {
-      console.error(err);
-    }
+    clearReadingHistory(user?.id);
+    setReadingItems([]);
   };
 
   // Resume reading
@@ -147,7 +135,7 @@ export default function History() {
               ARQUIVOS DO DETETIVE
             </h1>
             <p className="font-sans font-bold text-gray-500 mt-2 text-sm uppercase">
-              Histórico salvo neste navegador • {activeTab === "search" ? `${searchItems.length} buscas` : `${readingItems.length} capítulos lidos`}
+              {user ? "Histórico sincronizado na sua conta" : "Histórico salvo neste navegador"} • {activeTab === "search" ? `${searchItems.length} buscas` : `${readingItems.length} capítulos lidos`}
             </p>
           </div>
 

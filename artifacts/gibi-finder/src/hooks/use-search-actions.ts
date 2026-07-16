@@ -8,10 +8,12 @@ import {
 } from "@workspace/api-client-react";
 import { fileToBase64 } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { addToLocalHistory } from "@/hooks/use-local-history";
+import { useAuth } from "@/hooks/use-auth";
+import { addSearchHistoryItem } from "@/lib/user-history";
 
 export function useSearchActions() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [results, setResults] = useState<SearchResponse | null>(null);
   const [resultSource, setResultSource] = useState<"colecao" | "gemini" | null>(null);
   
@@ -31,7 +33,7 @@ export function useSearchActions() {
     setResultSource(data.source === "colecao" ? "colecao" : "gemini");
 
     if (data.mainResult.encontrado && data.mainResult.id) {
-      addToLocalHistory({
+      addSearchHistoryItem({
         id: data.mainResult.id,
         titulo: data.mainResult.titulo || "",
         revista: data.mainResult.revista || "",
@@ -40,7 +42,7 @@ export function useSearchActions() {
         images: data.mainResult.images || [],
         search_type: data.mainResult.search_type || "text",
         created_at: new Date().toISOString(),
-      });
+      }, user?.id);
     }
 
     if (data.mainResult.encontrado) {

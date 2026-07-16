@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
+import { useAuth } from "@/hooks/use-auth";
+import { getLocalProgress, saveReadingState } from "@/lib/user-history";
 
 interface MangaDexReaderProps {
   mangaTitle: string;
@@ -56,6 +58,7 @@ interface Page {
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export function MangaDexReader({ mangaTitle, coverUrl, description, initialProviderId, initialMangaId }: MangaDexReaderProps) {
+  const { user } = useAuth();
   // Tab/Source Navigation
   const [activeTab, setActiveTab] = useState<"aggregator" | "external">("aggregator");
   
@@ -353,8 +356,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // Load progress on mount/change
   useEffect(() => {
     try {
-      const progressKey = "gibi-finder:progress";
-      const allProgress = JSON.parse(localStorage.getItem(progressKey) || "{}");
+      const allProgress = getLocalProgress();
       const searchParams = new URLSearchParams(window.location.search);
       const isResume = searchParams.get("resume") === "true";
       const pId = searchParams.get("providerId") || "";
@@ -390,24 +392,19 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   useEffect(() => {
     if (showReader && selectedChapter && pages.length > 0) {
       try {
-        const progressKey = "gibi-finder:progress";
-        const allProgress = JSON.parse(localStorage.getItem(progressKey) || "{}");
-        allProgress[selectedResult?.id || mangaTitle] = {
+        const progressKey = selectedResult?.id || mangaTitle;
+        const progress = {
           chapterId: selectedChapter.id,
           chapterNum: selectedChapter.chapterNum,
           pageNumber: currentPage + 1,
           title: selectedResult?.title || mangaTitle,
           coverUrl: selectedResult?.coverUrl,
           providerId: selectedSource?.providerId || selectedChapter.providerId,
-          mangaId: selectedSource?.id,
+          mangaId: selectedSource?.id || selectedResult?.id || mangaTitle,
           language: selectedChapter.language,
           updatedAt: new Date().toISOString()
         };
-        localStorage.setItem(progressKey, JSON.stringify(allProgress));
 
-        // Save to chronological reading history list
-        const historyKey = "gibi-finder:reading-history";
-        const historyList = JSON.parse(localStorage.getItem(historyKey) || "[]");
         const newEntry = {
           id: `${selectedSource?.providerId || selectedChapter.providerId}-${selectedSource?.id || mangaTitle}-${selectedChapter.id}`,
           title: selectedResult?.title || mangaTitle,
@@ -416,22 +413,18 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
           chapterNum: selectedChapter.chapterNum,
           chapterTitle: selectedChapter.title,
           providerId: selectedSource?.providerId || selectedChapter.providerId,
-          mangaId: selectedSource?.id,
+          mangaId: selectedSource?.id || selectedResult?.id || mangaTitle,
           language: selectedChapter.language,
           pageNumber: currentPage + 1,
           timestamp: Date.now()
         };
 
-        const filteredList = historyList.filter(
-          (item: any) => !(item.mangaId === newEntry.mangaId && item.chapterId === newEntry.chapterId)
-        );
-        filteredList.unshift(newEntry);
-        localStorage.setItem(historyKey, JSON.stringify(filteredList.slice(0, 100)));
+        saveReadingState(progressKey, progress, newEntry, user?.id);
       } catch (e) {
         console.error("Failed to save progress:", e);
       }
     }
-  }, [currentPage, selectedChapter, showReader, pages, selectedResult, mangaTitle, selectedSource]);
+  }, [currentPage, selectedChapter, showReader, pages, selectedResult, mangaTitle, selectedSource, user?.id]);
 
   // Filtered chapters for display
   const filteredChapters = chapters.filter(ch => {

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { syncReadingHistory, syncSearchHistory } from "@/lib/user-history";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const AUTH_KEY = "gibi-finder:auth_user";
@@ -43,8 +44,7 @@ export function useAuth() {
         setUser(data.user);
         toast({ title: `Bem-vindo de volta, ${data.user.username}!`, description: "Seu progresso e favoritos foram sincronizados." });
         
-        // Trigger sync of local favorites to database
-        syncFavorites(data.user.id);
+        syncUserData(data.user.id);
         return true;
       } else {
         toast({ title: "Falha no login", description: data.message || "Usuário ou senha inválidos", variant: "destructive" });
@@ -73,8 +73,7 @@ export function useAuth() {
         setUser(data.user);
         toast({ title: "Cadastro realizado!", description: `Sua conta '${data.user.username}' foi criada com sucesso.` });
         
-        // Sync local favorites
-        syncFavorites(data.user.id);
+        syncUserData(data.user.id);
         return true;
       } else {
         toast({ title: "Erro no cadastro", description: data.message || "Não foi possível criar a conta", variant: "destructive" });
@@ -117,5 +116,13 @@ export function useAuth() {
     }
   };
 
-  return { user, loading, login, register, logout, syncFavorites };
+  const syncUserData = async (userId: string) => {
+    await Promise.all([
+      syncFavorites(userId),
+      syncSearchHistory(userId),
+      syncReadingHistory(userId)
+    ]);
+  };
+
+  return { user, loading, login, register, logout, syncFavorites, syncUserData };
 }

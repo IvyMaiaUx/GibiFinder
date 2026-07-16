@@ -129,7 +129,74 @@ CREATE TABLE IF NOT EXISTS user_favorites (
 
 CREATE INDEX IF NOT EXISTS idx_user_favorites_user_id ON user_favorites(user_id);
 
+-- ============================================================
+-- Table: user_search_history (synced search history)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_search_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  item_id TEXT NOT NULL,
+  titulo TEXT,
+  revista TEXT,
+  editora TEXT,
+  ano TEXT,
+  images TEXT[] DEFAULT '{}',
+  search_type TEXT NOT NULL DEFAULT 'text',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, item_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_search_history_user_id ON user_search_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_search_history_created_at ON user_search_history(user_id, created_at DESC);
+
+-- ============================================================
+-- Table: user_reading_history (synced reading history)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_reading_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  item_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  cover_url TEXT,
+  chapter_id TEXT NOT NULL,
+  chapter_num TEXT,
+  chapter_title TEXT,
+  provider_id TEXT NOT NULL,
+  manga_id TEXT,
+  language TEXT,
+  page_number NUMERIC NOT NULL DEFAULT 1,
+  timestamp NUMERIC NOT NULL,
+  UNIQUE(user_id, item_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_reading_history_user_id ON user_reading_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_reading_history_timestamp ON user_reading_history(user_id, timestamp DESC);
+
+-- ============================================================
+-- Table: user_reading_progress (synced reading progress)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_reading_progress (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  progress_key TEXT NOT NULL,
+  chapter_id TEXT NOT NULL,
+  chapter_num TEXT,
+  page_number NUMERIC NOT NULL DEFAULT 1,
+  title TEXT NOT NULL,
+  cover_url TEXT,
+  provider_id TEXT,
+  manga_id TEXT,
+  language TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, progress_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_reading_progress_user_id ON user_reading_progress(user_id);
+
 -- Disable Row Level Security (RLS) to match anonymous schema design
 ALTER TABLE user_profiles DISABLE ROW LEVEL SECURITY;
 ALTER TABLE user_favorites DISABLE ROW LEVEL SECURITY;
+ALTER TABLE user_search_history DISABLE ROW LEVEL SECURITY;
+ALTER TABLE user_reading_history DISABLE ROW LEVEL SECURITY;
+ALTER TABLE user_reading_progress DISABLE ROW LEVEL SECURITY;
 ALTER TABLE suggestions DISABLE ROW LEVEL SECURITY;

@@ -905,6 +905,273 @@ router.post("/auth/favorites/sync", async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/auth/history/search - get synced search history
+router.get("/auth/history/search", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const userId = req.query.userId as string;
+  if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
+  try {
+    const { data, error } = await supabase
+      .from("user_search_history")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    res.json((data || []).map((item: any) => ({
+      id: item.item_id,
+      titulo: item.titulo || "",
+      revista: item.revista || "",
+      editora: item.editora || "",
+      ano: item.ano || "",
+      images: item.images || [],
+      search_type: item.search_type || "text",
+      created_at: item.created_at
+    })));
+  } catch { res.status(500).json({ error: "server_error" }); }
+});
+
+// POST /api/auth/history/search/upsert - save one search history item
+router.post("/auth/history/search/upsert", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const { userId, item } = req.body;
+  if (!userId || !item?.id) { res.status(400).json({ error: "bad_request" }); return; }
+  try {
+    await supabase.from("user_search_history").delete().eq("user_id", userId).eq("item_id", item.id);
+    const { error } = await supabase.from("user_search_history").insert({
+      user_id: userId,
+      item_id: item.id,
+      titulo: item.titulo || "",
+      revista: item.revista || "",
+      editora: item.editora || "",
+      ano: item.ano || "",
+      images: item.images || [],
+      search_type: item.search_type || "text",
+      created_at: item.created_at || new Date().toISOString()
+    });
+    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    res.json({ success: true });
+  } catch { res.status(500).json({ error: "server_error" }); }
+});
+
+// POST /api/auth/history/search/sync - merge local and server search history
+router.post("/auth/history/search/sync", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const { userId, items } = req.body;
+  if (!userId || !Array.isArray(items)) { res.status(400).json({ error: "bad_request" }); return; }
+  try {
+    const { data: existing } = await supabase.from("user_search_history").select("*").eq("user_id", userId);
+    const merged = new Map<string, any>();
+    for (const item of existing || []) {
+      merged.set(item.item_id, {
+        id: item.item_id,
+        titulo: item.titulo || "",
+        revista: item.revista || "",
+        editora: item.editora || "",
+        ano: item.ano || "",
+        images: item.images || [],
+        search_type: item.search_type || "text",
+        created_at: item.created_at
+      });
+    }
+    for (const item of items) {
+      if (item?.id) merged.set(item.id, item);
+    }
+    const mergedItems = Array.from(merged.values())
+      .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+      .slice(0, 50);
+    await supabase.from("user_search_history").delete().eq("user_id", userId);
+    if (mergedItems.length > 0) {
+      const rows = mergedItems.map((item: any) => ({
+        user_id: userId,
+        item_id: item.id,
+        titulo: item.titulo || "",
+        revista: item.revista || "",
+        editora: item.editora || "",
+        ano: item.ano || "",
+        images: item.images || [],
+        search_type: item.search_type || "text",
+        created_at: item.created_at || new Date().toISOString()
+      }));
+      await supabase.from("user_search_history").insert(rows);
+    }
+    res.json({ success: true });
+  } catch { res.status(500).json({ error: "server_error" }); }
+});
+
+router.delete("/auth/history/search/:itemId", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const userId = req.query.userId as string;
+  if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
+  const { error } = await supabase.from("user_search_history").delete().eq("user_id", userId).eq("item_id", req.params.itemId);
+  if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+  res.json({ success: true });
+});
+
+router.delete("/auth/history/search", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const userId = req.query.userId as string;
+  if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
+  const { error } = await supabase.from("user_search_history").delete().eq("user_id", userId);
+  if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+  res.json({ success: true });
+});
+
+// GET /api/auth/history/reading - get synced reading history
+router.get("/auth/history/reading", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const userId = req.query.userId as string;
+  if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
+  try {
+    const { data, error } = await supabase
+      .from("user_reading_history")
+      .select("*")
+      .eq("user_id", userId)
+      .order("timestamp", { ascending: false })
+      .limit(100);
+    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    res.json((data || []).map((item: any) => ({
+      id: item.item_id,
+      title: item.title,
+      coverUrl: item.cover_url || undefined,
+      chapterId: item.chapter_id,
+      chapterNum: item.chapter_num || "",
+      chapterTitle: item.chapter_title || undefined,
+      providerId: item.provider_id,
+      mangaId: item.manga_id,
+      language: item.language || undefined,
+      pageNumber: Number(item.page_number || 1),
+      timestamp: Number(item.timestamp)
+    })));
+  } catch { res.status(500).json({ error: "server_error" }); }
+});
+
+// POST /api/auth/history/reading/upsert - save one reading history/progress item
+router.post("/auth/history/reading/upsert", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const { userId, progressKey, progress, historyItem } = req.body;
+  if (!userId || !progressKey || !progress || !historyItem?.id) { res.status(400).json({ error: "bad_request" }); return; }
+  try {
+    await supabase.from("user_reading_progress").delete().eq("user_id", userId).eq("progress_key", progressKey);
+    await supabase.from("user_reading_progress").insert({
+      user_id: userId,
+      progress_key: progressKey,
+      chapter_id: progress.chapterId,
+      chapter_num: progress.chapterNum || "",
+      page_number: progress.pageNumber || 1,
+      title: progress.title,
+      cover_url: progress.coverUrl || null,
+      provider_id: progress.providerId || null,
+      manga_id: progress.mangaId || null,
+      language: progress.language || null,
+      updated_at: progress.updatedAt || new Date().toISOString()
+    });
+
+    await supabase.from("user_reading_history").delete().eq("user_id", userId).eq("item_id", historyItem.id);
+    const { error } = await supabase.from("user_reading_history").insert({
+      user_id: userId,
+      item_id: historyItem.id,
+      title: historyItem.title,
+      cover_url: historyItem.coverUrl || null,
+      chapter_id: historyItem.chapterId,
+      chapter_num: historyItem.chapterNum || "",
+      chapter_title: historyItem.chapterTitle || null,
+      provider_id: historyItem.providerId,
+      manga_id: historyItem.mangaId || null,
+      language: historyItem.language || null,
+      page_number: historyItem.pageNumber || 1,
+      timestamp: historyItem.timestamp || Date.now()
+    });
+    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    res.json({ success: true });
+  } catch { res.status(500).json({ error: "server_error" }); }
+});
+
+// POST /api/auth/history/reading/sync - merge local and server reading history/progress
+router.post("/auth/history/reading/sync", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const { userId, history, progress } = req.body;
+  if (!userId || !Array.isArray(history)) { res.status(400).json({ error: "bad_request" }); return; }
+  try {
+    const { data: existingHistory } = await supabase.from("user_reading_history").select("*").eq("user_id", userId);
+    const merged = new Map<string, any>();
+    for (const item of existingHistory || []) {
+      merged.set(item.item_id, {
+        id: item.item_id,
+        title: item.title,
+        coverUrl: item.cover_url || undefined,
+        chapterId: item.chapter_id,
+        chapterNum: item.chapter_num || "",
+        chapterTitle: item.chapter_title || undefined,
+        providerId: item.provider_id,
+        mangaId: item.manga_id,
+        language: item.language || undefined,
+        pageNumber: Number(item.page_number || 1),
+        timestamp: Number(item.timestamp)
+      });
+    }
+    for (const item of history) {
+      if (item?.id) merged.set(item.id, item);
+    }
+    const mergedHistory = Array.from(merged.values()).sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0)).slice(0, 100);
+    await supabase.from("user_reading_history").delete().eq("user_id", userId);
+    if (mergedHistory.length > 0) {
+      await supabase.from("user_reading_history").insert(mergedHistory.map((item: any) => ({
+        user_id: userId,
+        item_id: item.id,
+        title: item.title,
+        cover_url: item.coverUrl || null,
+        chapter_id: item.chapterId,
+        chapter_num: item.chapterNum || "",
+        chapter_title: item.chapterTitle || null,
+        provider_id: item.providerId,
+        manga_id: item.mangaId || null,
+        language: item.language || null,
+        page_number: item.pageNumber || 1,
+        timestamp: item.timestamp || Date.now()
+      })));
+    }
+
+    if (progress && typeof progress === "object") {
+      await supabase.from("user_reading_progress").delete().eq("user_id", userId);
+      const rows = Object.entries(progress).map(([key, item]: [string, any]) => ({
+        user_id: userId,
+        progress_key: key,
+        chapter_id: item.chapterId,
+        chapter_num: item.chapterNum || "",
+        page_number: item.pageNumber || 1,
+        title: item.title,
+        cover_url: item.coverUrl || null,
+        provider_id: item.providerId || null,
+        manga_id: item.mangaId || null,
+        language: item.language || null,
+        updated_at: item.updatedAt || new Date().toISOString()
+      })).filter(row => row.chapter_id && row.title);
+      if (rows.length > 0) await supabase.from("user_reading_progress").insert(rows);
+    }
+
+    res.json({ success: true });
+  } catch { res.status(500).json({ error: "server_error" }); }
+});
+
+router.delete("/auth/history/reading/:itemId", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const userId = req.query.userId as string;
+  if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
+  const { error } = await supabase.from("user_reading_history").delete().eq("user_id", userId).eq("item_id", req.params.itemId);
+  if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+  res.json({ success: true });
+});
+
+router.delete("/auth/history/reading", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const userId = req.query.userId as string;
+  if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
+  const { error } = await supabase.from("user_reading_history").delete().eq("user_id", userId);
+  if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+  res.json({ success: true });
+});
+
 // GET /api/admin/users - list registered users (admin only)
 router.get("/admin/users", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
