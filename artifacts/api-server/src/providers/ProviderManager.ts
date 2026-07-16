@@ -229,27 +229,110 @@ export class ProviderManager {
     return searchable.some(text => this.adultTerms.some(term => text.includes(this.normalizeText(term))));
   }
 
+  private static stripAdultSources(result: UnifiedSearchResult): UnifiedSearchResult | null {
+    const adultSources = result.sources.filter(source => this.isAdultProvider(source.providerId));
+    const safeSources = result.sources.filter(source => !this.isAdultProvider(source.providerId));
+
+    if (adultSources.length > 0 && safeSources.length > 0) {
+      const safeGenres = (result.genres || []).filter(genre => {
+        const normalized = this.normalizeText(genre);
+        return !this.adultTerms.some(term => normalized.includes(this.normalizeText(term)));
+      });
+
+      return {
+        ...result,
+        sources: safeSources,
+        genres: safeGenres.length > 0 ? safeGenres : undefined,
+        isAdult: false
+      };
+    }
+
+    if (this.isAdultResult(result)) return null;
+
+    return {
+      ...result,
+      isAdult: false
+    };
+  }
+
   private static getSearchRelevance(query: string, result: UnifiedSearchResult): number {
     const title = this.normalizeText(result.title || "");
     const phrase = this.normalizeText(query).trim();
     const compactTitle = title.replace(/\s+/g, "");
     const compactPhrase = phrase.replace(/\s+/g, "");
-    const terms = phrase.split(/[^a-z0-9]+/i).filter(term => term.length > 2);
+    const terms = this.getSearchTerms(query);
+    const titleWords = title.split(/[^a-z0-9]+/i).filter(Boolean);
 
     let score = 0;
-    if (phrase && title.includes(phrase)) score += 100;
-    if (compactPhrase && compactTitle.includes(compactPhrase)) score += 80;
+    if (phrase && title === phrase) score += 500;
+    if (compactPhrase && compactTitle === compactPhrase) score += 450;
+    if (phrase && title.includes(phrase)) score += 260;
+    if (compactPhrase && compactTitle.includes(compactPhrase)) score += 220;
+    if (phrase && phrase.includes(title) && title.length > 4) score += 80;
+
     for (const term of terms) {
-      if (title.includes(term)) score += 10;
+      const variants = this.getTermVariants(term);
+      const exactWord = titleWords.some(word => variants.includes(word));
+      const prefixWord = titleWords.some(word => variants.some(variant => word.startsWith(variant) || variant.startsWith(word)));
+      const partial = variants.some(variant => title.includes(variant));
+
+      if (exactWord) score += 40;
+      else if (prefixWord) score += 24;
+      else if (partial) score += 12;
     }
+
+    score += Math.min(result.sources.length, 5) * 3;
     return score;
   }
 
   private static getSearchTerms(query: string): string[] {
+    const stopWords = new Set([
+      "and",
+      "das",
+      "de",
+      "del",
+      "der",
+      "do",
+      "dos",
+      "for",
+      "las",
+      "les",
+      "los",
+      "the",
+      "uma",
+      "uns"
+    ]);
+
     return this.normalizeText(query)
       .split(/[^a-z0-9]+/i)
       .map(term => term.trim())
-      .filter(term => term.length > 2);
+      .filter(term => term.length > 2 && !stopWords.has(term));
+  }
+
+  private static getTermVariants(term: string): string[] {
+    const variants = new Set([term]);
+
+    if (term.endsWith("s") && term.length > 4) {
+      variants.add(term.slice(0, -1));
+    } else if (term.length > 3) {
+      variants.add(`${term}s`);
+    }
+
+    if (term.endsWith("ies") && term.length > 5) {
+      variants.add(`${term.slice(0, -3)}y`);
+    }
+    if (term.endsWith("y") && term.length > 3) {
+      variants.add(`${term.slice(0, -1)}ies`);
+    }
+
+    return Array.from(variants);
+  }
+
+  private static titleMatchesTerm(title: string, term: string): boolean {
+    const titleWords = title.split(/[^a-z0-9]+/i).filter(Boolean);
+    const variants = this.getTermVariants(term);
+    return titleWords.some(word => variants.includes(word)) ||
+      variants.some(variant => title.includes(variant));
   }
 
   private static isRelevantSearchResult(query: string, result: UnifiedSearchResult): boolean {
@@ -268,21 +351,16 @@ export class ProviderManager {
       return (title.includes("familia") && title.includes("sacana")) || title.includes("sacanas");
     }
 
-    const termMatches = terms.map(term => {
-      if (title.includes(term)) return true;
-      if (term.endsWith("s") && title.includes(term.slice(0, -1))) return true;
-      if (title.includes(`${term}s`)) return true;
-      return false;
-    });
+    const termMatches = terms.map(term => this.titleMatchesTerm(title, term));
 
     if (termMatches.every(Boolean)) return true;
     if (terms.length <= 2) return false;
 
-    const hasDistinctiveTerm = terms
-      .filter(term => term.length >= 5)
-      .some(term => title.includes(term) || title.includes(`${term}s`) || (term.endsWith("s") && title.includes(term.slice(0, -1))));
+    const matchedCount = termMatches.filter(Boolean).length;
+    const coverage = matchedCount / terms.length;
+    const hasDistinctiveTerm = terms.some(term => term.length >= 5 && this.titleMatchesTerm(title, term));
 
-    return hasDistinctiveTerm && termMatches.filter(Boolean).length >= terms.length - 1;
+    return hasDistinctiveTerm && coverage >= 0.67;
   }
 
   // Searches all active providers simultaneously and unifies results
@@ -362,12 +440,20 @@ export class ProviderManager {
       isAdult: this.isAdultResult(result)
     }));
     const relevantResults = allResults.filter(result => this.isRelevantSearchResult(query, result));
-    const visibleResults = (nsfw ? relevantResults : relevantResults.filter(result => !result.isAdult))
+    const visibleResults = (nsfw
+      ? relevantResults
+      : relevantResults
+        .map(result => this.stripAdultSources(result))
+        .filter((result): result is UnifiedSearchResult => result !== null))
       .sort((a, b) => this.getSearchRelevance(query, b) - this.getSearchRelevance(query, a));
+
+    const hiddenAdultCount = nsfw
+      ? 0
+      : relevantResults.filter(result => this.stripAdultSources(result) === null).length;
 
     return {
       results: visibleResults,
-      hiddenAdultCount: relevantResults.length - visibleResults.length,
+      hiddenAdultCount,
       adultQuery: this.isAdultQuery(query)
     };
   }
