@@ -1,5 +1,9 @@
 import { Provider, SearchResult, MangaDetails, Chapter, Page } from "./types";
 
+const BROWSER_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+};
+
 export class MadaraProvider implements Provider {
   constructor(
     public id: string,
@@ -7,7 +11,6 @@ export class MadaraProvider implements Provider {
     public language: string,
     public baseUrl: string
   ) {
-    // Ensure baseUrl has a trailing slash
     if (!this.baseUrl.endsWith("/")) {
       this.baseUrl += "/";
     }
@@ -20,7 +23,9 @@ export class MadaraProvider implements Provider {
       .replace(/&quot;/g, '"')
       .replace(/&#039;/g, "'")
       .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">");
+      .replace(/&gt;/g, ">")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   private resolveUrl(value: string): string | null {
@@ -34,17 +39,46 @@ export class MadaraProvider implements Provider {
     }
   }
 
+  private toGenericId(url: string): string | null {
+    try {
+      const parsed = new URL(this.decodeHtml(url), this.baseUrl);
+      const path = parsed.pathname.replace(/^\/+|\/+$/g, "");
+      if (!path || path.startsWith("categoria/") || path.startsWith("category/") || path.startsWith("tag/")) {
+        return null;
+      }
+      return `post:${path}`;
+    } catch {
+      return null;
+    }
+  }
+
+  private isGenericId(id: string): boolean {
+    return id.startsWith("post:");
+  }
+
+  private getContentUrl(id: string): string {
+    if (this.isGenericId(id)) {
+      const path = id.replace(/^post:/, "").replace(/^\/+|\/+$/g, "");
+      return new URL(`${path}/`, this.baseUrl).toString();
+    }
+    return `${this.baseUrl}manga/${id}/`;
+  }
+
+  private getLanguage(): string {
+    return this.language === "multi" ? "pt" : this.language;
+  }
+
   private collectPageUrls(html: string): string[] {
     const urls = new Set<string>();
-    const imageExt = /\.(?:webp|jpe?g|png)(?:[?#][^"' <>)\\]*)?$/i;
     const badFragments = [
       "logo",
       "avatar",
       "banner",
-      "ads",
+      "/ads/",
       "advert",
       "placeholder",
       "loading",
+      "favicon",
       "wp-content/plugins",
       "wp-includes"
     ];
@@ -54,15 +88,23 @@ export class MadaraProvider implements Provider {
       const resolved = this.resolveUrl(raw);
       if (!resolved) return;
       const lower = resolved.toLowerCase();
-      if (!imageExt.test(lower)) return;
       if (badFragments.some(fragment => lower.includes(fragment))) return;
       urls.add(resolved);
     };
 
+    const isLikelyPageImage = (tag: string): boolean => {
+      if (/class=["'][^"']*(?:attachment-full|size-full|responsiva|chapter|wp-manga-chapter-img)[^"']*["']/i.test(tag)) {
+        return true;
+      }
+
+      const width = Number(tag.match(/\swidth=["']?(\d+)/i)?.[1] || 0);
+      const height = Number(tag.match(/\sheight=["']?(\d+)/i)?.[1] || 0);
+      return width >= 500 && height >= 500 && height >= width * 1.05;
+    };
+
     const readerBlocks = [
-      /<div[^>]+class="[^"]*(?:reading-content|entry-content|chapter-content|page-break|wp-manga-chapter-img)[^"]*"[\s\S]*?<\/div>/gi,
-      /<figure[\s\S]*?<\/figure>/gi,
-      /<img[^>]+>/gi
+      /<div[^>]+class="[^"]*(?:reading-content|entry-content|chapter-content|page-break|wp-manga-chapter-img|pagina-conteudo|post-content|conteudo)[^"]*"[\s\S]*?<\/div>/gi,
+      /<figure[\s\S]*?<\/figure>/gi
     ];
 
     for (const blockRegex of readerBlocks) {
@@ -70,6 +112,7 @@ export class MadaraProvider implements Provider {
         const block = blockMatch[0];
         for (const imgMatch of block.matchAll(/<img[^>]+>/gi)) {
           const tag = imgMatch[0];
+          if (!isLikelyPageImage(tag)) continue;
           const attrMatch = tag.match(/\s(?:data-src|data-lazy-src|data-original|src)=["']([^"']+)["']/i);
           addCandidate(attrMatch?.[1]);
 
@@ -82,11 +125,15 @@ export class MadaraProvider implements Provider {
       }
     }
 
-    for (const urlMatch of html.matchAll(/https?:\\?\/\\?\/[^"' <>)\\]+?\.(?:webp|jpe?g|png)(?:\?[^"' <>)\\]*)?/gi)) {
-      addCandidate(urlMatch[0]);
+    for (const imgMatch of html.matchAll(/<img[^>]+>/gi)) {
+      const tag = imgMatch[0];
+      if (!isLikelyPageImage(tag)) continue;
+      const attrMatch = tag.match(/\s(?:data-src|data-lazy-src|data-original|src)=["']([^"']+)["']/i);
+      addCandidate(attrMatch?.[1]);
     }
 
-    return Array.from(urls).map((url, index) => ({ url, index }))
+    return Array.from(urls)
+      .map((url, index) => ({ url, index }))
       .sort((a, b) => {
         const pageA = a.url.match(/(?:^|[^\d])(\d{1,4})(?:\D*)\.(?:webp|jpe?g|png)/i)?.[1];
         const pageB = b.url.match(/(?:^|[^\d])(\d{1,4})(?:\D*)\.(?:webp|jpe?g|png)/i)?.[1];
@@ -96,50 +143,80 @@ export class MadaraProvider implements Provider {
       .map(item => item.url);
   }
 
+  private parseMadaraSearch(html: string): SearchResult[] {
+    const parts = html.split('<div class="row c-tabs-item__content">');
+    const results: SearchResult[] = [];
+
+    for (let i = 1; i < parts.length; i++) {
+      const part = parts[i];
+      const urlMatch = part.match(/href="([^"]+?\/manga\/([^\/]+?)\/)"/i);
+      if (!urlMatch) continue;
+      const slug = urlMatch[2];
+      if (slug === "feed") continue;
+
+      const titleMatch = part.match(/class="post-title"[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/i) ||
+        part.match(/title="([^"]+)"/i);
+      const title = titleMatch ? this.decodeHtml(titleMatch[1].replace(/<[^>]*>/g, "")) : slug.replace(/-/g, " ").toUpperCase();
+
+      const coverMatch = part.match(/<img[^>]+src="([^"]+)"/i) ||
+        part.match(/<img[^>]+data-src="([^"]+)"/i);
+
+      results.push({
+        id: slug,
+        title,
+        description: `Disponivel no portal ${this.name}.`,
+        coverUrl: coverMatch ? this.resolveUrl(coverMatch[1]) || undefined : undefined,
+        providerId: this.id
+      });
+    }
+
+    return results;
+  }
+
+  private parseGenericWordPressSearch(html: string): SearchResult[] {
+    const results: SearchResult[] = [];
+    const seen = new Set<string>();
+    const blocks = html.match(/<li\b[\s\S]*?<\/li>/gi) || html.match(/<article\b[\s\S]*?<\/article>/gi) || [];
+
+    for (const block of blocks) {
+      const titleLink = block.match(/<a[^>]+class=["'][^"']*(?:titulo|title|entry-title)[^"']*["'][^>]+href=["']([^"']+)["'][^>]*title=["']([^"']+)["'][\s\S]*?<\/a>/i) ||
+        block.match(/<a[^>]+href=["']([^"']+)["'][^>]*title=["']([^"']+)["'][\s\S]*?<h[1-3][^>]*>/i) ||
+        block.match(/<h[1-3][^>]*>[\s\S]*?<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+
+      if (!titleLink) continue;
+
+      const id = this.toGenericId(titleLink[1]);
+      if (!id || seen.has(id)) continue;
+
+      const title = this.decodeHtml(titleLink[2].replace(/<[^>]*>/g, ""));
+      if (!title) continue;
+
+      const coverMatch = block.match(/<img[^>]+(?:data-src|data-lazy-src|data-original|src)=["']([^"']+)["']/i);
+      const coverUrl = coverMatch ? this.resolveUrl(coverMatch[1]) || undefined : undefined;
+
+      seen.add(id);
+      results.push({
+        id,
+        title,
+        description: `Disponivel no portal ${this.name}.`,
+        coverUrl,
+        providerId: this.id
+      });
+    }
+
+    return results;
+  }
+
   async search(query: string): Promise<SearchResult[]> {
     try {
       const url = `${this.baseUrl}?s=${encodeURIComponent(query)}&post_type=wp-manga`;
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-      });
-
+      const res = await fetch(url, { headers: BROWSER_HEADERS });
       if (!res.ok) throw new Error(`Search failed status: ${res.status}`);
       const html = await res.text();
 
-      const parts = html.split('<div class="row c-tabs-item__content">');
-      const results: SearchResult[] = [];
-
-      for (let i = 1; i < parts.length; i++) {
-        const part = parts[i];
-        
-        // Extract URL and slug
-        const urlMatch = part.match(/href="([^"]+?\/manga\/([^\/]+?)\/)"/i);
-        if (!urlMatch) continue;
-        const slug = urlMatch[2];
-        if (slug === "feed") continue;
-
-        // Extract Title
-        const titleMatch = part.match(/class="post-title"[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/i) ||
-                           part.match(/title="([^"]+)"/i);
-        const title = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, "").trim() : slug.replace(/-/g, " ").toUpperCase();
-
-        // Extract Cover Image
-        const coverMatch = part.match(/<img[^>]+src="([^"]+)"/i) ||
-                           part.match(/<img[^>]+data-src="([^"]+)"/i);
-        const coverUrl = coverMatch ? coverMatch[1] : undefined;
-
-        results.push({
-          id: slug,
-          title,
-          description: `Disponível no portal ${this.name}.`,
-          coverUrl,
-          providerId: this.id
-        });
-      }
-
-      return results;
+      const madaraResults = this.parseMadaraSearch(html);
+      if (madaraResults.length > 0) return madaraResults;
+      return this.parseGenericWordPressSearch(html);
     } catch (err) {
       console.error(`MadaraProvider [${this.id}] search failed:`, err);
       return [];
@@ -148,41 +225,45 @@ export class MadaraProvider implements Provider {
 
   async getDetails(id: string): Promise<MangaDetails> {
     try {
-      const url = `${this.baseUrl}manga/${id}/`;
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-      });
+      const res = await fetch(this.getContentUrl(id), { headers: BROWSER_HEADERS });
       if (!res.ok) throw new Error(`Details status: ${res.status}`);
       const html = await res.text();
 
       const coverMatch = html.match(/class="wp-post-image"[^>]+src="([^"]+)"/i) ||
-                         html.match(/class="summary_image"[\s\S]*?<img[^>]+src="([^"]+)"/i) ||
-                         html.match(/class="tab-summary"[\s\S]*?<img[^>]+src="([^"]+)"/i) ||
-                         html.match(/<div[^>]+class="[^"]*summary_image[^"]*"[\s\S]*?<img[^>]+src="([^"]+)"/i);
+        html.match(/class="summary_image"[\s\S]*?<img[^>]+src="([^"]+)"/i) ||
+        html.match(/class="tab-summary"[\s\S]*?<img[^>]+src="([^"]+)"/i) ||
+        html.match(/<div[^>]+class="[^"]*summary_image[^"]*"[\s\S]*?<img[^>]+src="([^"]+)"/i);
+      const genericCoverMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i);
 
       const descMatch = html.match(/class="summary__content"[\s\S]*?<p>([\s\S]*?)<\/p>/i) ||
-                        html.match(/class="description-summary"[\s\S]*?<p>([\s\S]*?)<\/p>/i) ||
-                        html.match(/class="manga-excerpt"[\s\S]*?<p>([\s\S]*?)<\/p>/i);
+        html.match(/class="description-summary"[\s\S]*?<p>([\s\S]*?)<\/p>/i) ||
+        html.match(/class="manga-excerpt"[\s\S]*?<p>([\s\S]*?)<\/p>/i);
+      const genericDescMatch = html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i) ||
+        html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i);
 
-      const titleMatch = html.match(/<div[^>]+class="post-title"[\s\S]*?<h1>([\s\S]*?)<\/h1>/i);
+      const titleMatch = html.match(/<div[^>]+class="post-title"[\s\S]*?<h1>([\s\S]*?)<\/h1>/i) ||
+        html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
+        html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) ||
+        html.match(/<title>([\s\S]*?)<\/title>/i);
 
       const genresMatch = html.match(/class="genres-content"[\s\S]*?<\/div>/i);
-      let genres: string[] = [];
+      const genres: string[] = [];
       if (genresMatch) {
-        const genreTags = genresMatch[0].matchAll(/<a[^>]+>([^<]+)<\/a>/gi);
-        for (const gt of genreTags) {
-          const g = gt[1].trim();
-          if (g) genres.push(g);
+        for (const gt of genresMatch[0].matchAll(/<a[^>]+>([^<]+)<\/a>/gi)) {
+          const genre = this.decodeHtml(gt[1]);
+          if (genre) genres.push(genre);
         }
       }
 
+      const fallbackTitle = this.isGenericId(id)
+        ? id.replace(/^post:/, "").split("/").pop() || id
+        : id;
+
       return {
         id,
-        title: titleMatch ? titleMatch[1].trim() : id.replace(/-/g, " ").toUpperCase(),
-        description: descMatch ? descMatch[1].replace(/<[^>]*>/g, "").trim() : `Mangá disponível no portal ${this.name}.`,
-        coverUrl: coverMatch ? coverMatch[1] : undefined,
+        title: this.decodeHtml((titleMatch?.[1] || fallbackTitle.replace(/-/g, " ")).replace(/<[^>]*>/g, "")),
+        description: this.decodeHtml((descMatch?.[1] || genericDescMatch?.[1] || `Manga disponivel no portal ${this.name}.`).replace(/<[^>]*>/g, "")),
+        coverUrl: coverMatch ? this.resolveUrl(coverMatch[1]) || undefined : (genericCoverMatch ? this.resolveUrl(genericCoverMatch[1]) || undefined : undefined),
         genres,
         providerId: this.id
       };
@@ -190,8 +271,8 @@ export class MadaraProvider implements Provider {
       console.error(`MadaraProvider [${this.id}] getDetails failed:`, err);
       return {
         id,
-        title: id.replace(/-/g, " ").toUpperCase(),
-        description: `Mangá disponível no portal ${this.name}.`,
+        title: id.replace(/^post:/, "").replace(/-/g, " ").toUpperCase(),
+        description: `Manga disponivel no portal ${this.name}.`,
         genres: [],
         providerId: this.id
       };
@@ -199,14 +280,19 @@ export class MadaraProvider implements Provider {
   }
 
   async getChapters(id: string): Promise<Chapter[]> {
+    if (this.isGenericId(id)) {
+      return [{
+        id,
+        chapterNum: "1",
+        title: "Capitulo unico",
+        language: this.getLanguage(),
+        providerId: this.id
+      }];
+    }
+
     try {
       const url = `${this.baseUrl}manga/${id}/ajax/chapters/`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-      });
+      const res = await fetch(url, { method: "POST", headers: BROWSER_HEADERS });
       if (!res.ok) throw new Error(`Chapters status: ${res.status}`);
       const html = await res.text();
 
@@ -215,20 +301,16 @@ export class MadaraProvider implements Provider {
 
       for (const m of matches) {
         const href = m[1];
-        const rawTitle = m[2].trim();
-        
+        const rawTitle = this.decodeHtml(m[2].replace(/<[^>]*>/g, ""));
         const slugMatch = href.match(/\/manga\/([^\/]+)\/([^\/]+)/);
         if (!slugMatch) continue;
-        const chapSlug = `${slugMatch[1]}/${slugMatch[2]}`;
 
         const numMatch = rawTitle.match(/capitulo\s+(\d+)/i) || rawTitle.match(/cap\.?\s*(\d+)/i);
-        const chapterNum = numMatch ? numMatch[1] : rawTitle.replace(/[^0-9]/g, "") || "Especial";
-
         chapters.push({
-          id: chapSlug,
-          chapterNum,
+          id: `${slugMatch[1]}/${slugMatch[2]}`,
+          chapterNum: numMatch ? numMatch[1] : rawTitle.replace(/[^0-9]/g, "") || "Especial",
           title: rawTitle,
-          language: this.language === "multi" ? "pt" : this.language,
+          language: this.getLanguage(),
           providerId: this.id
         });
       }
@@ -242,37 +324,29 @@ export class MadaraProvider implements Provider {
 
   async getPages(chapterId: string): Promise<Page[]> {
     try {
-      const url = `${this.baseUrl}manga/${chapterId}/`;
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-      });
+      const res = await fetch(this.getContentUrl(chapterId), { headers: BROWSER_HEADERS });
       if (!res.ok) throw new Error(`Pages status: ${res.status}`);
       const html = await res.text();
 
       const extractedPageUrls = this.collectPageUrls(html);
       if (extractedPageUrls.length > 0) {
-        return extractedPageUrls.map((url, index) => ({
-          url,
-          pageNumber: index + 1
-        }));
+        return extractedPageUrls.map((url, index) => ({ url, pageNumber: index + 1 }));
       }
 
       const match = html.match(/a=(https?%3A%2F%2F[^\s"&]+|https?:\/\/[^\s"&]+)/i) ||
-                    html.match(/src="([^"]+001\.(?:webp|jpg|jpeg|png))"/i) ||
-                    html.match(/data-src="([^"]+001\.(?:webp|jpg|jpeg|png))"/i) ||
-                    html.match(/data-lazy-src="([^"]+001\.(?:webp|jpg|jpeg|png))"/i);
-                    
+        html.match(/src="([^"]+001\.(?:webp|jpg|jpeg|png))"/i) ||
+        html.match(/data-src="([^"]+001\.(?:webp|jpg|jpeg|png))"/i) ||
+        html.match(/data-lazy-src="([^"]+001\.(?:webp|jpg|jpeg|png))"/i);
+
       if (!match) throw new Error("Could not find base/001 image URL inside page.");
-      
+
       const firstPageUrl = decodeURIComponent(match[1]);
       const numMatch = firstPageUrl.match(/(\d+)\.(webp|jpg|jpeg|png)$/i);
       if (!numMatch) throw new Error("Image name does not match sequential pattern.");
 
       const numStr = numMatch[1];
       const ext = numMatch[2];
-      const basePart = firstPageUrl.slice(0, firstPageUrl.lastIndexOf(numStr + "." + ext));
+      const basePart = firstPageUrl.slice(0, firstPageUrl.lastIndexOf(`${numStr}.${ext}`));
       const padLength = numStr.length;
 
       const pages: Page[] = [];
@@ -287,12 +361,9 @@ export class MadaraProvider implements Provider {
           const currentNum = String(pageNum + i).padStart(padLength, "0");
           const pageUrl = `${basePart}${currentNum}.${ext}`;
           batchPromises.push(
-            fetch(pageUrl, { 
+            fetch(pageUrl, {
               method: "HEAD",
-              headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Referer": this.baseUrl
-              }
+              headers: { ...BROWSER_HEADERS, Referer: this.baseUrl }
             })
               .then(res => ({ url: pageUrl, ok: res.ok }))
               .catch(() => ({ url: pageUrl, ok: false }))
@@ -300,9 +371,9 @@ export class MadaraProvider implements Provider {
         }
 
         const results = await Promise.all(batchPromises);
-        for (const r of results) {
-          if (r.ok) {
-            pages.push({ url: r.url, pageNumber: pageNum });
+        for (const result of results) {
+          if (result.ok) {
+            pages.push({ url: result.url, pageNumber: pageNum });
             pageNum++;
           } else {
             hasMore = false;
@@ -310,7 +381,7 @@ export class MadaraProvider implements Provider {
           }
         }
 
-        if (pageNum > 300) break; // safety limit
+        if (pageNum > 300) break;
       }
 
       return pages;
@@ -320,8 +391,7 @@ export class MadaraProvider implements Provider {
     }
   }
 
-  async getCatalog(listType: "popular" | "latest"): Promise<SearchResult[]> {
-    // Return empty or dynamic popular list if catalog list requested
+  async getCatalog(_listType: "popular" | "latest"): Promise<SearchResult[]> {
     return [];
   }
 }
