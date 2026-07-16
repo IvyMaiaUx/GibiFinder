@@ -344,6 +344,27 @@ async function readJsonIfPossible(res: globalThis.Response) {
 
 function detectHtmlEngine(origin: string, html: string): string | null {
   const host = new URL(origin).hostname.replace(/^www\./, "");
+  if (/comicextra/i.test(host) || /episode-list|comicextra/i.test(html)) {
+    return "comicextra-like";
+  }
+  if (/readallcomics|readcomiconline|readcomics/i.test(host) || /lst-chapters|chapter-heading|comicpic|readcomiconline/i.test(html)) {
+    return "readcomics-like";
+  }
+  if (/comicfury/i.test(host) || /comic fury|comicfury|webcomic profile/i.test(html)) {
+    return "comicfury";
+  }
+  if (/comicbookplus|comicbookplus\.com/i.test(host) || /comic book plus|public domain comic/i.test(html)) {
+    return "comicbookplus";
+  }
+  if (/comiccms/i.test(host) || /comiccms|comic cms|data-comic|comic-reader/i.test(html)) {
+    return "comiccms";
+  }
+  if (/foolslide|foolz/i.test(host) || /foolslide|FoOlSlide|fs-reader|reader\/read|slide-reader/i.test(html)) {
+    return "foolslide";
+  }
+  if (/genkan/i.test(host) || /genkan|__NEXT_DATA__[\s\S]{0,5000}(manga|chapter)|\/api\/manga/i.test(html)) {
+    return "genkan";
+  }
   if (/mangakakalot|manganato|chapmanganato/i.test(host) || /2xstorage\.com|chapter-list|panel-story-info/i.test(html)) {
     return "mangakakalot-like";
   }

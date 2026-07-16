@@ -936,7 +936,7 @@ function CustomProviderModal({ adminKey, onClose, onSaved }: { adminKey: string;
             </select>
           </div>
           <div>
-            <label className={lbl}>URL do Site (WordPress/Madara) *</label>
+            <label className={lbl}>URL do Site *</label>
             <input 
               value={baseUrl} 
               onChange={e => setBaseUrl(e.target.value)} 
@@ -945,7 +945,7 @@ function CustomProviderModal({ adminKey, onClose, onSaved }: { adminKey: string;
               className={inp} 
             />
             <p className="text-2xs text-gray-500 font-bold uppercase mt-1">
-              Deve ser um site com tema Madara estruturado.
+              Use o Inspector para descobrir a engine ideal antes de cadastrar.
             </p>
           </div>
           

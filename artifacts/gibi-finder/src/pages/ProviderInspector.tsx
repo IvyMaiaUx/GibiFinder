@@ -71,6 +71,22 @@ const VERDICT_COPY: Record<string, { title: string; description: string; tone: s
   }
 };
 
+const ENGINE_COPY: Record<string, string> = {
+  "wordpress-comic": "Engine ja usada para posts WordPress com paginas de leitura separadas.",
+  madara: "Engine ja usada para temas Madara/WP Manga.",
+  "generic-html": "Fallback por seletores HTML; costuma precisar de ajuste manual.",
+  "comicextra-like": "Familia parecida com ComicExtra; boa candidata para parser reutilizavel.",
+  "readcomics-like": "Familia ReadAllComics/ReadComicOnline; normalmente exige parser proprio.",
+  comicfury: "Hospedagem de webcomics; boa para catalogo/episodios se as imagens forem diretas.",
+  comicbookplus: "Arquivo publico de HQs; pode exigir fluxo especifico para paginas/downloads.",
+  comiccms: "Engine comum de leitor/catalogo; boa candidata para provider por configuracao.",
+  foolslide: "Engine de leitor antiga/popular; costuma renderizar capitulos e paginas de forma previsivel.",
+  genkan: "Engine/API moderna de manga; geralmente vale procurar endpoints JSON.",
+  "mangakakalot-like": "Familia com catalogo e imagens protegidas por Referer; pode precisar de proxy.",
+  "mangareader-like": "Familia moderna de manga reader; pode exigir parser de capitulos e imagens.",
+  manual: "Sem engine clara; precisa investigacao manual."
+};
+
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   return (
     <span className={cn(
@@ -204,6 +220,11 @@ export function ProviderInspectorPanel({ initialAdminKey, showBackLink = true }:
               <div className="border-4 border-black bg-white p-4 md:col-span-2">
                 <p className="font-display text-xs uppercase text-gray-500">Engine sugerida</p>
                 <p className="font-display text-2xl uppercase text-black">{result.suggestedEngine}</p>
+                {ENGINE_COPY[result.suggestedEngine] && (
+                  <p className="mt-1 font-sans text-xs font-bold text-gray-500">
+                    {ENGINE_COPY[result.suggestedEngine]}
+                  </p>
+                )}
               </div>
               <div className="border-4 border-black bg-white p-4 md:col-span-2">
                 <p className="font-display text-xs uppercase text-gray-500">Origem</p>
