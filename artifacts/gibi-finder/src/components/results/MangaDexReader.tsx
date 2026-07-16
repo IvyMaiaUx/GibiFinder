@@ -748,9 +748,9 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
         <div ref={readerRef} className="fixed inset-0 z-[100] bg-black/95 flex flex-col">
           {/* Header controls */}
           {!isFullscreen && (
-            <div className="bg-black border-b-4 border-white/20 p-4 text-white flex justify-between items-center select-none animate-in fade-in slide-in-from-top duration-200">
-              <div className="flex items-center gap-2 sm:gap-3">
-                {/* Cover Thumbnail */}
+            <div className="bg-black border-b-4 border-white/20 p-3 sm:p-4 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 select-none animate-in fade-in slide-in-from-top duration-200">
+              {/* Left Column: Title & Thumbnail */}
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                 {(coverUrl || selectedResult?.coverUrl) && (
                   <img 
                     src={proxyCoverUrl(coverUrl || selectedResult?.coverUrl)} 
@@ -759,20 +759,26 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
                     referrerPolicy="no-referrer"
                   />
                 )}
-                <span className="bg-primary text-white font-display text-xs sm:text-sm px-2 py-0.5 border-2 border-white transform -rotate-2 hidden xs:inline-block">
-                  {selectedChapter.providerId.toUpperCase()}
-                </span>
-                <div>
-                  <h4 className="font-display text-base md:text-xl leading-none line-clamp-1 max-w-[120px] sm:max-w-xs md:max-w-md" title={selectedResult?.title || mangaTitle}>
-                    {selectedResult?.title || mangaTitle}
-                  </h4>
-                  <p className="font-sans text-2xs sm:text-xs font-bold text-gray-400 mt-1">Capítulo {selectedChapter.chapterNum} · {currentPage + 1} / {pages.length}</p>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="bg-primary text-white font-display text-3xs sm:text-2xs px-1.5 py-0.5 border border-white transform -rotate-1 hidden xxs:inline-block shrink-0 uppercase">
+                      {selectedChapter.providerId}
+                    </span>
+                    <h4 className="font-display text-sm sm:text-base md:text-xl leading-tight truncate text-white" title={selectedResult?.title || mangaTitle}>
+                      {selectedResult?.title || mangaTitle}
+                    </h4>
+                  </div>
+                  <p className="font-sans text-3xs sm:text-xs font-bold text-gray-400 mt-0.5">
+                    Capítulo {selectedChapter.chapterNum} · {currentPage + 1} / {pages.length}
+                  </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-4">
+              {/* Right Column: Controls */}
+              <div className="flex items-center justify-between sm:justify-end gap-2.5 sm:gap-4 shrink-0 border-t border-white/10 pt-2.5 sm:pt-0 sm:border-t-0">
+                
                 {/* Chapter Selector */}
-                <div className="flex items-center gap-1 bg-zinc-900 border-2 border-white/20 p-1 rounded text-white text-xs font-sans font-bold">
+                <div className="flex items-center gap-1 bg-zinc-900 border-2 border-white/20 p-0.5 rounded text-white text-xs font-sans font-bold">
                   <button
                     disabled={!prevChapter}
                     onClick={() => prevChapter && readChapter(prevChapter)}
@@ -789,7 +795,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
                         const targetCh = filteredChapters.find(ch => ch.id === e.target.value);
                         if (targetCh) readChapter(targetCh);
                       }}
-                      className="bg-black text-white font-sans text-xs font-bold border border-white/25 px-2 py-0.5 rounded outline-none cursor-pointer max-w-[90px] sm:max-w-[140px] truncate"
+                      className="bg-black text-white font-sans text-2xs sm:text-xs font-bold border border-white/25 px-1 py-0.5 rounded outline-none cursor-pointer max-w-[80px] xs:max-w-[120px] sm:max-w-[140px] truncate"
                     >
                       {filteredChapters.map(ch => (
                         <option key={ch.id} value={ch.id}>
@@ -798,7 +804,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
                       ))}
                     </select>
                   ) : (
-                    <span className="font-sans text-xs font-bold text-gray-400 px-1">Cap. {selectedChapter?.chapterNum}</span>
+                    <span className="font-sans text-2xs sm:text-xs font-bold text-gray-400 px-1">Cap. {selectedChapter?.chapterNum}</span>
                   )}
                   
                   <button
@@ -811,48 +817,52 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
                   </button>
                 </div>
 
-                {/* Layout Switcher */}
-                <div className="hidden sm:flex border-2 border-white/20 rounded overflow-hidden">
-                  <button
-                    onClick={() => setReaderMode("scroll")}
-                    className={cn(
-                      "px-3 py-1.5 font-sans font-bold text-xs flex items-center gap-1.5",
-                      readerMode === "scroll" ? "bg-white text-black" : "bg-black text-white"
-                    )}
+                <div className="flex items-center gap-1.5 sm:gap-3">
+                  {/* Layout Switcher */}
+                  <div className="flex border-2 border-white/20 rounded overflow-hidden">
+                    <button
+                      onClick={() => setReaderMode("scroll")}
+                      className={cn(
+                        "px-2 sm:px-3 py-1 font-sans font-bold text-2xs sm:text-xs flex items-center gap-1",
+                        readerMode === "scroll" ? "bg-white text-black" : "bg-black text-white"
+                      )}
+                      title="Modo Cascata"
+                    >
+                      <Layers className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden xs:inline">Cascata</span>
+                    </button>
+                    <button
+                      onClick={() => setReaderMode("page")}
+                      className={cn(
+                        "px-2 sm:px-3 py-1 font-sans font-bold text-2xs sm:text-xs flex items-center gap-1",
+                        readerMode === "page" ? "bg-white text-black" : "bg-black text-white"
+                      )}
+                      title="Modo Página"
+                    >
+                      <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden xs:inline">Página</span>
+                    </button>
+                  </div>
+
+                  {/* Synopsis Info Button */}
+                  {(description || selectedResult?.description) && (
+                    <button
+                      onClick={() => setShowInfo(prev => !prev)}
+                      className="bg-zinc-800 border-2 border-white/20 p-1.5 sm:p-2 text-white rounded hover:bg-zinc-700 transition-colors flex items-center gap-1 font-sans font-bold text-2xs sm:text-xs"
+                      title="Ver Sinopse"
+                    >
+                      <Info className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-secondary" strokeWidth={3} />
+                      <span className="hidden md:inline">SINOPSE</span>
+                    </button>
+                  )}
+
+                  {/* Close Button */}
+                  <button 
+                    onClick={() => setShowReader(false)}
+                    className="bg-primary hover:bg-red-600 text-white p-1.5 sm:p-2 border-2 border-white rounded transition-colors"
+                    title="Fechar Leitor"
                   >
-                    <Layers className="w-3.5 h-3.5" /> Cascata
-                  </button>
-                  <button
-                    onClick={() => setReaderMode("page")}
-                    className={cn(
-                      "px-3 py-1.5 font-sans font-bold text-xs flex items-center gap-1.5",
-                      readerMode === "page" ? "bg-white text-black" : "bg-black text-white"
-                    )}
-                  >
-                    <FileText className="w-3.5 h-3.5" /> Página
+                    <X className="w-4 h-4 sm:w-5 sm:h-5" strokeWidth={3} />
                   </button>
                 </div>
-
-                {/* Synopsis Info Button */}
-                {(description || selectedResult?.description) && (
-                  <button
-                    onClick={() => setShowInfo(prev => !prev)}
-                    className="bg-zinc-800 border-2 border-white/20 p-2 text-white rounded hover:bg-zinc-700 transition-colors flex items-center gap-1.5 font-sans font-bold text-xs"
-                    title="Ver Sinopse"
-                  >
-                    <Info className="w-5 h-5 text-secondary" strokeWidth={3} />
-                    <span className="hidden md:inline">SINOPSE</span>
-                  </button>
-                )}
-
-                {/* Close Button */}
-                <button 
-                  onClick={() => setShowReader(false)}
-                  className="bg-primary hover:bg-red-600 text-white p-2 border-2 border-white rounded transition-colors"
-                  title="Fechar Leitor"
-                >
-                  <X className="w-6 h-6" strokeWidth={3} />
-                </button>
               </div>
             </div>
           )}
