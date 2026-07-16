@@ -68,15 +68,30 @@ export function ComicCard({ result, isMain = false }: ComicCardProps) {
               <p className="font-sans font-bold text-gray-600 text-lg uppercase tracking-wide">
                 {result.editora} {result.ano ? `• ${result.ano}` : ""}
               </p>
-              {result.genres && result.genres.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-3">
-                  {result.genres.map((g: string, i: number) => (
-                    <span key={i} className="bg-yellow-200 text-black text-3xs font-extrabold uppercase px-2 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]">
-                      {g}
-                    </span>
-                  ))}
-                </div>
-              )}
+              {result.genres && result.genres.length > 0 && (() => {
+                const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
+                const isAdult = result.providerId === "eightmuses" || 
+                                result.genres.some((g: string) => ADULT_GENRES.includes(g.toLowerCase()));
+                const isUncensored = result.providerId === "eightmuses" || 
+                                     result.genres.some((g: string) => g.toLowerCase().includes("uncensored") || g.toLowerCase().includes("sem censura"));
+                return (
+                  <div className="flex flex-wrap gap-1.5 mt-3">
+                    {result.genres.map((g: string, i: number) => (
+                      <span key={i} className="bg-yellow-200 text-black text-3xs font-extrabold uppercase px-2 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]">
+                        {g}
+                      </span>
+                    ))}
+                    {isAdult && (
+                      <span className={cn(
+                        "text-white text-3xs font-extrabold uppercase px-2 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]",
+                        isUncensored ? "bg-cyan-500" : "bg-rose-500"
+                      )}>
+                        {isUncensored ? "🔓 SEM CENSURA" : "🔒 CENSURADO"}
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
             
             {/* Confidence Badge */}

@@ -107,7 +107,7 @@ export function Header() {
             className={cn(
               "font-display text-base border-4 border-black px-4 py-2 rounded-lg comic-shadow-sm transition-all select-none duration-150 uppercase flex items-center justify-center gap-1.5",
               isNsfw 
-                ? "bg-[#ff007f] text-white hover:bg-[#ff007f]/90 animate-pulse border-white shadow-[0_0_10px_rgba(255,0,127,0.5)]" 
+                ? "bg-[#14b8a6] text-black hover:bg-[#14b8a6]/90 border-white shadow-[0_0_10px_rgba(20,184,166,0.5)]" 
                 : "bg-white text-black hover:bg-gray-100"
             )}
             title="Modo +18"
@@ -166,7 +166,7 @@ export function Header() {
             className={cn(
               "p-1.5 sm:p-2 border-2 sm:border-[3px] rounded-lg transition-all flex items-center justify-center",
               isNsfw 
-                ? "bg-[#ff007f] text-white border-white animate-pulse" 
+                ? "bg-[#14b8a6] text-black border-white" 
                 : "bg-white text-black border-black hover:bg-gray-100"
             )}
             title="Modo +18"
@@ -231,7 +231,7 @@ export function Header() {
       {/* Modal: Confirmação de Idade (+18) */}
       {showAgeModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-zinc-950 border-4 border-[#ff007f] p-6 rounded-xl shadow-[0_0_30px_rgba(255,0,127,0.4)] max-w-md w-full text-center space-y-4">
+          <div className="bg-zinc-950 border-4 border-[#14b8a6] p-6 rounded-xl shadow-[0_0_30px_rgba(20,184,166,0.3)] max-w-md w-full text-center space-y-4">
             <div className="text-4xl">🔞</div>
             <h3 className="font-display text-2xl text-white uppercase tracking-wide">
               ÁREA RESTRITA (+18)
@@ -242,7 +242,7 @@ export function Header() {
             <div className="flex gap-3 pt-2">
               <button
                 onClick={handleConfirmAge}
-                className="flex-1 bg-[#ff007f] text-white hover:bg-[#ff007f]/90 font-display py-2 border-4 border-white rounded-lg shadow-[0_0_10px_rgba(255,0,127,0.5)] transition-all uppercase"
+                className="flex-1 bg-[#14b8a6] text-black hover:bg-[#0d9488] font-display py-2 border-4 border-white rounded-lg shadow-[0_0_10px_rgba(20,184,166,0.5)] transition-all uppercase"
               >
                 Sim, tenho 18+
               </button>

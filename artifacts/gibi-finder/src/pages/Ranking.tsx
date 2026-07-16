@@ -82,7 +82,7 @@ export default function Ranking() {
             <Trophy className="absolute -top-6 -left-8 w-12 h-12 text-secondary fill-secondary transform -rotate-12 drop-shadow-[2px_2px_0_black]" strokeWidth={2} />
             <h1 className={cn(
               "font-display text-5xl md:text-6xl px-8 py-3 border-4 border-black comic-shadow inline-block transition-all",
-              isNsfw ? "bg-[#ff007f] text-white shadow-[0_0_20px_rgba(255,0,127,0.4)] border-white" : "bg-white text-black border-black"
+              isNsfw ? "bg-primary text-primary-foreground shadow-[0_0_20px_rgba(20,184,166,0.3)] border-white" : "bg-white text-black border-black"
             )}>
               {isNsfw ? "TOP 10 +18 POPULARES" : "TOP 10 POPULARES"}
             </h1>
