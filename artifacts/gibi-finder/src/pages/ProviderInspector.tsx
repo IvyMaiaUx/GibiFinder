@@ -74,13 +74,19 @@ function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
-export default function ProviderInspector() {
+interface ProviderInspectorPanelProps {
+  initialAdminKey?: string;
+  showBackLink?: boolean;
+}
+
+export function ProviderInspectorPanel({ initialAdminKey, showBackLink = true }: ProviderInspectorPanelProps) {
   const [url, setUrl] = useState("https://jondomingues.com/");
-  const [adminKey, setAdminKey] = useState(localStorage.getItem(ADMIN_STORAGE_KEY) || "");
+  const [adminKey, setAdminKey] = useState(initialAdminKey ?? (localStorage.getItem(ADMIN_STORAGE_KEY) || ""));
   const [result, setResult] = useState<InspectResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isLocalhost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+  const usesAdminKeyFromParent = initialAdminKey !== undefined;
 
   const inspect = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -92,7 +98,9 @@ export default function ProviderInspector() {
     setLoading(true);
     setError(null);
     setResult(null);
-    localStorage.setItem(ADMIN_STORAGE_KEY, adminKey);
+    if (!usesAdminKeyFromParent) {
+      localStorage.setItem(ADMIN_STORAGE_KEY, adminKey);
+    }
 
     try {
       const res = await fetch(`${BASE}/api/providers/inspect?url=${encodeURIComponent(url)}`, {
@@ -118,7 +126,6 @@ export default function ProviderInspector() {
   };
 
   return (
-    <Layout>
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="border-4 border-black bg-white p-6 comic-shadow">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -129,25 +136,32 @@ export default function ProviderInspector() {
                 Cole uma URL e veja se ela parece integravel: WordPress, API REST, bloqueios, seletores candidatos e imagens acessiveis.
               </p>
             </div>
-            <Link href="/provedores" className="font-display text-sm uppercase text-primary underline">
-              Voltar aos provedores
-            </Link>
+            {showBackLink && (
+              <Link href="/provedores" className="font-display text-sm uppercase text-primary underline">
+                Voltar aos provedores
+              </Link>
+            )}
           </div>
 
-          <form onSubmit={inspect} className="mt-6 grid gap-3 md:grid-cols-[1fr_220px_auto]">
+          <form onSubmit={inspect} className={cn(
+            "mt-6 grid gap-3",
+            usesAdminKeyFromParent ? "md:grid-cols-[1fr_auto]" : "md:grid-cols-[1fr_220px_auto]"
+          )}>
             <input
               value={url}
               onChange={(event) => setUrl(event.target.value)}
               placeholder="https://site.com/post-ou-home"
               className="border-4 border-black bg-white px-4 py-3 font-sans font-bold outline-none focus:bg-yellow-50"
             />
-            <input
-              value={adminKey}
-              onChange={(event) => setAdminKey(event.target.value)}
-              placeholder="Chave admin"
-              type="password"
-              className="border-4 border-black bg-white px-4 py-3 font-sans font-bold outline-none focus:bg-yellow-50"
-            />
+            {!usesAdminKeyFromParent && (
+              <input
+                value={adminKey}
+                onChange={(event) => setAdminKey(event.target.value)}
+                placeholder="Chave admin"
+                type="password"
+                className="border-4 border-black bg-white px-4 py-3 font-sans font-bold outline-none focus:bg-yellow-50"
+              />
+            )}
             <button
               type="submit"
               disabled={loading || !isLocalhost}
@@ -268,6 +282,13 @@ export default function ProviderInspector() {
           </div>
         )}
       </div>
+  );
+}
+
+export default function ProviderInspector() {
+  return (
+    <Layout>
+      <ProviderInspectorPanel />
     </Layout>
   );
 }

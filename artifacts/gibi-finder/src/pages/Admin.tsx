@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, MessageSquare, Bug, Lightbulb, Archive, CheckCircle2, AlertCircle, Trophy, AlertTriangle, Database, User } from "lucide-react";
+import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, MessageSquare, Bug, Lightbulb, Archive, CheckCircle2, AlertCircle, Trophy, AlertTriangle, Database, User, SearchCode } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { useToast } from "@/hooks/use-toast";
 import { SafeImage } from "@/components/ui/SafeImage";
+import { ProviderInspectorPanel } from "@/pages/ProviderInspector";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const STORAGE_KEY = "gibi_admin_key";
@@ -172,7 +173,7 @@ export default function Admin() {
   const [keyInput, setKeyInput] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [tab, setTab] = useState<"pending" | "approved" | "suggestions" | "ranking" | "providers" | "users">("pending");
+  const [tab, setTab] = useState<"pending" | "approved" | "suggestions" | "ranking" | "providers" | "inspector" | "users">("pending");
   const [confirmClearRanking, setConfirmClearRanking] = useState(false);
   const [providers, setProviders] = useState<any[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(false);
@@ -442,7 +443,7 @@ export default function Admin() {
 
   return (
     <Layout>
-      <div className="max-w-4xl mx-auto relative z-10">
+      <div className="max-w-5xl mx-auto relative z-10">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="font-display text-5xl text-black leading-none">PAINEL ADMIN</h1>
@@ -451,18 +452,20 @@ export default function Admin() {
             </p>
           </div>
           <div className="flex gap-3">
-            <button 
-              onClick={() => {
-                if (tab === "providers") {
-                  setCustomProviderModal(true);
-                } else {
-                  setEditModal({ open: true });
-                }
-              }}
-              className="flex items-center gap-2 bg-primary text-white font-display text-lg px-4 py-3 border-4 border-black comic-shadow hover:translate-y-[-2px] transition-transform"
-            >
-              <Plus className="w-5 h-5" strokeWidth={3} /> ADICIONAR
-            </button>
+            {!["suggestions", "ranking", "users", "inspector"].includes(tab) && (
+              <button
+                onClick={() => {
+                  if (tab === "providers") {
+                    setCustomProviderModal(true);
+                  } else {
+                    setEditModal({ open: true });
+                  }
+                }}
+                className="flex items-center gap-2 bg-primary text-white font-display text-lg px-4 py-3 border-4 border-black comic-shadow hover:translate-y-[-2px] transition-transform"
+              >
+                <Plus className="w-5 h-5" strokeWidth={3} /> ADICIONAR
+              </button>
+            )}
             <button onClick={() => { localStorage.removeItem(STORAGE_KEY); setUnlocked(false); setAdminKey(""); setKeyInput(""); }}
               className="border-4 border-black px-4 py-3 font-display text-lg hover:bg-muted transition-colors">
               SAIR
@@ -471,7 +474,7 @@ export default function Admin() {
         </div>
 
         {/* Tabs */}
-        <div className="flex border-4 border-black mb-6 overflow-hidden">
+        <div className="flex flex-wrap border-4 border-black mb-6 overflow-hidden">
           <button onClick={() => setTab("pending")}
             className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 transition-colors ${tab === "pending" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
             <Eye className="w-5 h-5" strokeWidth={3} />
@@ -496,6 +499,11 @@ export default function Admin() {
             className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "providers" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
             <Database className="w-5 h-5" strokeWidth={3} />
             PROVEDORES
+          </button>
+          <button onClick={() => setTab("inspector")}
+            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "inspector" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
+            <SearchCode className="w-5 h-5" strokeWidth={3} />
+            INSPECTOR
           </button>
           <button onClick={() => setTab("users")}
             className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "users" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
@@ -734,6 +742,11 @@ export default function Admin() {
               ))}
             </div>
           )
+        )}
+
+        {/* Provider Inspector tab */}
+        {tab === "inspector" && (
+          <ProviderInspectorPanel initialAdminKey={adminKey} showBackLink={false} />
         )}
 
         {/* Users tab */}
