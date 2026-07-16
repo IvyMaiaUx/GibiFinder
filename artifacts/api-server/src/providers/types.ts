@@ -4,6 +4,7 @@ export interface SearchResult {
   coverUrl?: string;
   description?: string;
   providerId: string;
+  genres?: string[];
 }
 
 export interface MangaDetails {
@@ -14,6 +15,7 @@ export interface MangaDetails {
   authors?: string[];
   status?: string;
   providerId: string;
+  genres?: string[];
 }
 
 export interface Chapter {
@@ -47,6 +49,7 @@ export interface UnifiedSearchResult {
   coverUrl?: string;
   description?: string;
   rating?: number;
+  genres?: string[];
   sources: {
     providerId: string;
     id: string; // ID original do mangá no provedor

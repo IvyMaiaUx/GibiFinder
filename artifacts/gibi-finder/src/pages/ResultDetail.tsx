@@ -177,9 +177,15 @@ export default function ResultDetail() {
         editora: providerId.toUpperCase(),
         ano: "Online",
         sinopse: onlineDetails?.description || initialDescription || "Carregado via agregador externo.",
-        images: onlineDetails?.coverUrl ? [onlineDetails.coverUrl] : (initialCoverUrl ? [initialCoverUrl] : ["https://images.unsplash.com/photo-1608889175123-8ec330b86f84?w=256&fit=crop"])
+        images: onlineDetails?.coverUrl ? [onlineDetails.coverUrl] : (initialCoverUrl ? [initialCoverUrl] : ["https://images.unsplash.com/photo-1608889175123-8ec330b86f84?w=256&fit=crop"]),
+        genres: onlineDetails?.genres || []
       }
-    : dbData?.result;
+    : dbData?.result 
+      ? {
+          ...dbData.result,
+          genres: dbData.result.genres || dbData.result.generos || []
+        }
+      : undefined;
 
   return (
     <Layout>

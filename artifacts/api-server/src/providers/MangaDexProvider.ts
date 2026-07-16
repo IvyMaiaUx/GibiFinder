@@ -5,6 +5,42 @@ export class MangaDexProvider implements Provider {
   name = "MangaDex";
   language = "multi";
 
+  private extractGenres(item: any): string[] {
+    const tags = item.attributes?.tags || [];
+    const translationMap: Record<string, string> = {
+      "Action": "Ação",
+      "Adventure": "Aventura",
+      "Comedy": "Comédia",
+      "Drama": "Drama",
+      "Fantasy": "Fantasia",
+      "Horror": "Horror",
+      "Mystery": "Mistério",
+      "Romance": "Romance",
+      "Sci-Fi": "Sci-Fi",
+      "Slice of Life": "Slice of Life",
+      "Sports": "Esportes",
+      "Supernatural": "Sobrenatural",
+      "Thriller": "Thriller",
+      "Historical": "Histórico",
+      "Isekai": "Isekai",
+      "Military": "Militar",
+      "Psychological": "Psicológico",
+      "School Life": "Vida Escolar",
+      "Martial Arts": "Artes Marciais",
+      "Magic": "Magia",
+      "Crime": "Crime",
+      "Monsters": "Monstros"
+    };
+
+    return tags
+      .filter((t: any) => t.attributes?.group === "genre" || t.attributes?.group === "theme")
+      .map((t: any) => {
+        const name = t.attributes?.name?.en || "";
+        return translationMap[name] || name;
+      })
+      .filter(Boolean);
+  }
+
   async search(query: string): Promise<SearchResult[]> {
     try {
       const url = `https://api.mangadex.org/manga?title=${encodeURIComponent(query)}&limit=15&includes[]=cover_art`;
@@ -25,7 +61,9 @@ export class MangaDexProvider implements Provider {
           ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.256.jpg` 
           : undefined;
 
-        return { id, title, description, coverUrl, providerId: this.id };
+        const genres = this.extractGenres(item);
+
+        return { id, title, description, coverUrl, genres, providerId: this.id };
       });
     } catch (err) {
       console.error("MangaDex search failed:", err);
@@ -52,8 +90,9 @@ export class MangaDexProvider implements Provider {
       : undefined;
 
     const status = item.attributes.status;
+    const genres = this.extractGenres(item);
 
-    return { id, title, description, coverUrl, status, providerId: this.id };
+    return { id, title, description, coverUrl, status, genres, providerId: this.id };
   }
 
   async getChapters(id: string): Promise<Chapter[]> {
@@ -139,11 +178,9 @@ export class MangaDexProvider implements Provider {
         
         const coverRel = item.relationships.find((r: any) => r.type === "cover_art");
         const coverFileName = coverRel?.attributes?.fileName;
-        const coverUrl = coverFileName 
-          ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.256.jpg` 
-          : undefined;
+        const genres = this.extractGenres(item);
 
-        return { id, title, description, coverUrl, providerId: this.id };
+        return { id, title, description, coverUrl, genres, providerId: this.id };
       });
     } catch (err) {
       console.error("MangaDex catalog failed:", err);

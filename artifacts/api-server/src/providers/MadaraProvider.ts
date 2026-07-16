@@ -85,11 +85,22 @@ export class MadaraProvider implements Provider {
 
       const titleMatch = html.match(/<div[^>]+class="post-title"[\s\S]*?<h1>([\s\S]*?)<\/h1>/i);
 
+      const genresMatch = html.match(/class="genres-content"[\s\S]*?<\/div>/i);
+      let genres: string[] = [];
+      if (genresMatch) {
+        const genreTags = genresMatch[0].matchAll(/<a[^>]+>([^<]+)<\/a>/gi);
+        for (const gt of genreTags) {
+          const g = gt[1].trim();
+          if (g) genres.push(g);
+        }
+      }
+
       return {
         id,
         title: titleMatch ? titleMatch[1].trim() : id.replace(/-/g, " ").toUpperCase(),
         description: descMatch ? descMatch[1].replace(/<[^>]*>/g, "").trim() : `Mangá disponível no portal ${this.name}.`,
         coverUrl: coverMatch ? coverMatch[1] : undefined,
+        genres,
         providerId: this.id
       };
     } catch (err) {
@@ -98,6 +109,7 @@ export class MadaraProvider implements Provider {
         id,
         title: id.replace(/-/g, " ").toUpperCase(),
         description: `Mangá disponível no portal ${this.name}.`,
+        genres: [],
         providerId: this.id
       };
     }

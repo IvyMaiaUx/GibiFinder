@@ -209,6 +209,11 @@ export class ProviderManager {
         if (!existing.description && result.description) {
           existing.description = result.description;
         }
+        if (!existing.genres && result.genres) {
+          existing.genres = result.genres;
+        } else if (existing.genres && result.genres) {
+          existing.genres = Array.from(new Set([...existing.genres, ...result.genres]));
+        }
       } else {
         // Create new group
         const groupId = `${norm}_group`;
@@ -217,6 +222,7 @@ export class ProviderManager {
           title: result.title, // keep the original title
           coverUrl: result.coverUrl,
           description: result.description,
+          genres: result.genres,
           sources: [{
             providerId: result.providerId,
             id: result.id,
@@ -287,6 +293,11 @@ export class ProviderManager {
         if (!existing.description && result.description) {
           existing.description = result.description;
         }
+        if (!existing.genres && result.genres) {
+          existing.genres = result.genres;
+        } else if (existing.genres && result.genres) {
+          existing.genres = Array.from(new Set([...existing.genres, ...result.genres]));
+        }
       } else {
         const groupId = `${norm}_group`;
         groups.set(norm, {
@@ -294,6 +305,7 @@ export class ProviderManager {
           title: result.title,
           coverUrl: result.coverUrl,
           description: result.description,
+          genres: result.genres,
           sources: [{
             providerId: result.providerId,
             id: result.id,

@@ -5,7 +5,7 @@ import type { ComicResult } from "@workspace/api-client-react";
 import { cn, proxyCoverUrl } from "@/lib/utils";
 
 interface ComicCardProps {
-  result: ComicResult;
+  result: any;
   isMain?: boolean;
 }
 
@@ -68,6 +68,15 @@ export function ComicCard({ result, isMain = false }: ComicCardProps) {
               <p className="font-sans font-bold text-gray-600 text-lg uppercase tracking-wide">
                 {result.editora} {result.ano ? `• ${result.ano}` : ""}
               </p>
+              {result.genres && result.genres.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-3">
+                  {result.genres.map((g: string, i: number) => (
+                    <span key={i} className="bg-yellow-200 text-black text-3xs font-extrabold uppercase px-2 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]">
+                      {g}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             
             {/* Confidence Badge */}

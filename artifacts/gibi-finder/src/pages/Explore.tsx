@@ -10,6 +10,7 @@ interface UnifiedCatalogItem {
   coverUrl?: string;
   description?: string;
   rating?: number;
+  genres?: string[];
   sources: {
     providerId: string;
     id: string;
@@ -24,6 +25,7 @@ export default function Explore() {
   const [, setLocation] = useLocation();
   const [listType, setListType] = useState<"popular" | "latest">("popular");
   const [langFilter, setLangFilter] = useState<"all" | "pt" | "en">("all");
+  const [selectedGenre, setSelectedGenre] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
   
   const [items, setItems] = useState<UnifiedCatalogItem[]>([]);
@@ -51,12 +53,13 @@ export default function Explore() {
 
   useEffect(() => {
     setCurrentPage(1);
+    setSelectedGenre("all");
     loadCatalog(listType);
   }, [listType]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [langFilter]);
+  }, [langFilter, selectedGenre]);
 
   const handleOpenItem = (item: UnifiedCatalogItem) => {
     if (!item.sources || item.sources.length === 0) return;
@@ -66,18 +69,29 @@ export default function Explore() {
     setLocation(url);
   };
 
-  // Filter items by language
+  // Dynamically extract unique genres from the current loaded catalog items
+  const availableGenres = Array.from(
+    new Set(
+      items
+        .flatMap(item => item.genres || [])
+        .filter(Boolean)
+    )
+  ).sort() as string[];
+
+  // Filter items by language and genre
   const filteredItems = items.filter(item => {
-    if (langFilter === "all") return true;
+    // 1. Language Filter
     if (langFilter === "pt") {
-      // Keep items that are available on MangaDex, MangaPlus or other pt-friendly sources.
-      // ComicExtra is strictly English, so filter it out if it is the ONLY source.
-      return item.sources.some(s => s.providerId !== "comicextra");
+      const isPt = item.sources.some(s => s.providerId !== "comicextra");
+      if (!isPt) return false;
     }
-    if (langFilter === "en") {
-      // ComicExtra, MangaDex, MangaPlus all support English
-      return true;
+    
+    // 2. Genre Filter
+    if (selectedGenre !== "all") {
+      const hasGenre = item.genres && item.genres.some(g => g.toLowerCase() === selectedGenre.toLowerCase());
+      if (!hasGenre) return false;
     }
+    
     return true;
   });
 
@@ -138,6 +152,27 @@ export default function Explore() {
                   EN 🇺🇸
                 </button>
               </div>
+
+              {/* Genre Filter */}
+              {availableGenres.length > 0 && (
+                <div className="flex border-2 border-black rounded overflow-hidden text-xs font-sans font-bold bg-white">
+                  <span className="bg-muted px-2.5 py-1.5 border-r border-black text-gray-500 flex items-center gap-1 select-none">
+                    GÊNERO
+                  </span>
+                  <select
+                    value={selectedGenre}
+                    onChange={(e) => setSelectedGenre(e.target.value)}
+                    className="px-2 py-1 bg-white text-black outline-none cursor-pointer text-xs uppercase font-extrabold pr-4"
+                  >
+                    <option value="all">TODOS</option>
+                    {availableGenres.map((g) => (
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* List Type Tabs */}
               <div className="flex border-2 border-black rounded overflow-hidden">
