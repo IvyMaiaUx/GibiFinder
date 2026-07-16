@@ -207,16 +207,60 @@ export class MadaraProvider implements Provider {
     return results;
   }
 
+  private parseSearchResults(html: string): SearchResult[] {
+    const madaraResults = this.parseMadaraSearch(html);
+    if (madaraResults.length > 0) return madaraResults;
+    return this.parseGenericWordPressSearch(html);
+  }
+
+  private getSearchUrl(query: string, page: number): string {
+    if (page <= 1) {
+      return `${this.baseUrl}?s=${encodeURIComponent(query)}&post_type=wp-manga`;
+    }
+
+    const url = new URL(`page/${page}/`, this.baseUrl);
+    url.searchParams.set("s", query);
+    url.searchParams.set("post_type", "wp-manga");
+    return url.toString();
+  }
+
+  private getSearchPageLimit(html: string): number {
+    let maxPage = 1;
+    for (const match of html.matchAll(/\/page\/(\d+)\/?/gi)) {
+      maxPage = Math.max(maxPage, Number(match[1]));
+    }
+    for (const match of html.matchAll(/[?&]paged=(\d+)/gi)) {
+      maxPage = Math.max(maxPage, Number(match[1]));
+    }
+    return Math.min(maxPage, 10);
+  }
+
   async search(query: string): Promise<SearchResult[]> {
     try {
-      const url = `${this.baseUrl}?s=${encodeURIComponent(query)}&post_type=wp-manga`;
-      const res = await fetch(url, { headers: BROWSER_HEADERS });
-      if (!res.ok) throw new Error(`Search failed status: ${res.status}`);
-      const html = await res.text();
+      const results = new Map<string, SearchResult>();
+      let pageLimit = 1;
 
-      const madaraResults = this.parseMadaraSearch(html);
-      if (madaraResults.length > 0) return madaraResults;
-      return this.parseGenericWordPressSearch(html);
+      for (let page = 1; page <= pageLimit; page++) {
+        const res = await fetch(this.getSearchUrl(query, page), { headers: BROWSER_HEADERS });
+        if (!res.ok) {
+          if (page === 1) throw new Error(`Search failed status: ${res.status}`);
+          break;
+        }
+
+        const html = await res.text();
+        if (page === 1) {
+          pageLimit = this.getSearchPageLimit(html);
+        }
+
+        const pageResults = this.parseSearchResults(html);
+        if (page > 1 && pageResults.length === 0) break;
+
+        for (const result of pageResults) {
+          results.set(result.id, result);
+        }
+      }
+
+      return Array.from(results.values());
     } catch (err) {
       console.error(`MadaraProvider [${this.id}] search failed:`, err);
       return [];

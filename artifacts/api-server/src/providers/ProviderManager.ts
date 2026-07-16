@@ -225,6 +225,22 @@ export class ProviderManager {
     return searchable.some(text => this.adultTerms.some(term => text.includes(this.normalizeText(term))));
   }
 
+  private static getSearchRelevance(query: string, result: UnifiedSearchResult): number {
+    const title = this.normalizeText(result.title || "");
+    const phrase = this.normalizeText(query).trim();
+    const compactTitle = title.replace(/\s+/g, "");
+    const compactPhrase = phrase.replace(/\s+/g, "");
+    const terms = phrase.split(/[^a-z0-9]+/i).filter(term => term.length > 2);
+
+    let score = 0;
+    if (phrase && title.includes(phrase)) score += 100;
+    if (compactPhrase && compactTitle.includes(compactPhrase)) score += 80;
+    for (const term of terms) {
+      if (title.includes(term)) score += 10;
+    }
+    return score;
+  }
+
   // Searches all active providers simultaneously and unifies results
   static async search(query: string, nsfw?: boolean): Promise<UnifiedSearchResult[]> {
     return (await this.searchWithMetadata(query, nsfw)).results;
@@ -301,7 +317,8 @@ export class ProviderManager {
       ...result,
       isAdult: this.isAdultResult(result)
     }));
-    const visibleResults = nsfw ? allResults : allResults.filter(result => !result.isAdult);
+    const visibleResults = (nsfw ? allResults : allResults.filter(result => !result.isAdult))
+      .sort((a, b) => this.getSearchRelevance(query, b) - this.getSearchRelevance(query, a));
 
     return {
       results: visibleResults,
