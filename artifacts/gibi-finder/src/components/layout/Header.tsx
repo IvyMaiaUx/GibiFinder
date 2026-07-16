@@ -63,7 +63,7 @@ export function Header() {
   ];
 
   return (
-    <header className="bg-secondary border-b-8 border-black sticky top-0 z-50 animate-in fade-in duration-100">
+    <header className="fixed inset-x-0 top-0 z-50 bg-secondary border-b-8 border-black shadow-[0_8px_0_rgba(0,0,0,0.18)] animate-in fade-in duration-100">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-20 md:h-24 flex items-center justify-between gap-2">
         
         {/* Logo */}
