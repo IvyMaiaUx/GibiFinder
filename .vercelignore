@@ -1,0 +1,9 @@
+node_modules
+**/node_modules
+.git
+.local
+.agents
+**/dist
+**/.turbo
+**/.cache
+attached_assets
