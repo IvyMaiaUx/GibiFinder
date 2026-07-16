@@ -145,5 +145,12 @@
     "language": "pt",
     "baseUrl": "https://jondomingues.com/",
     "active": true
+  },
+  {
+    "id": "batcave",
+    "name": "Batcave",
+    "language": "pt",
+    "baseUrl": "https://batcave.biz/",
+    "active": true
   }
 ]
