@@ -245,6 +245,46 @@ export class ProviderManager {
     return score;
   }
 
+  private static getSearchTerms(query: string): string[] {
+    return this.normalizeText(query)
+      .split(/[^a-z0-9]+/i)
+      .map(term => term.trim())
+      .filter(term => term.length > 2);
+  }
+
+  private static isRelevantSearchResult(query: string, result: UnifiedSearchResult): boolean {
+    const terms = this.getSearchTerms(query);
+    if (terms.length <= 1) return true;
+
+    const title = this.normalizeText(result.title || "");
+    const compactTitle = title.replace(/\s+/g, "");
+    const phrase = this.normalizeText(query).trim();
+    const compactPhrase = phrase.replace(/\s+/g, "");
+
+    if (phrase && title.includes(phrase)) return true;
+    if (compactPhrase && compactTitle.includes(compactPhrase)) return true;
+
+    if (terms.includes("familia") && terms.includes("sacana")) {
+      return (title.includes("familia") && title.includes("sacana")) || title.includes("sacanas");
+    }
+
+    const termMatches = terms.map(term => {
+      if (title.includes(term)) return true;
+      if (term.endsWith("s") && title.includes(term.slice(0, -1))) return true;
+      if (title.includes(`${term}s`)) return true;
+      return false;
+    });
+
+    if (termMatches.every(Boolean)) return true;
+    if (terms.length <= 2) return false;
+
+    const hasDistinctiveTerm = terms
+      .filter(term => term.length >= 5)
+      .some(term => title.includes(term) || title.includes(`${term}s`) || (term.endsWith("s") && title.includes(term.slice(0, -1))));
+
+    return hasDistinctiveTerm && termMatches.filter(Boolean).length >= terms.length - 1;
+  }
+
   // Searches all active providers simultaneously and unifies results
   static async search(query: string, nsfw?: boolean): Promise<UnifiedSearchResult[]> {
     return (await this.searchWithMetadata(query, nsfw)).results;
@@ -321,12 +361,13 @@ export class ProviderManager {
       ...result,
       isAdult: this.isAdultResult(result)
     }));
-    const visibleResults = (nsfw ? allResults : allResults.filter(result => !result.isAdult))
+    const relevantResults = allResults.filter(result => this.isRelevantSearchResult(query, result));
+    const visibleResults = (nsfw ? relevantResults : relevantResults.filter(result => !result.isAdult))
       .sort((a, b) => this.getSearchRelevance(query, b) - this.getSearchRelevance(query, a));
 
     return {
       results: visibleResults,
-      hiddenAdultCount: allResults.length - visibleResults.length,
+      hiddenAdultCount: relevantResults.length - visibleResults.length,
       adultQuery: this.isAdultQuery(query)
     };
   }
