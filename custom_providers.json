@@ -33,5 +33,19 @@
     "language": "pt",
     "baseUrl": "https://tiamanhwa.com/",
     "active": true
+  },
+  {
+    "id": "hentai-home",
+    "name": "Hentai Home",
+    "language": "pt",
+    "baseUrl": "https://www.hentaihome.net/",
+    "active": true
+  },
+  {
+    "id": "universo-hentai",
+    "name": "Universo Hentai",
+    "language": "pt",
+    "baseUrl": "https://universohentai.com/",
+    "active": true
   }
 ]
