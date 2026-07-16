@@ -227,6 +227,179 @@ function requireAdmin(req: Request, res: Response): boolean {
   return true;
 }
 
+const INSPECT_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+  "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
+};
+
+function resolveUrl(value: string, baseUrl: string): string | null {
+  try {
+    if (!value || value.startsWith("data:")) return null;
+    return new URL(value.replace(/&amp;/g, "&"), baseUrl).toString();
+  } catch {
+    return null;
+  }
+}
+
+function unique<T>(items: T[]): T[] {
+  return Array.from(new Set(items));
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function extractImageCandidates(html: string, baseUrl: string) {
+  const images: Array<{ url: string; selector: string; alt?: string; width?: number; height?: number }> = [];
+  for (const match of html.matchAll(/<img[^>]+>/gi)) {
+    const tag = match[0];
+    const raw = tag.match(/\s(?:data-src|data-lazy-src|data-original|src)=["']([^"']+)["']/i)?.[1];
+    const url = raw ? resolveUrl(raw, baseUrl) : null;
+    if (!url || !/\.(?:jpg|jpeg|png|webp)(?:\?|$)/i.test(url)) continue;
+    const className = tag.match(/\sclass=["']([^"']+)["']/i)?.[1]?.split(/\s+/).filter(Boolean)[0];
+    images.push({
+      url,
+      selector: className ? `img.${className}` : "img",
+      alt: tag.match(/\salt=["']([^"']*)["']/i)?.[1],
+      width: Number(tag.match(/\swidth=["']?(\d+)/i)?.[1] || 0) || undefined,
+      height: Number(tag.match(/\sheight=["']?(\d+)/i)?.[1] || 0) || undefined
+    });
+  }
+
+  for (const match of html.matchAll(/https?:\/\/[^"' <>()]+?\.(?:jpg|jpeg|png|webp)(?:\?[^"' <>()]*)?/gi)) {
+    const url = resolveUrl(match[0], baseUrl);
+    if (url && !images.some(image => image.url === url)) {
+      images.push({ url, selector: "regex:url" });
+    }
+  }
+
+  return images;
+}
+
+function countSelectorImages(html: string, selector: string, blockRegex: RegExp) {
+  const blocks: string[] = html.match(blockRegex) || [];
+  const count = blocks.reduce<number>((sum, block) => sum + (block.match(/<img[^>]+>/gi)?.length || 0), 0);
+  return { selector, count };
+}
+
+async function probeImages(images: Array<{ url: string; selector: string }>) {
+  return await Promise.all(images.slice(0, 8).map(async image => {
+    try {
+      let res = await fetchWithTimeout(image.url, { method: "HEAD", headers: INSPECT_HEADERS }, 8000);
+      if (!res.ok || !res.headers.get("content-type")?.startsWith("image/")) {
+        res = await fetchWithTimeout(image.url, { method: "GET", headers: { ...INSPECT_HEADERS, Range: "bytes=0-32" } }, 8000);
+      }
+      return { url: image.url, selector: image.selector, ok: res.ok, status: res.status, contentType: res.headers.get("content-type") || "" };
+    } catch (err) {
+      return { url: image.url, selector: image.selector, ok: false, status: 0, contentType: "", error: err instanceof Error ? err.message : String(err) };
+    }
+  }));
+}
+
+router.get("/providers/inspect", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  const target = req.query.url as string;
+  if (!target) {
+    res.status(400).json({ error: "missing_url", message: "URL obrigatoria." });
+    return;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(target);
+    if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("invalid protocol");
+  } catch {
+    res.status(400).json({ error: "invalid_url", message: "Informe uma URL http/https valida." });
+    return;
+  }
+
+  const origin = parsed.origin;
+  const normalizedTarget = parsed.toString();
+
+  try {
+    const pageRes = await fetchWithTimeout(normalizedTarget, { headers: INSPECT_HEADERS }, 15000);
+    const contentType = pageRes.headers.get("content-type") || "";
+    const server = pageRes.headers.get("server") || "";
+    const html = await pageRes.text();
+    const cloudflare = /cloudflare/i.test(server) || /cf-ray|checking your browser|just a moment/i.test(html);
+
+    let wpJson: any = null;
+    let wpRestAvailable = false;
+    let wpPostsAvailable = false;
+    let wpError: string | null = null;
+    try {
+      const wpRes = await fetchWithTimeout(`${origin}/wp-json/`, { headers: INSPECT_HEADERS }, 10000);
+      wpRestAvailable = wpRes.ok;
+      if (wpRes.ok) wpJson = await wpRes.json();
+      if (wpJson?.namespaces?.includes("wp/v2")) {
+        const postsRes = await fetchWithTimeout(`${origin}/wp-json/wp/v2/posts?per_page=1&_embed=1`, { headers: INSPECT_HEADERS }, 10000);
+        wpPostsAvailable = postsRes.ok;
+      }
+    } catch (err) {
+      wpError = err instanceof Error ? err.message : String(err);
+    }
+
+    const images = extractImageCandidates(html, normalizedTarget);
+    const selectorCandidates: Array<{ selector: string; count: number }> = [
+      countSelectorImages(html, "article img", /<article[\s\S]*?<\/article>/gi),
+      countSelectorImages(html, ".entry-content img", /<[^>]+class=["'][^"']*entry-content[^"']*["'][^>]*>[\s\S]*?<\/(?:div|section|article)>/gi),
+      countSelectorImages(html, ".post-content img", /<[^>]+class=["'][^"']*post-content[^"']*["'][^>]*>[\s\S]*?<\/(?:div|section|article)>/gi),
+      countSelectorImages(html, ".elementor-widget-image img", /<[^>]+class=["'][^"']*elementor-widget-image[^"']*["'][^>]*>[\s\S]*?<\/div>/gi),
+      countSelectorImages(html, ".wp-block-image img", /<figure[^>]+class=["'][^"']*wp-block-image[^"']*["'][^>]*>[\s\S]*?<\/figure>/gi),
+      countSelectorImages(html, ".reading-content img", /<[^>]+class=["'][^"']*reading-content[^"']*["'][^>]*>[\s\S]*?<\/(?:div|section|article)>/gi),
+      { selector: "regex:url", count: images.filter(image => image.selector === "regex:url").length },
+      { selector: "img", count: images.length }
+    ].filter(item => item.count > 0).sort((a, b) => b.count - a.count);
+
+    const imageAccess = await probeImages(images);
+    const readableImageCount = imageAccess.filter(image => image.ok).length;
+    const suggestedEngine = wpPostsAvailable ? "wordpress-comic" : selectorCandidates.length > 0 ? "generic-html" : "manual";
+
+    res.json({
+      url: normalizedTarget,
+      origin,
+      status: pageRes.status,
+      ok: pageRes.ok,
+      contentType,
+      server,
+      cloudflare,
+      wordpress: {
+        detected: Boolean(wpJson?.namespaces || /wp-content|wp-json/i.test(html)),
+        restAvailable: wpRestAvailable,
+        postsAvailable: wpPostsAvailable,
+        name: wpJson?.name,
+        description: wpJson?.description,
+        namespaces: wpJson?.namespaces || [],
+        error: wpError
+      },
+      images: {
+        totalFound: images.length,
+        uniqueFound: unique(images.map(image => image.url)).length,
+        accessibleInSample: readableImageCount,
+        sample: imageAccess
+      },
+      selectorCandidates,
+      suggestedEngine,
+      integrationScore: [
+        pageRes.ok,
+        !cloudflare,
+        wpPostsAvailable || selectorCandidates.length > 0,
+        images.length > 0,
+        readableImageCount > 0
+      ].filter(Boolean).length
+    });
+  } catch (err) {
+    res.status(500).json({ error: "inspect_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // POST /api/providers/custom - Add a custom provider (requires admin key)
 router.post("/providers/custom", (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;

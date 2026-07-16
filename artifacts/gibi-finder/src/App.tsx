@@ -12,6 +12,7 @@ import Colecao from "@/pages/Colecao";
 import Admin from "@/pages/Admin";
 import Explore from "@/pages/Explore";
 import Providers from "@/pages/Providers";
+import ProviderInspector from "@/pages/ProviderInspector";
 import Login from "@/pages/Login";
 import NotFound from "@/pages/not-found";
 
@@ -34,6 +35,7 @@ function Router() {
       <Route path="/colecao" component={Colecao} />
       <Route path="/admin" component={Admin} />
       <Route path="/provedores" component={Providers} />
+      <Route path="/provedores/inspector" component={ProviderInspector} />
       <Route path="/explorar" component={Explore} />
       <Route path="/login" component={Login} />
       <Route component={NotFound} />
