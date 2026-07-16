@@ -65,13 +65,16 @@ router.get("/providers", (req: Request, res: Response) => {
 // GET /api/providers/search - Search across all active providers with unifications
 router.get("/providers/search", async (req: Request, res: Response) => {
   const query = req.query.query as string;
+  const nsfw = req.query.nsfw === "true";
   if (!query) {
     res.status(400).json({ error: "missing_query", message: "O parâmetro de busca 'query' é obrigatório." });
     return;
   }
 
   try {
-    const results = await ProviderManager.search(query);
+    const { results, hiddenAdultCount, adultQuery } = await ProviderManager.searchWithMetadata(query, nsfw);
+    res.setHeader("X-Adult-Results-Hidden", String(hiddenAdultCount));
+    res.setHeader("X-Adult-Query", adultQuery ? "true" : "false");
     await injectRatings(results);
     res.json(results);
   } catch (err) {

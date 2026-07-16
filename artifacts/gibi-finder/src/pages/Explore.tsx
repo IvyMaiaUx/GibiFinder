@@ -12,6 +12,7 @@ interface UnifiedCatalogItem {
   description?: string;
   rating?: number;
   genres?: string[];
+  isAdult?: boolean;
   sources: {
     providerId: string;
     id: string;
@@ -21,11 +22,13 @@ interface UnifiedCatalogItem {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const ITEMS_PER_PAGE = 20;
+const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
 
 const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
 
 const isAdultItem = (item: UnifiedCatalogItem) => {
-  if (item.sources?.some(s => s.providerId === "eightmuses")) return true;
+  if (item.isAdult) return true;
+  if (item.sources?.some(s => ADULT_PROVIDERS.includes(s.providerId))) return true;
   if (item.genres?.some(g => ADULT_GENRES.includes(g.toLowerCase()))) return true;
   return false;
 };

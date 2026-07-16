@@ -58,9 +58,12 @@ export class MangaDexProvider implements Provider {
       .filter(Boolean);
   }
 
-  async search(query: string): Promise<SearchResult[]> {
+  async search(query: string, nsfw?: boolean): Promise<SearchResult[]> {
     try {
-      const url = `https://api.mangadex.org/manga?title=${encodeURIComponent(query)}&limit=15&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`;
+      const ratingQuery = nsfw
+        ? "contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic"
+        : "contentRating[]=safe&contentRating[]=suggestive";
+      const url = `https://api.mangadex.org/manga?title=${encodeURIComponent(query)}&limit=15&includes[]=cover_art&${ratingQuery}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`MangaDex search error: ${res.status}`);
       const data = await res.json() as any;

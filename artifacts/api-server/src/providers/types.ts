@@ -36,7 +36,7 @@ export interface Provider {
   name: string;
   language: string; // "pt", "en" ou "multi"
 
-  search(query: string): Promise<SearchResult[]>;
+  search(query: string, nsfw?: boolean): Promise<SearchResult[]>;
   getDetails(id: string): Promise<MangaDetails>;
   getChapters(id: string): Promise<Chapter[]>;
   getPages(chapterId: string): Promise<Page[]>;
@@ -50,6 +50,7 @@ export interface UnifiedSearchResult {
   description?: string;
   rating?: number;
   genres?: string[];
+  isAdult?: boolean;
   sources: {
     providerId: string;
     id: string; // ID original do mangá no provedor

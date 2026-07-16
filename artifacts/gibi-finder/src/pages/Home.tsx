@@ -5,7 +5,7 @@ import { SearchPanel } from "@/components/home/SearchPanel";
 import { ResultView } from "@/components/results/ResultView";
 import { useSearchActions } from "@/hooks/use-search-actions";
 import { useLocation } from "wouter";
-import { BookOpen, HelpCircle, Loader2, Star } from "lucide-react";
+import { AlertTriangle, BookOpen, HelpCircle, Loader2, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 
@@ -16,6 +16,7 @@ interface UnifiedSearchResult {
   description?: string;
   rating?: number;
   genres?: string[];
+  isAdult?: boolean;
   sources: {
     providerId: string;
     id: string;
@@ -41,6 +42,7 @@ export default function Home() {
   const [onlineResults, setOnlineResults] = useState<UnifiedSearchResult[] | null>(null);
   const [onlineSearching, setOnlineSearching] = useState(false);
   const [searchedQuery, setSearchedQuery] = useState("");
+  const [adultSearchWarning, setAdultSearchWarning] = useState<{ hiddenCount: number; adultQuery: boolean } | null>(null);
 
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -61,11 +63,15 @@ export default function Home() {
     setSearchedQuery(query);
     clearResults(); // Clear AI results if any
     setOnlineResults(null);
+    setAdultSearchWarning(null);
 
     try {
-      const res = await fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(query)}`);
+      const res = await fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(query)}&nsfw=${isNsfw}`);
       if (res.ok) {
         const data = await res.json() as UnifiedSearchResult[];
+        const hiddenCount = Number(res.headers.get("X-Adult-Results-Hidden") || "0");
+        const adultQuery = res.headers.get("X-Adult-Query") === "true";
+        setAdultSearchWarning(hiddenCount > 0 || (adultQuery && !isNsfw) ? { hiddenCount, adultQuery } : null);
         setOnlineResults(data);
       } else {
         setOnlineResults([]);
@@ -126,8 +132,10 @@ export default function Home() {
         {/* Online Aggregated Search Results */}
         {onlineResults && !onlineSearching && (() => {
           const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
+          const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
           const filtered = onlineResults.filter(item => {
-            const isAdult = item.sources?.some(s => s.providerId === "eightmuses") || 
+            const isAdult = item.isAdult ||
+                            item.sources?.some(s => ADULT_PROVIDERS.includes(s.providerId)) ||
                             item.genres?.some((g: string) => ADULT_GENRES.includes(g.toLowerCase()));
             if (!isNsfw && isAdult) return false;
             return true;
@@ -144,6 +152,18 @@ export default function Home() {
                   {filtered.length} Encontrado(s)
                 </span>
               </div>
+
+              {adultSearchWarning && !isNsfw && (
+                <div className="bg-rose-50 border-4 border-rose-600 rounded-xl p-4 comic-shadow-sm flex items-start gap-3">
+                  <AlertTriangle className="w-7 h-7 text-rose-600 shrink-0 mt-0.5" strokeWidth={3} />
+                  <div>
+                    <h3 className="font-display text-xl text-rose-700 uppercase">Conteudo +18 oculto</h3>
+                    <p className="font-sans font-bold text-sm text-rose-900 leading-relaxed">
+                      Esta busca parece ter titulos adultos. {adultSearchWarning.hiddenCount > 0 ? `${adultSearchWarning.hiddenCount} resultado(s) +18 foram escondidos.` : "Ative o modo +18 para pesquisar e exibir esse tipo de conteudo."}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {filtered.length === 0 ? (
                 <div className="text-center py-20 border-4 border-dashed border-black bg-white comic-shadow-sm">
@@ -178,9 +198,11 @@ export default function Home() {
                           </p>
                           {item.genres && item.genres.length > 0 && (() => {
                             const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
-                            const isAdult = item.sources.some(s => s.providerId === "eightmuses") || 
+                            const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
+                            const isAdult = item.isAdult ||
+                                            item.sources.some(s => ADULT_PROVIDERS.includes(s.providerId)) ||
                                             item.genres.some((g: string) => ADULT_GENRES.includes(g.toLowerCase()));
-                            const isUncensored = item.sources.some(s => s.providerId === "eightmuses") || 
+                            const isUncensored = item.sources.some(s => ADULT_PROVIDERS.includes(s.providerId)) || 
                                                  item.genres.some((g: string) => g.toLowerCase().includes("uncensored") || g.toLowerCase().includes("sem censura"));
                             return (
                               <div className="flex flex-wrap gap-1 mt-2">

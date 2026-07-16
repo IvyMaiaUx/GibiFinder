@@ -20,6 +20,33 @@ class StubProvider implements Provider {
 
 export class ProviderManager {
   private static providers: Map<string, Provider> = new Map();
+  private static adultProviderIds = new Set([
+    "eightmuses",
+    "hentai-home",
+    "universo-hentai",
+    "hentai-teca",
+    "sombras-de-hentai"
+  ]);
+  private static adultTerms = [
+    "adulto",
+    "adult",
+    "doujinshi",
+    "ecchi",
+    "erotic",
+    "erotica",
+    "erotico",
+    "erótico",
+    "hentai",
+    "incesto",
+    "milf",
+    "nsfw",
+    "porn",
+    "pornografico",
+    "pornográfico",
+    "sacana",
+    "sexo",
+    "uncensored"
+  ];
   private static activeStates: Map<string, boolean> = new Map([
     ["mangadex", true],
     ["comicextra", true],
@@ -170,13 +197,45 @@ export class ProviderManager {
       .trim();
   }
 
+  private static normalizeText(text: string): string {
+    return text
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }
+
+  static isAdultProvider(id: string): boolean {
+    return this.adultProviderIds.has(id);
+  }
+
+  static isAdultQuery(query: string): boolean {
+    const normalized = this.normalizeText(query);
+    return this.adultTerms.some(term => normalized.includes(this.normalizeText(term)));
+  }
+
+  private static isAdultResult(result: { title?: string; providerId?: string; genres?: string[]; sources?: { providerId: string }[] }): boolean {
+    if (result.providerId && this.isAdultProvider(result.providerId)) return true;
+    if (result.sources?.some(source => this.isAdultProvider(source.providerId))) return true;
+
+    const searchable = [
+      result.title || "",
+      ...(result.genres || [])
+    ].map(text => this.normalizeText(text));
+
+    return searchable.some(text => this.adultTerms.some(term => text.includes(this.normalizeText(term))));
+  }
+
   // Searches all active providers simultaneously and unifies results
-  static async search(query: string): Promise<UnifiedSearchResult[]> {
+  static async search(query: string, nsfw?: boolean): Promise<UnifiedSearchResult[]> {
+    return (await this.searchWithMetadata(query, nsfw)).results;
+  }
+
+  static async searchWithMetadata(query: string, nsfw?: boolean): Promise<{ results: UnifiedSearchResult[]; hiddenAdultCount: number; adultQuery: boolean }> {
     const activeProviders = Array.from(this.providers.values()).filter(
       p => this.activeStates.get(p.id) === true
     );
     const searchPromises = activeProviders.map(p => 
-      p.search(query).catch(err => {
+      p.search(query, nsfw).catch(err => {
         console.error(`Error searching provider ${p.name}:`, err);
         return [];
       })
@@ -218,6 +277,7 @@ export class ProviderManager {
         } else if (existing.genres && result.genres) {
           existing.genres = Array.from(new Set([...existing.genres, ...result.genres]));
         }
+        existing.isAdult = this.isAdultResult(existing) || this.isAdultResult(result);
       } else {
         // Create new group
         const groupId = `${norm}_group`;
@@ -227,6 +287,7 @@ export class ProviderManager {
           coverUrl: result.coverUrl,
           description: result.description,
           genres: result.genres,
+          isAdult: this.isAdultResult(result),
           sources: [{
             providerId: result.providerId,
             id: result.id,
@@ -236,7 +297,17 @@ export class ProviderManager {
       }
     }
 
-    return Array.from(groups.values());
+    const allResults = Array.from(groups.values()).map(result => ({
+      ...result,
+      isAdult: this.isAdultResult(result)
+    }));
+    const visibleResults = nsfw ? allResults : allResults.filter(result => !result.isAdult);
+
+    return {
+      results: visibleResults,
+      hiddenAdultCount: allResults.length - visibleResults.length,
+      adultQuery: this.isAdultQuery(query)
+    };
   }
 
   static async getDetails(providerId: string, id: string): Promise<MangaDetails> {
@@ -302,6 +373,7 @@ export class ProviderManager {
         } else if (existing.genres && result.genres) {
           existing.genres = Array.from(new Set([...existing.genres, ...result.genres]));
         }
+        existing.isAdult = this.isAdultResult(existing) || this.isAdultResult(result);
       } else {
         const groupId = `${norm}_group`;
         groups.set(norm, {
@@ -310,6 +382,7 @@ export class ProviderManager {
           coverUrl: result.coverUrl,
           description: result.description,
           genres: result.genres,
+          isAdult: this.isAdultResult(result),
           sources: [{
             providerId: result.providerId,
             id: result.id,
@@ -319,6 +392,11 @@ export class ProviderManager {
       }
     }
 
-    return Array.from(groups.values());
+    const allResults = Array.from(groups.values()).map(result => ({
+      ...result,
+      isAdult: this.isAdultResult(result)
+    }));
+
+    return nsfw ? allResults.filter(result => result.isAdult) : allResults.filter(result => !result.isAdult);
   }
 }

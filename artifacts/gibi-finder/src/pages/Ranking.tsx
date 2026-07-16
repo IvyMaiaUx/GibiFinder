@@ -11,6 +11,7 @@ interface UnifiedCatalogItem {
   coverUrl?: string;
   description?: string;
   genres?: string[];
+  isAdult?: boolean;
   sources: {
     providerId: string;
     id: string;
@@ -45,8 +46,10 @@ export default function Ranking() {
       const data = await res.json() as UnifiedCatalogItem[];
       
       const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
+      const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
       const filtered = data.filter(item => {
-        const isAdult = item.sources?.some(s => s.providerId === "eightmuses") || 
+        const isAdult = item.isAdult ||
+                        item.sources?.some(s => ADULT_PROVIDERS.includes(s.providerId)) ||
                         item.genres?.some((g: string) => ADULT_GENRES.includes(g.toLowerCase()));
         return forceNsfw ? isAdult : !isAdult;
       });
