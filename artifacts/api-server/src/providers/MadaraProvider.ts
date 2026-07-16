@@ -56,6 +56,10 @@ export class MadaraProvider implements Provider {
     return id.startsWith("post:");
   }
 
+  private isHentai2Read(): boolean {
+    return this.baseUrl.includes("hentai2read.com");
+  }
+
   private getContentUrl(id: string): string {
     if (this.isGenericId(id)) {
       const path = id.replace(/^post:/, "").replace(/^\/+|\/+$/g, "");
@@ -237,6 +241,39 @@ export class MadaraProvider implements Provider {
     return results;
   }
 
+  private parseHentai2ReadSearch(html: string): SearchResult[] {
+    const results: SearchResult[] = [];
+    const seen = new Set<string>();
+    const blocks = html.match(/<div[^>]+class=["'][^"']*book-grid-item-container[^"']*["'][\s\S]*?<div[^>]+class=["'][^"']*js-rating/gi) || [];
+
+    for (const block of blocks) {
+      const titleMatch = block.match(/<div[^>]+class=["'][^"']*overlay-title[^"']*["'][\s\S]*?<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+      if (!titleMatch) continue;
+
+      const id = this.toGenericId(titleMatch[1]);
+      if (!id || seen.has(id)) continue;
+
+      const title = this.decodeHtml(titleMatch[2].replace(/<[^>]*>/g, ""));
+      if (!title) continue;
+
+      const coverMatch = block.match(/<img[^>]+src=["']([^"']+)["'][^>]+alt=/i);
+      const genreMatches = Array.from(block.matchAll(/\/hentai-list\/category\/[^"']+["'][^>]*>([^<]+)<\/a>/gi));
+      const genres = genreMatches.map(match => this.decodeHtml(match[1])).filter(Boolean);
+
+      seen.add(id);
+      results.push({
+        id,
+        title,
+        description: `Disponivel no portal ${this.name}.`,
+        coverUrl: coverMatch ? this.resolveUrl(coverMatch[1]) || undefined : undefined,
+        providerId: this.id,
+        genres: genres.length > 0 ? genres : ["Hentai"]
+      });
+    }
+
+    return results;
+  }
+
   private parseSearchResults(html: string): SearchResult[] {
     const madaraResults = this.parseMadaraSearch(html);
     if (madaraResults.length > 0) return madaraResults;
@@ -274,8 +311,21 @@ export class MadaraProvider implements Provider {
 
   async search(query: string): Promise<SearchResult[]> {
     try {
-      if (this.baseUrl.includes("hentai2read.com")) {
-        return [];
+      if (this.isHentai2Read()) {
+        const res = await fetch(new URL("hentai-list/search/", this.baseUrl), {
+          method: "POST",
+          headers: {
+            ...BROWSER_HEADERS,
+            "Content-Type": "application/x-www-form-urlencoded",
+            Referer: new URL("hentai-search/", this.baseUrl).toString()
+          },
+          body: new URLSearchParams({
+            cmd_wpm_wgt_mng_sch_sbm: "Search",
+            txt_wpm_wgt_mng_sch_nme: query
+          })
+        });
+        if (!res.ok) throw new Error(`Hentai2Read search failed status: ${res.status}`);
+        return this.parseHentai2ReadSearch(await res.text());
       }
 
       const results = new Map<string, SearchResult>();
@@ -409,6 +459,47 @@ export class MadaraProvider implements Provider {
 
   async getPages(chapterId: string): Promise<Page[]> {
     try {
+      if (this.isHentai2Read()) {
+        const detailsRes = await fetch(this.getContentUrl(chapterId), { headers: BROWSER_HEADERS });
+        if (!detailsRes.ok) throw new Error(`Hentai2Read details status: ${detailsRes.status}`);
+        const detailsHtml = await detailsRes.text();
+        const readMatch = detailsHtml.match(/href=["']([^"']+\/\d+\/)["'][^>]*>\s*<i[^>]+class=["'][^"']*book-open/i) ||
+          detailsHtml.match(/href=["']([^"']+\/1\/)["']/i);
+        if (!readMatch) throw new Error("Could not find Hentai2Read reader URL.");
+
+        const readerUrl = this.resolveUrl(readMatch[1]);
+        if (!readerUrl) throw new Error("Invalid Hentai2Read reader URL.");
+
+        const readerRes = await fetch(readerUrl, { headers: BROWSER_HEADERS });
+        if (!readerRes.ok) throw new Error(`Hentai2Read reader status: ${readerRes.status}`);
+        const readerHtml = await readerRes.text();
+
+        const firstPageMatch = readerHtml.match(/src=["'](https?:\/\/static\.hentai\.direct\/hentai\/[^"']+\.(?:webp|jpe?g|png))["']/i);
+        if (!firstPageMatch) throw new Error("Could not find Hentai2Read first page.");
+
+        const firstPageUrl = firstPageMatch[1];
+        const numMatch = firstPageUrl.match(/^(.*?)(\d+)\.(webp|jpe?g|png)$/i);
+        if (!numMatch) throw new Error("Hentai2Read first page has unexpected name.");
+
+        const maxFromMenu = Math.max(
+          0,
+          ...Array.from(readerHtml.matchAll(/data-pagid=["'](\d+)["']/gi)).map(match => Number(match[1]))
+        );
+        const totalPages = Math.min(maxFromMenu || 1, 500);
+        const basePart = numMatch[1];
+        const numStr = numMatch[2];
+        const ext = numMatch[3];
+        const padLength = numStr.length;
+
+        return Array.from({ length: totalPages }, (_, index) => {
+          const pageNum = index + 1;
+          return {
+            url: `${basePart}${String(pageNum).padStart(padLength, "0")}.${ext}`,
+            pageNumber: pageNum
+          };
+        });
+      }
+
       const res = await fetch(this.getContentUrl(chapterId), { headers: BROWSER_HEADERS });
       if (!res.ok) throw new Error(`Pages status: ${res.status}`);
       const html = await res.text();
