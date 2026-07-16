@@ -138,26 +138,56 @@ export class WordPressComicProvider implements Provider {
     return Array.from(urls);
   }
 
+  private toSearchResult(post: WpPost): SearchResult {
+    return {
+      id: this.toPostId(post),
+      title: this.stripHtml(post.title?.rendered || post.slug),
+      description: this.stripHtml(post.excerpt?.rendered || "").slice(0, 240),
+      coverUrl: this.postCover(post),
+      providerId: this.id
+    };
+  }
+
+  private async hasReadablePages(post: WpPost): Promise<boolean> {
+    const readPage = await this.findReadPage(post).catch(() => null);
+    if (!readPage) return false;
+
+    try {
+      let html = "";
+      if (readPage.id.startsWith("page:")) {
+        const page = await this.getPageById(readPage.id.replace(/^page:/, ""));
+        html = page?.content?.rendered || "";
+      } else {
+        html = await this.fetchHtml(readPage.url);
+      }
+      return this.extractImages(html).length > 0;
+    } catch {
+      return false;
+    }
+  }
+
   async search(query: string): Promise<SearchResult[]> {
     try {
       const posts = await this.fetchJson<WpPost[]>(this.api(`posts?search=${encodeURIComponent(query)}&per_page=12&_embed=1`));
-      const queryIssue = query.match(/#?\s*(\d+)\s*$/)?.[1];
+      const queryIssue = (query.match(/#\s*(\d+)\s*$/) || query.match(/\b(\d{1,3})\s*$/))?.[1];
       const sorted = [...posts].sort((a, b) => {
         if (!queryIssue) return 0;
         const aTitle = this.stripHtml(a.title?.rendered || "");
         const bTitle = this.stripHtml(b.title?.rendered || "");
-        const aExact = new RegExp(`#\\s*${queryIssue}\\b|\\b${queryIssue}\\b`).test(aTitle) ? 1 : 0;
-        const bExact = new RegExp(`#\\s*${queryIssue}\\b|\\b${queryIssue}\\b`).test(bTitle) ? 1 : 0;
+        const aExact = new RegExp(`#\\s*${queryIssue}\\b`).test(aTitle) ? 1 : 0;
+        const bExact = new RegExp(`#\\s*${queryIssue}\\b`).test(bTitle) ? 1 : 0;
         return bExact - aExact;
       });
+      const candidates = queryIssue
+        ? sorted.filter(post => new RegExp(`#\\s*${queryIssue}\\b`).test(this.stripHtml(post.title?.rendered || "")))
+        : sorted;
 
-      return sorted.map(post => ({
-        id: this.toPostId(post),
-        title: this.stripHtml(post.title?.rendered || post.slug),
-        description: this.stripHtml(post.excerpt?.rendered || "").slice(0, 240),
-        coverUrl: this.postCover(post),
-        providerId: this.id
-      }));
+      const readable = await Promise.all(candidates.map(async post => ({
+        post,
+        readable: await this.hasReadablePages(post)
+      })));
+
+      return readable.filter(item => item.readable).map(item => this.toSearchResult(item.post));
     } catch (err) {
       console.warn(`WordPress provider [${this.id}] search failed:`, err);
       return [];
@@ -220,13 +250,11 @@ export class WordPressComicProvider implements Provider {
     try {
       const orderby = listType === "latest" ? "date" : "date";
       const posts = await this.fetchJson<WpPost[]>(this.api(`posts?per_page=12&orderby=${orderby}&_embed=1`));
-      return posts.map(post => ({
-        id: this.toPostId(post),
-        title: this.stripHtml(post.title?.rendered || post.slug),
-        description: this.stripHtml(post.excerpt?.rendered || "").slice(0, 240),
-        coverUrl: this.postCover(post),
-        providerId: this.id
-      }));
+      const readable = await Promise.all(posts.map(async post => ({
+        post,
+        readable: await this.hasReadablePages(post)
+      })));
+      return readable.filter(item => item.readable).map(item => this.toSearchResult(item.post));
     } catch {
       return [];
     }
