@@ -78,9 +78,26 @@ CREATE INDEX IF NOT EXISTS idx_result_feedback_result_id ON result_feedback(resu
 -- ALTER TABLE gibis ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE search_history ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE result_feedback ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE suggestions ENABLE ROW LEVEL SECURITY;
 -- CREATE POLICY "Allow all" ON gibis FOR ALL USING (true) WITH CHECK (true);
 -- CREATE POLICY "Allow all" ON search_history FOR ALL USING (true) WITH CHECK (true);
 -- CREATE POLICY "Allow all" ON result_feedback FOR ALL USING (true) WITH CHECK (true);
+-- CREATE POLICY "Allow all" ON suggestions FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- Table: suggestions (bugs and user suggestions)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS suggestions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  type TEXT NOT NULL DEFAULT 'sugestao',
+  message TEXT NOT NULL,
+  nome TEXT,
+  email TEXT,
+  status TEXT NOT NULL DEFAULT 'novo',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_suggestions_status ON suggestions(status);
 
 -- ============================================================
 -- Table: user_profiles (registered reader accounts)
@@ -115,3 +132,4 @@ CREATE INDEX IF NOT EXISTS idx_user_favorites_user_id ON user_favorites(user_id)
 -- Disable Row Level Security (RLS) to match anonymous schema design
 ALTER TABLE user_profiles DISABLE ROW LEVEL SECURITY;
 ALTER TABLE user_favorites DISABLE ROW LEVEL SECURITY;
+ALTER TABLE suggestions DISABLE ROW LEVEL SECURITY;
