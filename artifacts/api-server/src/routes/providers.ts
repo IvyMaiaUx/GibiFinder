@@ -304,6 +304,14 @@ async function probeImages(images: Array<{ url: string; selector: string }>) {
 }
 
 router.get("/providers/inspect", async (req: Request, res: Response) => {
+  const host = req.hostname;
+  const forwardedHost = String(req.headers["x-forwarded-host"] || "");
+  const isLocalhost = ["localhost", "127.0.0.1", "::1"].includes(host) || forwardedHost.startsWith("localhost:");
+  if (!isLocalhost) {
+    res.status(404).json({ error: "local_only", message: "Provider Inspector is only available on localhost." });
+    return;
+  }
+
   if (!requireAdmin(req, res)) return;
   const target = req.query.url as string;
   if (!target) {

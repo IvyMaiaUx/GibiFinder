@@ -60,9 +60,15 @@ export default function ProviderInspector() {
   const [result, setResult] = useState<InspectResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isLocalhost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
 
   const inspect = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!isLocalhost) {
+      setError("O Provider Inspector fica disponivel apenas no localhost.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setResult(null);
@@ -115,13 +121,18 @@ export default function ProviderInspector() {
             />
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !isLocalhost}
               className="inline-flex items-center justify-center gap-2 border-4 border-black bg-primary px-5 py-3 font-display text-sm uppercase text-white comic-shadow transition-transform hover:-translate-y-0.5 disabled:opacity-60"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <SearchCode className="h-4 w-4" />}
               Inspecionar
             </button>
           </form>
+          {!isLocalhost && (
+            <div className="mt-4 border-4 border-black bg-amber-50 p-3 font-sans text-sm font-extrabold text-black">
+              Esta ferramenta consulta sites externos pelo servidor e fica ativa apenas em ambiente local.
+            </div>
+          )}
         </div>
 
         {error && (
