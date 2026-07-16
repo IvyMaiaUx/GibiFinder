@@ -1,8 +1,8 @@
-import { useState } from "react";
 import { Link } from "wouter";
 import { ExternalLink, Star } from "lucide-react";
 import type { ComicResult } from "@workspace/api-client-react";
-import { cn, proxyCoverUrl } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { SafeImage } from "@/components/ui/SafeImage";
 
 interface ComicCardProps {
   result: any;
@@ -10,7 +10,6 @@ interface ComicCardProps {
 }
 
 export function ComicCard({ result, isMain = false }: ComicCardProps) {
-  const [imgError, setImgError] = useState(false);
   const hasImage = result.images && result.images.length > 0;
   const imageUrl = result.images?.[0];
   const confianca = result.confianca ? Math.round(result.confianca) : 0;
@@ -26,19 +25,11 @@ export function ComicCard({ result, isMain = false }: ComicCardProps) {
           "bg-muted relative border-b-4 sm:border-b-0 sm:border-r-4 border-black shrink-0",
           isMain ? "w-full sm:w-64 md:w-80 h-80 sm:h-auto" : "w-full sm:w-40 h-48 sm:h-auto"
         )}>
-          {!imgError ? (
-            <img 
-              src={proxyCoverUrl(imageUrl)} 
-              alt={result.titulo || "Capa do Gibi"} 
-              className="w-full h-full object-cover"
-              referrerPolicy="no-referrer"
-              onError={() => setImgError(true)}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center font-display text-5xl text-white/20 select-none bg-gradient-to-br from-zinc-900 to-zinc-950">
-              {(result.titulo || result.revista || "?").charAt(0).toUpperCase()}
-            </div>
-          )}
+          <SafeImage 
+            src={imageUrl} 
+            alt={result.titulo || result.revista || "Capa do Gibi"} 
+            className="w-full h-full object-cover"
+          />
           
           {isMain && (
             <div className="absolute top-4 left-[-10px] bg-primary text-white font-display text-xl px-4 py-1 border-4 border-black transform -rotate-6 shadow-[4px_4px_0_rgba(0,0,0,1)]">

@@ -6,7 +6,8 @@ import { ResultView } from "@/components/results/ResultView";
 import { useSearchActions } from "@/hooks/use-search-actions";
 import { useLocation } from "wouter";
 import { BookOpen, HelpCircle, Loader2, Star } from "lucide-react";
-import { cn, proxyCoverUrl } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { SafeImage } from "@/components/ui/SafeImage";
 
 interface UnifiedSearchResult {
   id: string;
@@ -40,11 +41,6 @@ export default function Home() {
   const [onlineResults, setOnlineResults] = useState<UnifiedSearchResult[] | null>(null);
   const [onlineSearching, setOnlineSearching] = useState(false);
   const [searchedQuery, setSearchedQuery] = useState("");
-  const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
-
-  const handleImageError = (itemId: string) => {
-    setBrokenImages(prev => ({ ...prev, [itemId]: true }));
-  };
 
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -164,20 +160,12 @@ export default function Home() {
                       className="group bg-white border-4 border-black rounded-xl overflow-hidden text-left flex flex-col justify-between hover:translate-y-[-6px] transition-all duration-200 comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:bg-yellow-50"
                     >
                       <div className="relative aspect-[3/4] border-b-4 border-black bg-zinc-950 overflow-hidden shrink-0">
-                        {item.coverUrl && !brokenImages[item.id] ? (
-                          <img 
-                            src={proxyCoverUrl(item.coverUrl)} 
-                            alt={item.title} 
-                            className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                            loading="lazy"
-                            referrerPolicy="no-referrer"
-                            onError={() => handleImageError(item.id)}
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center font-display text-4xl text-white/20 select-none bg-gradient-to-br from-zinc-900 to-zinc-950">
-                            {item.title.charAt(0).toUpperCase()}
-                          </div>
-                        )}
+                        <SafeImage 
+                          src={item.coverUrl} 
+                          alt={item.title} 
+                          className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                          loading="lazy"
+                        />
                       </div>
 
                       <div className="p-4 flex-1 flex flex-col justify-between min-w-0">
