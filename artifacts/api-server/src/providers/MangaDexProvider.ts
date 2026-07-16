@@ -178,6 +178,9 @@ export class MangaDexProvider implements Provider {
         
         const coverRel = item.relationships.find((r: any) => r.type === "cover_art");
         const coverFileName = coverRel?.attributes?.fileName;
+        const coverUrl = coverFileName 
+          ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.256.jpg` 
+          : undefined;
         const genres = this.extractGenres(item);
 
         return { id, title, description, coverUrl, genres, providerId: this.id };
