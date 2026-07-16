@@ -5,7 +5,7 @@ import { SearchPanel } from "@/components/home/SearchPanel";
 import { ResultView } from "@/components/results/ResultView";
 import { useSearchActions } from "@/hooks/use-search-actions";
 import { useLocation } from "wouter";
-import { AlertTriangle, BookOpen, HelpCircle, Loader2, Star } from "lucide-react";
+import { AlertTriangle, BookOpen, Filter, HelpCircle, Loader2, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 
@@ -25,6 +25,76 @@ interface UnifiedSearchResult {
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erotico", "erotica", "adulto", "adult"];
+const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
+
+const PUBLISHER_FILTERS = [
+  { id: "all", label: "Todas" },
+  { id: "dc", label: "DC" },
+  { id: "marvel", label: "Marvel" },
+  { id: "image", label: "Image" },
+  { id: "dark-horse", label: "Dark Horse" },
+  { id: "idw", label: "IDW" },
+  { id: "disney", label: "Disney" },
+] as const;
+
+type PublisherFilter = typeof PUBLISHER_FILTERS[number]["id"];
+
+const PUBLISHER_TERMS: Record<Exclude<PublisherFilter, "all">, string[]> = {
+  dc: [
+    "dc", "batman", "superman", "wonder woman", "mulher maravilha", "flash", "aquaman", "shazam",
+    "lanterna verde", "green lantern", "justice league", "liga da justica", "nightwing", "asa noturna",
+    "robin", "arlequina", "harley", "coringa", "joker", "gotham", "teen titans", "jovens titas"
+  ],
+  marvel: [
+    "marvel", "spider man", "spider-man", "homem aranha", "x men", "x-men", "wolverine", "deadpool",
+    "hulk", "avengers", "vingadores", "iron man", "homem de ferro", "captain america", "capitao america",
+    "thor", "venom", "daredevil", "demolidor", "fantastic four", "quarteto fantastico", "miles morales"
+  ],
+  image: ["image", "spawn", "invincible", "the walking dead", "saga", "witchblade", "youngblood", "radiant black"],
+  "dark-horse": ["dark horse", "hellboy", "bprd", "b p r d", "sin city", "umbrella academy", "star wars", "conan"],
+  idw: ["idw", "transformers", "teenage mutant ninja turtles", "tartarugas ninja", "tmnt", "sonic", "my little pony"],
+  disney: ["disney", "mickey", "minnie", "donald", "pateta", "tio patinhas", "ducktales", "ze carioca"]
+};
+
+const normalizeFilterText = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/&/g, " e ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+const getPublisherFilterText = (item: UnifiedSearchResult) => normalizeFilterText([
+  item.title,
+  item.description || "",
+  ...(item.genres || []),
+  ...item.sources.map(source => `${source.providerId} ${source.title}`)
+].join(" "));
+
+const matchesPublisher = (item: UnifiedSearchResult, filter: PublisherFilter) => {
+  if (filter === "all") return true;
+  const text = getPublisherFilterText(item);
+  const words = text.split(/\s+/);
+  return PUBLISHER_TERMS[filter].some(term => {
+    const normalizedTerm = normalizeFilterText(term);
+    return normalizedTerm.length <= 3 ? words.includes(normalizedTerm) : text.includes(normalizedTerm);
+  });
+};
+
+const getPublisherCounts = (items: UnifiedSearchResult[]) => {
+  const counts = Object.fromEntries(PUBLISHER_FILTERS.map(option => [option.id, 0])) as Record<PublisherFilter, number>;
+  counts.all = items.length;
+  for (const item of items) {
+    for (const option of PUBLISHER_FILTERS) {
+      if (option.id !== "all" && matchesPublisher(item, option.id)) {
+        counts[option.id] += 1;
+      }
+    }
+  }
+  return counts;
+};
 
 export default function Home() {
   const [, setLocation] = useLocation();
@@ -43,6 +113,7 @@ export default function Home() {
   const [onlineSearching, setOnlineSearching] = useState(false);
   const [searchedQuery, setSearchedQuery] = useState("");
   const [adultSearchWarning, setAdultSearchWarning] = useState<{ hiddenCount: number; adultQuery: boolean } | null>(null);
+  const [publisherFilter, setPublisherFilter] = useState<PublisherFilter>("all");
 
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -64,6 +135,7 @@ export default function Home() {
     clearResults(); // Clear AI results if any
     setOnlineResults(null);
     setAdultSearchWarning(null);
+    setPublisherFilter("all");
 
     try {
       const res = await fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(query)}&nsfw=${isNsfw}`);
@@ -140,6 +212,8 @@ export default function Home() {
             if (!isNsfw && isAdult) return false;
             return true;
           });
+          const publisherCounts = getPublisherCounts(filtered);
+          const publisherFiltered = filtered.filter(item => matchesPublisher(item, publisherFilter));
 
           return (
             <div ref={resultsRef} className="scroll-mt-24 mt-12 space-y-8">
@@ -149,8 +223,43 @@ export default function Home() {
                   Resultados Online para "{searchedQuery}"
                 </h2>
                 <span className="font-sans font-extrabold text-xs uppercase bg-black text-white px-3 py-1">
-                  {filtered.length} Encontrado(s)
+                  {publisherFiltered.length} Encontrado(s)
                 </span>
+              </div>
+
+              <div className="bg-white border-4 border-black rounded-xl comic-shadow-sm p-3 sm:p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Filter className="w-5 h-5 text-primary" strokeWidth={3} />
+                  <h3 className="font-display text-xl text-black uppercase">Editora</h3>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                  {PUBLISHER_FILTERS.map(option => {
+                    const isActive = publisherFilter === option.id;
+                    const count = publisherCounts[option.id];
+                    return (
+                      <button
+                        key={option.id}
+                        onClick={() => setPublisherFilter(option.id)}
+                        disabled={option.id !== "all" && count === 0}
+                        className={cn(
+                          "min-h-11 border-2 border-black rounded-lg px-2 py-2 font-display text-sm uppercase transition-all flex items-center justify-center gap-1.5",
+                          isActive
+                            ? "bg-primary text-white shadow-[3px_3px_0_rgba(0,0,0,1)] translate-y-[-1px]"
+                            : "bg-white text-black hover:bg-yellow-100",
+                          option.id !== "all" && count === 0 && "opacity-40 cursor-not-allowed hover:bg-white"
+                        )}
+                      >
+                        <span>{option.label}</span>
+                        <span className={cn(
+                          "font-sans text-[10px] font-black px-1.5 py-0.5 rounded-full border border-black",
+                          isActive ? "bg-white text-black" : "bg-black text-white"
+                        )}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {adultSearchWarning && !isNsfw && (
@@ -165,7 +274,7 @@ export default function Home() {
                 </div>
               )}
 
-              {filtered.length === 0 ? (
+              {publisherFiltered.length === 0 ? (
                 <div className="text-center py-20 border-4 border-dashed border-black bg-white comic-shadow-sm">
                   <HelpCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                   <h3 className="font-display text-2xl text-black">NENHUM QUADRINHO ENCONTRADO</h3>
@@ -173,7 +282,7 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-                  {filtered.map((item) => (
+                  {publisherFiltered.map((item) => (
                     <button
                       key={item.id}
                       onClick={() => handleOpenOnlineResult(item)}
