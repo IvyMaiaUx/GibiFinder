@@ -138,5 +138,12 @@
     "language": "pt",
     "baseUrl": "https://multiversohq.com/",
     "active": true
+  },
+  {
+    "id": "jon-domingues",
+    "name": "Jon Domingues",
+    "language": "pt",
+    "baseUrl": "https://jondomingues.com/",
+    "active": true
   }
 ]

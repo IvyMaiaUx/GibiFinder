@@ -1,7 +1,9 @@
 import { Provider, SearchResult, MangaDetails, Chapter, Page } from "./types";
 
 const BROWSER_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
 };
 
 export class MadaraProvider implements Provider {
@@ -73,8 +75,8 @@ export class MadaraProvider implements Provider {
     return this.baseUrl.includes("hqdesexo.com");
   }
 
-  private isMultiversoHq(): boolean {
-    return this.baseUrl.includes("multiversohq.com");
+  private isDownloadCatalogOnly(): boolean {
+    return this.baseUrl.includes("multiversohq.com") || this.baseUrl.includes("jondomingues.com");
   }
 
   private getContentUrl(id: string): string {
@@ -199,7 +201,8 @@ export class MadaraProvider implements Provider {
     const seen = new Set<string>();
     const blocks = [
       ...(html.match(/<article\b[\s\S]*?<\/article>/gi) || []),
-      ...(html.match(/<li\b[\s\S]*?<\/li>/gi) || [])
+      ...(html.match(/<li\b[\s\S]*?<\/li>/gi) || []),
+      ...(html.match(/<div[^>]+class=["'][^"']*gridpal-grid-post[^"']*["'][\s\S]*?<\/div>\s*<\/div>\s*<\/div>/gi) || [])
     ];
 
     for (const block of blocks) {
@@ -215,7 +218,8 @@ export class MadaraProvider implements Provider {
       if (!id || seen.has(id)) continue;
 
       const title = this.decodeHtml(titleLink[2].replace(/<[^>]*>/g, ""));
-      if (!title) continue;
+      const cleanedTitle = title.replace(/^Permanent Link to\s+/i, "");
+      if (!cleanedTitle) continue;
 
       const coverMatch = block.match(/<img[^>]+(?:data-src|data-lazy-src|data-original|src)=["']([^"']+)["']/i) ||
         block.match(/background-image\s*:\s*url\((["']?)([^"')]+)\1\)/i);
@@ -225,7 +229,7 @@ export class MadaraProvider implements Provider {
       seen.add(id);
       results.push({
         id,
-        title,
+        title: cleanedTitle,
         description: `Disponivel no portal ${this.name}.`,
         coverUrl: coverValue ? this.resolveUrl(coverValue) || undefined : coverUrl,
         providerId: this.id
@@ -531,7 +535,7 @@ export class MadaraProvider implements Provider {
       if (!res.ok) throw new Error(`Pages status: ${res.status}`);
       const html = await res.text();
 
-      if (this.isMultiversoHq()) {
+      if (this.isDownloadCatalogOnly()) {
         return [];
       }
 
