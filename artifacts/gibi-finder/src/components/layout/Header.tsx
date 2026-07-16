@@ -1,11 +1,58 @@
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { Search, Clock, Trophy, BookMarked, Compass, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 
 export function Header() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const { user, logout } = useAuth();
+  const [isNsfw, setIsNsfw] = useState(() => document.documentElement.classList.contains("nsfw"));
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showAgeModal, setShowAgeModal] = useState(false);
+
+  useEffect(() => {
+    const handleNsfwChange = () => {
+      setIsNsfw(document.documentElement.classList.contains("nsfw"));
+    };
+    window.addEventListener("nsfw-change", handleNsfwChange);
+    return () => window.removeEventListener("nsfw-change", handleNsfwChange);
+  }, []);
+
+  const toggleNsfw = () => {
+    if (isNsfw) {
+      document.documentElement.classList.remove("nsfw");
+      localStorage.setItem("gibi-finder:nsfw", "false");
+      setIsNsfw(false);
+      window.dispatchEvent(new Event("nsfw-change"));
+      return;
+    }
+
+    if (!user) {
+      setShowLoginModal(true);
+      return;
+    }
+
+    const ageConfirmed = localStorage.getItem("gibi-finder:age-confirmed") === "true";
+    if (!ageConfirmed) {
+      setShowAgeModal(true);
+      return;
+    }
+
+    document.documentElement.classList.add("nsfw");
+    localStorage.setItem("gibi-finder:nsfw", "true");
+    setIsNsfw(true);
+    window.dispatchEvent(new Event("nsfw-change"));
+  };
+
+  const handleConfirmAge = () => {
+    localStorage.setItem("gibi-finder:age-confirmed", "true");
+    setShowAgeModal(false);
+    document.documentElement.classList.add("nsfw");
+    localStorage.setItem("gibi-finder:nsfw", "true");
+    setIsNsfw(true);
+    window.dispatchEvent(new Event("nsfw-change"));
+  };
 
   const navItems = [
     { path: "/", label: "BUSCAR GIBI", icon: Search },
@@ -54,6 +101,21 @@ export function Header() {
 
         {/* Auth Actions (Desktop) */}
         <div className="hidden lg:flex items-center gap-2 border-l-4 border-black/10 pl-4 ml-2">
+          {/* +18 Mode Toggle (Desktop) */}
+          <button
+            onClick={toggleNsfw}
+            className={cn(
+              "font-display text-base border-4 border-black px-4 py-2 rounded-lg comic-shadow-sm transition-all select-none duration-150 uppercase flex items-center justify-center gap-1.5",
+              isNsfw 
+                ? "bg-[#ff007f] text-white hover:bg-[#ff007f]/90 animate-pulse border-white shadow-[0_0_10px_rgba(255,0,127,0.5)]" 
+                : "bg-white text-black hover:bg-gray-100"
+            )}
+            title="Modo +18"
+          >
+            <span className="text-lg">🔞</span>
+            {isNsfw ? "+18 ATIVO" : "+18"}
+          </button>
+
           {user ? (
             <div className="flex items-center gap-3 animate-in fade-in duration-200">
               <Link href="/login" className="flex items-center gap-1.5 font-display text-sm text-black hover:translate-y-[-1px] transition-transform select-none">
@@ -98,6 +160,20 @@ export function Header() {
             );
           })}
 
+          {/* +18 Mode Toggle (Mobile) */}
+          <button
+            onClick={toggleNsfw}
+            className={cn(
+              "p-1.5 sm:p-2 border-2 sm:border-[3px] rounded-lg transition-all flex items-center justify-center",
+              isNsfw 
+                ? "bg-[#ff007f] text-white border-white animate-pulse" 
+                : "bg-white text-black border-black hover:bg-gray-100"
+            )}
+            title="Modo +18"
+          >
+            <span className="text-xs sm:text-sm">🔞</span>
+          </button>
+
           {/* Auth Actions (Mobile) */}
           <div className="flex items-center border-l-2 border-black/10 pl-2 ml-1">
             {user ? (
@@ -120,6 +196,66 @@ export function Header() {
           </div>
         </nav>
       </div>
+
+      {/* Modal: Requisito de Login */}
+      {showLoginModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white border-4 border-black p-6 rounded-xl comic-shadow max-w-sm w-full text-center space-y-4">
+            <h3 className="font-display text-2xl text-black uppercase flex items-center justify-center gap-2">
+              ⚠️ ACESSO RESTRITO
+            </h3>
+            <p className="font-sans font-bold text-gray-700 text-sm leading-relaxed">
+              Você precisa estar conectado à sua conta para acessar o catálogo adulto (+18). Deseja ir para a página de login agora?
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => {
+                  setShowLoginModal(false);
+                  setLocation("/login");
+                }}
+                className="flex-1 bg-primary text-white hover:bg-yellow-400 hover:text-black font-display py-2 border-4 border-black rounded-lg transition-colors uppercase"
+              >
+                Ir para o Login
+              </button>
+              <button
+                onClick={() => setShowLoginModal(false)}
+                className="flex-1 bg-gray-200 text-black hover:bg-gray-300 font-display py-2 border-4 border-black rounded-lg transition-colors uppercase"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirmação de Idade (+18) */}
+      {showAgeModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-zinc-950 border-4 border-[#ff007f] p-6 rounded-xl shadow-[0_0_30px_rgba(255,0,127,0.4)] max-w-md w-full text-center space-y-4">
+            <div className="text-4xl">🔞</div>
+            <h3 className="font-display text-2xl text-white uppercase tracking-wide">
+              ÁREA RESTRITA (+18)
+            </h3>
+            <p className="font-sans font-bold text-gray-300 text-sm leading-relaxed">
+              Este espaço contém HQs e mangás com conteúdo adulto explícito (Hentai, Ecchi, Erótico). Você confirma que tem 18 anos ou mais e aceita visualizar esse conteúdo?
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={handleConfirmAge}
+                className="flex-1 bg-[#ff007f] text-white hover:bg-[#ff007f]/90 font-display py-2 border-4 border-white rounded-lg shadow-[0_0_10px_rgba(255,0,127,0.5)] transition-all uppercase"
+              >
+                Sim, tenho 18+
+              </button>
+              <button
+                onClick={() => setShowAgeModal(false)}
+                className="flex-1 bg-zinc-800 text-gray-400 hover:bg-zinc-700 hover:text-white font-display py-2 border-4 border-zinc-600 rounded-lg transition-colors uppercase"
+              >
+                Não, sair
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

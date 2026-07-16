@@ -29,7 +29,11 @@ export class MangaDexProvider implements Provider {
       "Martial Arts": "Artes Marciais",
       "Magic": "Magia",
       "Crime": "Crime",
-      "Monsters": "Monstros"
+      "Monsters": "Monstros",
+      "Hentai": "Hentai",
+      "Ecchi": "Ecchi",
+      "Doujinshi": "Doujinshi",
+      "Erotica": "Erótico"
     };
 
     return tags
@@ -43,7 +47,7 @@ export class MangaDexProvider implements Provider {
 
   async search(query: string): Promise<SearchResult[]> {
     try {
-      const url = `https://api.mangadex.org/manga?title=${encodeURIComponent(query)}&limit=15&includes[]=cover_art`;
+      const url = `https://api.mangadex.org/manga?title=${encodeURIComponent(query)}&limit=15&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`MangaDex search error: ${res.status}`);
       const data = await res.json() as any;
@@ -62,6 +66,12 @@ export class MangaDexProvider implements Provider {
           : undefined;
 
         const genres = this.extractGenres(item);
+        const contentRating = item.attributes?.contentRating;
+        if (contentRating === "erotica" || contentRating === "pornographic") {
+          if (!genres.includes("Adulto")) {
+            genres.push("Adulto");
+          }
+        }
 
         return { id, title, description, coverUrl, genres, providerId: this.id };
       });
@@ -159,12 +169,15 @@ export class MangaDexProvider implements Provider {
     }));
   }
 
-  async getCatalog(listType: "popular" | "latest"): Promise<SearchResult[]> {
+  async getCatalog(listType: "popular" | "latest", nsfw?: boolean): Promise<SearchResult[]> {
     try {
       const orderQuery = listType === "popular" 
         ? "order[followedCount]=desc" 
         : "order[latestUploadedChapter]=desc";
-      const url = `https://api.mangadex.org/manga?limit=100&includes[]=cover_art&${orderQuery}`;
+      const ratingQuery = nsfw 
+        ? "contentRating[]=erotica&contentRating[]=pornographic" 
+        : "contentRating[]=safe&contentRating[]=suggestive";
+      const url = `https://api.mangadex.org/manga?limit=100&includes[]=cover_art&${ratingQuery}&${orderQuery}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`MangaDex catalog error: ${res.status}`);
       const data = await res.json() as any;
@@ -182,6 +195,12 @@ export class MangaDexProvider implements Provider {
           ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.256.jpg` 
           : undefined;
         const genres = this.extractGenres(item);
+        const contentRating = item.attributes?.contentRating;
+        if (contentRating === "erotica" || contentRating === "pornographic") {
+          if (!genres.includes("Adulto")) {
+            genres.push("Adulto");
+          }
+        }
 
         return { id, title, description, coverUrl, genres, providerId: this.id };
       });

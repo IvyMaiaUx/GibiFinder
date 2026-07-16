@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -39,6 +40,15 @@ function Router() {
 }
 
 function App() {
+  useEffect(() => {
+    const isNsfw = localStorage.getItem("gibi-finder:nsfw") === "true";
+    if (isNsfw) {
+      document.documentElement.classList.add("nsfw");
+    } else {
+      document.documentElement.classList.remove("nsfw");
+    }
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

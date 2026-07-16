@@ -152,9 +152,10 @@ router.post("/providers/toggle", (req: Request, res: Response) => {
 // GET /api/providers/catalog - Fetch unified catalog from all active providers
 router.get("/providers/catalog", async (req: Request, res: Response) => {
   const listType = (req.query.listType as "popular" | "latest") || "popular";
+  const nsfw = req.query.nsfw === "true";
 
   try {
-    const items = await ProviderManager.getCatalog(listType);
+    const items = await ProviderManager.getCatalog(listType, nsfw);
     await injectRatings(items);
     res.json(items);
   } catch (err) {
@@ -253,7 +254,7 @@ router.post("/providers/custom", (req: Request, res: Response) => {
 // DELETE /api/providers/custom/:id - Delete a custom provider (requires admin key)
 router.delete("/providers/custom/:id", (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
-  const { id } = req.params;
+  const id = req.params.id as string;
   if (!id) {
     res.status(400).json({ error: "missing_id", message: "ID do provedor é obrigatório." });
     return;

@@ -102,8 +102,8 @@ export default function ResultDetail() {
           providerId: itemProviderId,
           mangaId: itemMangaId,
           title: resultData?.titulo || resultData?.revista || initialTitle || "Sem título",
-          coverUrl: resultData?.coverUrl || resultData?.images?.[0] || initialCoverUrl || undefined,
-          description: resultData?.sinopse || resultData?.descricao || initialDescription || "",
+          coverUrl: (resultData as any)?.coverUrl || (resultData as any)?.images?.[0] || initialCoverUrl || undefined,
+          description: (resultData as any)?.sinopse || (resultData as any)?.descricao || initialDescription || "",
           timestamp: Date.now()
         });
         setIsFavorited(true);
@@ -182,8 +182,8 @@ export default function ResultDetail() {
       }
     : dbData?.result 
       ? {
-          ...dbData.result,
-          genres: dbData.result.genres || dbData.result.generos || []
+          ...(dbData.result as any),
+          genres: (dbData.result as any).genres || (dbData.result as any).generos || []
         }
       : undefined;
 

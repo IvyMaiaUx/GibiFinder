@@ -40,7 +40,7 @@ export interface Provider {
   getDetails(id: string): Promise<MangaDetails>;
   getChapters(id: string): Promise<Chapter[]>;
   getPages(chapterId: string): Promise<Page[]>;
-  getCatalog(listType: "popular" | "latest"): Promise<SearchResult[]>;
+  getCatalog(listType: "popular" | "latest", nsfw?: boolean): Promise<SearchResult[]>;
 }
 
 export interface UnifiedSearchResult {

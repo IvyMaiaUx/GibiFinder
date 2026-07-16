@@ -2,12 +2,14 @@ import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Trophy, Flame, Loader2, AlertCircle } from "lucide-react";
 import { useLocation } from "wouter";
+import { cn, proxyCoverUrl } from "@/lib/utils";
 
 interface UnifiedCatalogItem {
   id: string;
   title: string;
   coverUrl?: string;
   description?: string;
+  genres?: string[];
   sources: {
     providerId: string;
     id: string;
@@ -24,15 +26,32 @@ export default function Ranking() {
   const [error, setError] = useState<string | null>(null);
   const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
 
-  const loadRanking = async () => {
+  const [isNsfw, setIsNsfw] = useState(() => document.documentElement.classList.contains("nsfw"));
+
+  useEffect(() => {
+    const handleNsfwChange = () => {
+      setIsNsfw(document.documentElement.classList.contains("nsfw"));
+    };
+    window.addEventListener("nsfw-change", handleNsfwChange);
+    return () => window.removeEventListener("nsfw-change", handleNsfwChange);
+  }, []);
+
+  const loadRanking = async (forceNsfw: boolean) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${BASE}/api/providers/catalog?listType=popular`);
+      const res = await fetch(`${BASE}/api/providers/catalog?listType=popular&nsfw=${forceNsfw}`);
       if (!res.ok) throw new Error();
       const data = await res.json() as UnifiedCatalogItem[];
-      // Keep only top 10 for ranking
-      setItems(data.slice(0, 10));
+      
+      const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
+      const filtered = data.filter(item => {
+        const isAdult = item.sources?.some(s => s.providerId === "eightmuses") || 
+                        item.genres?.some((g: string) => ADULT_GENRES.includes(g.toLowerCase()));
+        return forceNsfw ? isAdult : !isAdult;
+      });
+
+      setItems(filtered.slice(0, 10));
     } catch (err) {
       console.error(err);
       setError("Não foi possível carregar o ranking. Tente novamente mais tarde.");
@@ -43,8 +62,8 @@ export default function Ranking() {
   };
 
   useEffect(() => {
-    loadRanking();
-  }, []);
+    loadRanking(isNsfw);
+  }, [isNsfw]);
 
   const handleOpenItem = (item: UnifiedCatalogItem) => {
     if (!item.sources || item.sources.length === 0) return;
@@ -61,8 +80,11 @@ export default function Ranking() {
         <div className="text-center mb-12">
           <div className="inline-block relative">
             <Trophy className="absolute -top-6 -left-8 w-12 h-12 text-secondary fill-secondary transform -rotate-12 drop-shadow-[2px_2px_0_black]" strokeWidth={2} />
-            <h1 className="font-display text-5xl md:text-6xl text-black bg-white px-8 py-3 border-4 border-black comic-shadow inline-block">
-              TOP 10 POPULARES
+            <h1 className={cn(
+              "font-display text-5xl md:text-6xl px-8 py-3 border-4 border-black comic-shadow inline-block transition-all",
+              isNsfw ? "bg-[#ff007f] text-white shadow-[0_0_20px_rgba(255,0,127,0.4)] border-white" : "bg-white text-black border-black"
+            )}>
+              {isNsfw ? "TOP 10 +18 POPULARES" : "TOP 10 POPULARES"}
             </h1>
             <Flame className="absolute -bottom-4 -right-6 w-10 h-10 text-primary fill-primary transform rotate-12 drop-shadow-[2px_2px_0_black]" strokeWidth={2} />
           </div>
@@ -119,7 +141,7 @@ export default function Ranking() {
                   <div className="w-14 h-20 sm:w-20 sm:h-28 bg-zinc-950 border-4 border-black shrink-0 relative overflow-hidden rounded-md">
                     {item.coverUrl && !brokenImages[imgKey] ? (
                       <img 
-                        src={item.coverUrl} 
+                        src={proxyCoverUrl(item.coverUrl)} 
                         alt={item.title} 
                         className="w-full h-full object-cover"
                         referrerPolicy="no-referrer"

@@ -21,6 +21,14 @@ interface UnifiedCatalogItem {
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const ITEMS_PER_PAGE = 20;
 
+const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
+
+const isAdultItem = (item: UnifiedCatalogItem) => {
+  if (item.sources?.some(s => s.providerId === "eightmuses")) return true;
+  if (item.genres?.some(g => ADULT_GENRES.includes(g.toLowerCase()))) return true;
+  return false;
+};
+
 export default function Explore() {
   const [, setLocation] = useLocation();
   const [listType, setListType] = useState<"popular" | "latest">("popular");
@@ -33,12 +41,23 @@ export default function Explore() {
   const [error, setError] = useState<string | null>(null);
   const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
 
+  const [isNsfw, setIsNsfw] = useState(() => document.documentElement.classList.contains("nsfw"));
+
+  useEffect(() => {
+    const handleNsfwChange = () => {
+      setIsNsfw(document.documentElement.classList.contains("nsfw"));
+      setCurrentPage(1);
+    };
+    window.addEventListener("nsfw-change", handleNsfwChange);
+    return () => window.removeEventListener("nsfw-change", handleNsfwChange);
+  }, []);
+
   // Fetch unified catalog list from provider
-  const loadCatalog = async (type: "popular" | "latest") => {
+  const loadCatalog = async (type: "popular" | "latest", forceNsfw: boolean) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${BASE}/api/providers/catalog?listType=${type}`);
+      const res = await fetch(`${BASE}/api/providers/catalog?listType=${type}&nsfw=${forceNsfw}`);
       if (!res.ok) throw new Error();
       const data = await res.json() as UnifiedCatalogItem[];
       setItems(data);
@@ -54,8 +73,8 @@ export default function Explore() {
   useEffect(() => {
     setCurrentPage(1);
     setSelectedGenre("all");
-    loadCatalog(listType);
-  }, [listType]);
+    loadCatalog(listType, isNsfw);
+  }, [listType, isNsfw]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -78,11 +97,21 @@ export default function Explore() {
     )
   ).sort() as string[];
 
-  // Filter items by language and genre
+  // Filter items by language, genre, and NSFW mode
   const filteredItems = items.filter(item => {
+    // 0. NSFW Filter
+    const adult = isAdultItem(item);
+    if (isNsfw) {
+      // If +18 mode is active, ONLY show +18 items
+      if (!adult) return false;
+    } else {
+      // If +18 mode is inactive, HIDE all +18 items
+      if (adult) return false;
+    }
+
     // 1. Language Filter
     if (langFilter === "pt") {
-      const isPt = item.sources.some(s => s.providerId !== "comicextra");
+      const isPt = item.sources.some(s => s.providerId !== "comicextra" && s.providerId !== "eightmuses");
       if (!isPt) return false;
     }
     
@@ -107,14 +136,21 @@ export default function Explore() {
       <div className="max-w-6xl mx-auto space-y-8 pb-16 select-none">
         
         {/* Banner header */}
-        <div className="bg-primary text-white border-4 border-black p-6 rounded-xl comic-shadow relative overflow-hidden transform -rotate-1">
+        <div className={cn(
+          "border-4 border-black p-6 rounded-xl comic-shadow relative overflow-hidden transform -rotate-1",
+          isNsfw 
+            ? "bg-[#ff007f] text-white shadow-[0_0_20px_rgba(255,0,127,0.3)]" 
+            : "bg-primary text-white"
+        )}>
           <div className="absolute top-0 right-0 w-24 h-24 opacity-10 bg-[radial-gradient(white_1px,transparent_1px)] [background-size:6px_6px] pointer-events-none" />
           <h2 className="font-display text-4xl tracking-wider uppercase drop-shadow-[2px_2px_0_black] flex items-center gap-2">
-            <Compass className="w-9 h-9 text-secondary drop-shadow-[1px_1px_0_black]" strokeWidth={3} />
-            Explorar Catálogo Online
+            <Compass className={cn("w-9 h-9 drop-shadow-[1px_1px_0_black]", isNsfw ? "text-cyan-300" : "text-secondary")} strokeWidth={3} />
+            {isNsfw ? "🔞 Lounge Adulto +18" : "Explorar Catálogo Online"}
           </h2>
           <p className="font-sans font-extrabold text-sm uppercase mt-2 text-white/90">
-            Navegue pelos mangás e HQs unificados de todas as nossas fontes ativas em tempo real.
+            {isNsfw 
+              ? "Bem-vindo ao espaço adulto. Exibindo apenas conteúdos classificados como +18 / Hentai." 
+              : "Navegue pelos mangás e HQs unificados de todas as nossas fontes ativas em tempo real."}
           </p>
         </div>
 

@@ -14,6 +14,7 @@ interface UnifiedSearchResult {
   coverUrl?: string;
   description?: string;
   rating?: number;
+  genres?: string[];
   sources: {
     providerId: string;
     id: string;
@@ -41,6 +42,16 @@ export default function Home() {
   const [searchedQuery, setSearchedQuery] = useState("");
 
   const resultsRef = useRef<HTMLDivElement>(null);
+
+  const [isNsfw, setIsNsfw] = useState(() => document.documentElement.classList.contains("nsfw"));
+
+  useEffect(() => {
+    const handleNsfwChange = () => {
+      setIsNsfw(document.documentElement.classList.contains("nsfw"));
+    };
+    window.addEventListener("nsfw-change", handleNsfwChange);
+    return () => window.removeEventListener("nsfw-change", handleNsfwChange);
+  }, []);
 
   // Search online aggregator
   const searchByOnline = async (query: string) => {
@@ -112,78 +123,86 @@ export default function Home() {
         )}
 
         {/* Online Aggregated Search Results */}
-        {onlineResults && !onlineSearching && (
-          <div ref={resultsRef} className="scroll-mt-24 mt-12 space-y-8">
-            <div className="flex items-center justify-between border-b-4 border-black pb-4">
-              <h2 className="font-display text-3xl text-black uppercase flex items-center gap-2">
-                <BookOpen className="w-8 h-8 text-primary" strokeWidth={3} />
-                Resultados Online para "{searchedQuery}"
-              </h2>
-              <span className="font-sans font-extrabold text-xs uppercase bg-black text-white px-3 py-1">
-                {onlineResults.length} Encontrado(s)
-              </span>
-            </div>
+        {onlineResults && !onlineSearching && (() => {
+          const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
+          const filtered = onlineResults.filter(item => {
+            const isAdult = item.sources?.some(s => s.providerId === "eightmuses") || 
+                            item.genres?.some((g: string) => ADULT_GENRES.includes(g.toLowerCase()));
+            if (!isNsfw && isAdult) return false;
+            return true;
+          });
 
-            {onlineResults.length === 0 ? (
-              <div className="text-center py-20 border-4 border-dashed border-black bg-white comic-shadow-sm">
-                <HelpCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                <h3 className="font-display text-2xl text-black">NENHUM QUADRINHO ENCONTRADO</h3>
-                <p className="font-sans font-bold text-gray-500 mt-2">Tente pesquisar em inglês ou verifique se os provedores estão ativados no painel admin.</p>
+          return (
+            <div ref={resultsRef} className="scroll-mt-24 mt-12 space-y-8">
+              <div className="flex items-center justify-between border-b-4 border-black pb-4">
+                <h2 className="font-display text-3xl text-black uppercase flex items-center gap-2">
+                  <BookOpen className="w-8 h-8 text-primary" strokeWidth={3} />
+                  Resultados Online para "{searchedQuery}"
+                </h2>
+                <span className="font-sans font-extrabold text-xs uppercase bg-black text-white px-3 py-1">
+                  {filtered.length} Encontrado(s)
+                </span>
               </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-                {onlineResults.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => handleOpenOnlineResult(item)}
-                    className="group bg-white border-4 border-black rounded-xl overflow-hidden text-left flex flex-col justify-between hover:translate-y-[-6px] transition-all duration-200 comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:bg-yellow-50"
-                  >
-                    <div className="relative aspect-[3/4] border-b-4 border-black bg-zinc-950 overflow-hidden shrink-0">
-                      {item.coverUrl ? (
-                        <img 
-                          src={proxyCoverUrl(item.coverUrl)} 
-                          alt={item.title} 
-                          className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center font-display text-4xl text-white/20 select-none">
-                          ?
-                        </div>
-                      )}
-                      
 
-                    </div>
-
-                    <div className="p-4 flex-1 flex flex-col justify-between min-w-0">
-                      <div>
-                        <h4 className="font-display text-lg text-black leading-tight group-hover:text-primary transition-colors line-clamp-2">
-                          {item.title}
-                        </h4>
-                        <p className="font-sans text-2xs text-gray-500 font-extrabold uppercase mt-1">
-                          Fontes: {item.sources.map(s => s.providerId.toUpperCase()).join(", ")}
-                        </p>
-                      </div>
-                      
-                      <div className="mt-4 pt-3 border-t border-dashed border-black/20 flex items-center justify-between">
-                        {item.rating !== undefined && (
-                          <span className="flex items-center gap-1 bg-[#FFD166] text-black px-2 py-0.5 border-2 border-black rounded-lg font-display text-xs font-black shadow-[2px_2px_0_rgba(0,0,0,1)]">
-                            <Star className="w-3 h-3 fill-black text-black" strokeWidth={2.5} />
-                            {(item.rating / 2).toFixed(1)}
-                          </span>
+              {filtered.length === 0 ? (
+                <div className="text-center py-20 border-4 border-dashed border-black bg-white comic-shadow-sm">
+                  <HelpCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <h3 className="font-display text-2xl text-black">NENHUM QUADRINHO ENCONTRADO</h3>
+                  <p className="font-sans font-bold text-gray-500 mt-2">Tente pesquisar em inglês ou verifique se os provedores estão ativados no painel admin.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+                  {filtered.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => handleOpenOnlineResult(item)}
+                      className="group bg-white border-4 border-black rounded-xl overflow-hidden text-left flex flex-col justify-between hover:translate-y-[-6px] transition-all duration-200 comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:bg-yellow-50"
+                    >
+                      <div className="relative aspect-[3/4] border-b-4 border-black bg-zinc-950 overflow-hidden shrink-0">
+                        {item.coverUrl ? (
+                          <img 
+                            src={proxyCoverUrl(item.coverUrl)} 
+                            alt={item.title} 
+                            className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center font-display text-4xl text-white/20 select-none">
+                            ?
+                          </div>
                         )}
-                        <span className="font-display text-xs text-primary group-hover:translate-x-1 transition-transform">
-                          LER AGORA →
-                        </span>
                       </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+
+                      <div className="p-4 flex-1 flex flex-col justify-between min-w-0">
+                        <div>
+                          <h4 className="font-display text-lg text-black leading-tight group-hover:text-primary transition-colors line-clamp-2">
+                            {item.title}
+                          </h4>
+                          <p className="font-sans text-2xs text-gray-500 font-extrabold uppercase mt-1">
+                            Fontes: {item.sources.map(s => s.providerId.toUpperCase()).join(", ")}
+                          </p>
+                        </div>
+                        
+                        <div className="mt-4 pt-3 border-t border-dashed border-black/20 flex items-center justify-between">
+                          {item.rating !== undefined && (
+                            <span className="flex items-center gap-1 bg-[#FFD166] text-black px-2 py-0.5 border-2 border-black rounded-lg font-display text-xs font-black shadow-[2px_2px_0_rgba(0,0,0,1)]">
+                              <Star className="w-3 h-3 fill-black text-black" strokeWidth={2.5} />
+                              {(item.rating / 2).toFixed(1)}
+                            </span>
+                          )}
+                          <span className="font-display text-xs text-primary group-hover:translate-x-1 transition-transform">
+                            LER AGORA →
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
     </Layout>
   );

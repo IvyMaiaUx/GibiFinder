@@ -5,6 +5,7 @@ import { MangaPlusProvider } from "./MangaPlusProvider";
 import { MangaFireProvider } from "./MangaFireProvider";
 import { MugiwarasProvider } from "./MugiwarasProvider";
 import { MadaraProvider } from "./MadaraProvider";
+import { EightMusesProvider } from "./EightMusesProvider";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -25,6 +26,7 @@ export class ProviderManager {
     ["mangaplus", true],
     ["mangafire", true],
     ["mugiwaras", true],
+    ["eightmuses", true],
     ["bato", false],
     ["hqnow", false]
   ]);
@@ -57,6 +59,7 @@ export class ProviderManager {
     this.registerProvider(new MangaPlusProvider());
     this.registerProvider(new MangaFireProvider());
     this.registerProvider(new MugiwarasProvider());
+    this.registerProvider(new EightMusesProvider());
     
     // Register stub/future providers
     this.registerProvider(new StubProvider("bato", "Bato", "multi"));
@@ -253,13 +256,13 @@ export class ProviderManager {
     return provider.getPages(chapterId);
   }
 
-  static async getCatalog(listType: "popular" | "latest"): Promise<UnifiedSearchResult[]> {
+  static async getCatalog(listType: "popular" | "latest", nsfw?: boolean): Promise<UnifiedSearchResult[]> {
     const activeProviders = Array.from(this.providers.values()).filter(
       p => this.activeStates.get(p.id) === true
     );
 
     const catalogPromises = activeProviders.map(p => 
-      p.getCatalog(listType).catch(err => {
+      p.getCatalog(listType, nsfw).catch(err => {
         console.error(`Error loading catalog from ${p.name}:`, err);
         return [];
       })
