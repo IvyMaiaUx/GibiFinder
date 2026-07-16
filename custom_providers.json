@@ -47,5 +47,19 @@
     "language": "pt",
     "baseUrl": "https://universohentai.com/",
     "active": true
+  },
+  {
+    "id": "hentai-teca",
+    "name": "Hentai Teca",
+    "language": "pt",
+    "baseUrl": "https://hentaiteca.net/",
+    "active": true
+  },
+  {
+    "id": "sombras-de-hentai",
+    "name": "Sombras de Hentai",
+    "language": "pt",
+    "baseUrl": "https://sombrasdehentai.com/",
+    "active": true
   }
 ]
