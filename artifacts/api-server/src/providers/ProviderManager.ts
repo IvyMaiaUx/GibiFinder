@@ -6,6 +6,7 @@ import { MangaFireProvider } from "./MangaFireProvider";
 import { MugiwarasProvider } from "./MugiwarasProvider";
 import { MadaraProvider } from "./MadaraProvider";
 import { EightMusesProvider } from "./EightMusesProvider";
+import { NHentaiProvider } from "./NHentaiProvider";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -27,6 +28,7 @@ export class ProviderManager {
     "hentai2read",
     "insta-hentai",
     "mega-hentai",
+    "nhentai",
     "universo-hentai",
     "hentai-teca",
     "sombras-de-hentai"
@@ -58,6 +60,7 @@ export class ProviderManager {
     ["mangafire", true],
     ["mugiwaras", true],
     ["eightmuses", true],
+    ["nhentai", true],
     ["bato", false],
     ["hqnow", false]
   ]);
@@ -91,6 +94,7 @@ export class ProviderManager {
     this.registerProvider(new MangaFireProvider());
     this.registerProvider(new MugiwarasProvider());
     this.registerProvider(new EightMusesProvider());
+    this.registerProvider(new NHentaiProvider());
     
     // Register stub/future providers
     this.registerProvider(new StubProvider("bato", "Bato", "multi"));
