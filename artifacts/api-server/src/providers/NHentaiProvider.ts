@@ -69,7 +69,8 @@ export class NHentaiProvider implements Provider {
 
       const titleMatch = block.match(/<div[^>]+class=["'][^"']*caption[^"']*["'][^>]*>([\s\S]*?)<\/div>/i) ||
         block.match(/<img[^>]+alt=["']([^"']+)["']/i);
-      const coverMatch = block.match(/<img[^>]+src=["']([^"']+)["']/i);
+      const coverMatch = block.match(/<img[^>]+(?:data-src|data-original|data-lazy-src)=["']([^"']+)["']/i) ||
+        block.match(/<img[^>]+src=["']([^"']+)["']/i);
       const title = this.decodeHtml((titleMatch?.[1] || `nHentai #${idMatch[1]}`).replace(/<[^>]*>/g, ""));
 
       seen.add(idMatch[1]);
@@ -77,7 +78,7 @@ export class NHentaiProvider implements Provider {
         id: idMatch[1],
         title,
         description: `Disponivel no ${this.name}.`,
-        coverUrl: coverMatch ? this.resolveUrl(coverMatch[1]) : undefined,
+        coverUrl: coverMatch && !coverMatch[1].startsWith("data:") ? this.resolveUrl(coverMatch[1]) : undefined,
         providerId: this.id,
         genres: ["Hentai", "Doujinshi"]
       });
