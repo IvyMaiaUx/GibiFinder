@@ -17,7 +17,7 @@ interface InspectResult {
   cloudflare: boolean;
   suggestedEngine: string;
   integrationScore: number;
-  verdict?: "readable_provider" | "needs_image_proxy" | "needs_chapter_test" | "catalog_or_external_only" | "manual_or_blocked";
+  verdict?: "readable_provider" | "needs_image_proxy" | "external_reader_links" | "needs_chapter_test" | "catalog_or_external_only" | "manual_or_blocked";
   canReadInsideGibiFinder?: boolean;
   wordpress: {
     detected: boolean;
@@ -54,6 +54,10 @@ interface InspectResult {
     chapterLinks: number;
     likelyReadingImages: number;
   };
+  externalReaderLinks?: {
+    total: number;
+    sample: Array<{ url: string; label: string; kind: string }>;
+  };
   selectorCandidates: Array<{ selector: string; count: number }>;
 }
 
@@ -67,6 +71,11 @@ const VERDICT_COPY: Record<string, { title: string; description: string; tone: s
     title: "Precisa proxy de imagem",
     description: "As imagens existem, mas dependem de Referer/hotlink. O provider precisa servir as imagens via backend ou proxy.",
     tone: "bg-cyan-100 text-cyan-950"
+  },
+  external_reader_links: {
+    title: "Leitura por link externo",
+    description: "A pagina lista links de leitura/download fora do site. Pode virar catalogo, mas nao leitor interno sem tratar a fonte externa.",
+    tone: "bg-blue-100 text-blue-950"
   },
   needs_chapter_test: {
     title: "Teste uma pagina de capitulo",
@@ -311,6 +320,26 @@ export function ProviderInspectorPanel({ initialAdminKey, showBackLink = true }:
                 <p className="mt-2 font-sans text-xs font-bold text-gray-500">
                   Namespaces: {result.wordpress.namespaces.slice(0, 12).join(", ") || "nenhum listado"}
                 </p>
+              </div>
+            )}
+
+            {result.externalReaderLinks && result.externalReaderLinks.total > 0 && (
+              <div className="border-4 border-black bg-white p-5">
+                <h2 className="font-display text-2xl uppercase text-black">Links externos de leitura</h2>
+                <p className="mt-1 font-sans text-sm font-bold text-gray-600">
+                  {result.externalReaderLinks.total} link(s) encontrados. Eles podem exigir login/permissao e normalmente precisam de engine propria.
+                </p>
+                <div className="mt-4 space-y-2">
+                  {result.externalReaderLinks.sample.map(link => (
+                    <div key={link.url} className="border-2 border-black bg-gray-50 p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-display text-xs uppercase text-primary">{link.kind}</span>
+                        <span className="font-sans text-2xs font-extrabold uppercase text-gray-500">{link.label}</span>
+                      </div>
+                      <p className="mt-1 break-all font-sans text-2xs font-bold text-gray-600">{link.url}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

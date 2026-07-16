@@ -326,6 +326,28 @@ function getReadingEvidence(html: string, images: Array<{ url: string; selector:
   };
 }
 
+function extractExternalReaderLinks(html: string, baseUrl: string) {
+  const links: Array<{ url: string; label: string; kind: string }> = [];
+  for (const match of html.matchAll(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    const url = resolveUrl(match[1], baseUrl);
+    if (!url) continue;
+    const label = match[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const kind = /docs\.google\.com|drive\.google\.com/i.test(url)
+      ? "google-drive"
+      : /mega\.nz|mega\.co/i.test(url)
+        ? "mega"
+        : /mediafire\.com/i.test(url)
+          ? "mediafire"
+          : /\.(?:pdf|cbz|cbr)(?:\?|$)/i.test(url)
+            ? "direct-file"
+            : "";
+    if (!kind) continue;
+    if (!/ler|online|read|baixar|download|pdf|cbz|cbr/i.test(label + " " + url)) continue;
+    links.push({ url, label: label || kind, kind });
+  }
+  return links;
+}
+
 function countSelectorImages(html: string, selector: string, blockRegex: RegExp) {
   const blocks: string[] = html.match(blockRegex) || [];
   const count = blocks.reduce<number>((sum, block) => sum + (block.match(/<img[^>]+>/gi)?.length || 0), 0);
@@ -474,6 +496,7 @@ router.get("/providers/inspect", async (req: Request, res: Response) => {
     }
 
     const images = extractImageCandidates(html, normalizedTarget);
+    const externalReaderLinks = extractExternalReaderLinks(html, normalizedTarget);
     const selectorCandidates: Array<{ selector: string; count: number }> = [
       countSelectorImages(html, "article img", /<article[\s\S]*?<\/article>/gi),
       countSelectorImages(html, ".entry-content img", /<[^>]+class=["'][^"']*entry-content[^"']*["'][^>]*>[\s\S]*?<\/(?:div|section|article)>/gi),
@@ -498,11 +521,16 @@ router.get("/providers/inspect", async (req: Request, res: Response) => {
     const needsImageProxy = readableImageCount > 0 && directImageCount === 0;
     const hasReadingEvidence = readingEvidence.score >= 3;
     const weakReadingEvidence = readingEvidence.score > 0 || readingEvidence.usefulImages > 1;
-    const canReadInsideGibiFinder = directImageCount > 0 && hasReadingEvidence && (wpPostsAvailable || selectorCandidates.length > 0 || Boolean(detectedHtmlEngine));
-    const verdict = canReadInsideGibiFinder
-      ? "readable_provider"
-      : needsImageProxy
+    const externalReaderFlow = externalReaderLinks.length >= 3 && readingEvidence.likelyReadingImages < 3 && readingEvidence.sequentialImages < 3;
+    const canReadInsideGibiFinder = !externalReaderFlow && directImageCount > 0 && hasReadingEvidence && (wpPostsAvailable || selectorCandidates.length > 0 || Boolean(detectedHtmlEngine));
+    const verdict = externalReaderFlow
+      ? "external_reader_links"
+      : canReadInsideGibiFinder
+        ? "readable_provider"
+        : needsImageProxy
         ? "needs_image_proxy"
+      : externalReaderLinks.length > 0
+        ? "external_reader_links"
       : pageRes.ok && (weakReadingEvidence || wpPostsAvailable || selectorCandidates.length > 0)
         ? "needs_chapter_test"
       : pageRes.ok && !cloudflare && images.length === 0
@@ -537,6 +565,10 @@ router.get("/providers/inspect", async (req: Request, res: Response) => {
         sample: imageAccess
       },
       readingEvidence,
+      externalReaderLinks: {
+        total: externalReaderLinks.length,
+        sample: externalReaderLinks.slice(0, 12)
+      },
       selectorCandidates,
       verdict,
       canReadInsideGibiFinder,
