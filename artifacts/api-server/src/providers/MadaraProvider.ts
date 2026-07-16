@@ -43,7 +43,16 @@ export class MadaraProvider implements Provider {
     try {
       const parsed = new URL(this.decodeHtml(url), this.baseUrl);
       const path = parsed.pathname.replace(/^\/+|\/+$/g, "");
-      if (!path || path.startsWith("categoria/") || path.startsWith("category/") || path.startsWith("tag/") || path.startsWith("search/")) {
+      if (
+        !path ||
+        path.startsWith("anuncio/") ||
+        path.startsWith("ads/") ||
+        path.startsWith("categoria/") ||
+        path.startsWith("category/") ||
+        path.startsWith("delivery/") ||
+        path.startsWith("tag/") ||
+        path.startsWith("search/")
+      ) {
         return null;
       }
       return `post:${path}`;
@@ -58,6 +67,10 @@ export class MadaraProvider implements Provider {
 
   private isHentai2Read(): boolean {
     return this.baseUrl.includes("hentai2read.com");
+  }
+
+  private isHqDesejo(): boolean {
+    return this.baseUrl.includes("hqdesexo.com");
   }
 
   private getContentUrl(id: string): string {
@@ -189,7 +202,8 @@ export class MadaraProvider implements Provider {
       const titleLink = block.match(/<a[^>]+class=["'][^"']*(?:titulo|title|entry-title)[^"']*["'][^>]+href=["']([^"']+)["'][^>]*title=["']([^"']+)["'][\s\S]*?<\/a>/i) ||
         block.match(/<a[^>]+href=["']([^"']+)["'][^>]*(?:aria-label|title)=["']([^"']+)["'][\s\S]*?<\/a>/i) ||
         block.match(/<a[^>]+href=["']([^"']+)["'][^>]*title=["']([^"']+)["'][\s\S]*?<h[1-3][^>]*>/i) ||
-        block.match(/<h[1-3][^>]*>[\s\S]*?<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+        block.match(/<h[1-6][^>]*>[\s\S]*?<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i) ||
+        block.match(/<a[^>]+href=["']([^"']+)["'][^>]*title=["']([^"']+)["'][^>]*>[\s\S]*?<h[1-6][^>]*>/i);
 
       if (!titleLink) continue;
 
@@ -199,7 +213,9 @@ export class MadaraProvider implements Provider {
       const title = this.decodeHtml(titleLink[2].replace(/<[^>]*>/g, ""));
       if (!title) continue;
 
-      const coverMatch = block.match(/<img[^>]+(?:data-src|data-lazy-src|data-original|src)=["']([^"']+)["']/i);
+      const coverMatch = block.match(/<img[^>]+(?:data-src|data-lazy-src|data-original|src)=["']([^"']+)["']/i) ||
+        block.match(/background-image\s*:\s*url\((["']?)([^"')]+)\1\)/i);
+      const coverValue = coverMatch?.[2] || coverMatch?.[1];
       const coverUrl = coverMatch ? this.resolveUrl(coverMatch[1]) || undefined : undefined;
 
       seen.add(id);
@@ -207,7 +223,7 @@ export class MadaraProvider implements Provider {
         id,
         title,
         description: `Disponivel no portal ${this.name}.`,
-        coverUrl,
+        coverUrl: coverValue ? this.resolveUrl(coverValue) || undefined : coverUrl,
         providerId: this.id
       });
     }
@@ -286,6 +302,13 @@ export class MadaraProvider implements Provider {
     if (this.baseUrl.includes("hentaifox.com")) {
       const suffix = page <= 1 ? "" : `${page}/`;
       return new URL(`search/${encodeURIComponent(query)}/${suffix}`, this.baseUrl).toString();
+    }
+
+    if (this.isHqDesejo()) {
+      const path = page <= 1 ? "pesquisa/" : `pesquisa/page/${page}/`;
+      const url = new URL(path, this.baseUrl);
+      url.searchParams.set("q", query);
+      return url.toString();
     }
 
     if (page <= 1) {

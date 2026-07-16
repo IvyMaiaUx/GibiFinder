@@ -26,9 +26,13 @@ export class ProviderManager {
     "hentai-home",
     "hentai-fox",
     "hentai2read",
+    "hq-desejo",
     "insta-hentai",
     "mega-hentai",
+    "my-manga-comics",
     "nhentai",
+    "quadrinhos-de-sexo",
+    "quadrinhos-eroticos",
     "universo-hentai",
     "hentai-teca",
     "sombras-de-hentai"

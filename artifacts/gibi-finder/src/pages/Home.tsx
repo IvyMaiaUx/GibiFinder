@@ -132,7 +132,7 @@ export default function Home() {
         {/* Online Aggregated Search Results */}
         {onlineResults && !onlineSearching && (() => {
           const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
-          const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "insta-hentai", "mega-hentai", "nhentai", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
+          const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
           const filtered = onlineResults.filter(item => {
             const isAdult = item.isAdult ||
                             item.sources?.some(s => ADULT_PROVIDERS.includes(s.providerId)) ||
@@ -198,7 +198,7 @@ export default function Home() {
                           </p>
                           {item.genres && item.genres.length > 0 && (() => {
                             const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
-                            const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "insta-hentai", "mega-hentai", "nhentai", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
+                            const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
                             const isAdult = item.isAdult ||
                                             item.sources.some(s => ADULT_PROVIDERS.includes(s.providerId)) ||
                                             item.genres.some((g: string) => ADULT_GENRES.includes(g.toLowerCase()));

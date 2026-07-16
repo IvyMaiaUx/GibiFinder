@@ -103,5 +103,33 @@
     "language": "en",
     "baseUrl": "https://hentai2read.com/",
     "active": true
+  },
+  {
+    "id": "hq-desejo",
+    "name": "HQDesejo",
+    "language": "pt",
+    "baseUrl": "https://www.hqdesexo.com/",
+    "active": true
+  },
+  {
+    "id": "my-manga-comics",
+    "name": "MyMangaComics",
+    "language": "en",
+    "baseUrl": "https://mymangacomics.com/",
+    "active": true
+  },
+  {
+    "id": "quadrinhos-de-sexo",
+    "name": "Quadrinhos de Sexo",
+    "language": "pt",
+    "baseUrl": "https://www.quadrinhosdesexo.com/",
+    "active": true
+  },
+  {
+    "id": "quadrinhos-eroticos",
+    "name": "Quadrinhos Eroticos",
+    "language": "pt",
+    "baseUrl": "https://www.quadrinhoseroticos.blog/",
+    "active": true
   }
 ]
