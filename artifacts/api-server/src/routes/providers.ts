@@ -289,16 +289,45 @@ function countSelectorImages(html: string, selector: string, blockRegex: RegExp)
   return { selector, count };
 }
 
-async function probeImages(images: Array<{ url: string; selector: string }>) {
+async function probeOneImage(image: { url: string; selector: string }, headers: Record<string, string>, accessMode: "direct" | "referer") {
+  let res = await fetchWithTimeout(image.url, { method: "HEAD", headers }, 8000);
+  if (!res.ok || !res.headers.get("content-type")?.startsWith("image/")) {
+    res = await fetchWithTimeout(image.url, { method: "GET", headers: { ...headers, Range: "bytes=0-32" } }, 8000);
+  }
+  return {
+    url: image.url,
+    selector: image.selector,
+    ok: res.ok,
+    status: res.status,
+    contentType: res.headers.get("content-type") || "",
+    accessMode
+  };
+}
+
+async function probeImages(images: Array<{ url: string; selector: string }>, pageUrl: string, origin: string) {
+  const imageHeaders = {
+    ...INSPECT_HEADERS,
+    Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+  };
+  const refererHeaders = {
+    ...imageHeaders,
+    Referer: pageUrl,
+    Origin: origin
+  };
+
   return await Promise.all(images.slice(0, 8).map(async image => {
     try {
-      let res = await fetchWithTimeout(image.url, { method: "HEAD", headers: INSPECT_HEADERS }, 8000);
-      if (!res.ok || !res.headers.get("content-type")?.startsWith("image/")) {
-        res = await fetchWithTimeout(image.url, { method: "GET", headers: { ...INSPECT_HEADERS, Range: "bytes=0-32" } }, 8000);
+      const direct = await probeOneImage(image, imageHeaders, "direct");
+      if (direct.ok && direct.contentType.startsWith("image/")) {
+        return direct;
       }
-      return { url: image.url, selector: image.selector, ok: res.ok, status: res.status, contentType: res.headers.get("content-type") || "" };
+      const withReferer = await probeOneImage(image, refererHeaders, "referer");
+      if (withReferer.ok && withReferer.contentType.startsWith("image/")) {
+        return withReferer;
+      }
+      return direct;
     } catch (err) {
-      return { url: image.url, selector: image.selector, ok: false, status: 0, contentType: "", error: err instanceof Error ? err.message : String(err) };
+      return { url: image.url, selector: image.selector, ok: false, status: 0, contentType: "", accessMode: "direct", error: err instanceof Error ? err.message : String(err) };
     }
   }));
 }
@@ -311,6 +340,20 @@ async function readJsonIfPossible(res: globalThis.Response) {
   } catch {
     return null;
   }
+}
+
+function detectHtmlEngine(origin: string, html: string): string | null {
+  const host = new URL(origin).hostname.replace(/^www\./, "");
+  if (/mangakakalot|manganato|chapmanganato/i.test(host) || /2xstorage\.com|chapter-list|panel-story-info/i.test(html)) {
+    return "mangakakalot-like";
+  }
+  if (/mangareader|mangafire/i.test(host) || /data-src=.*manga|chapter-list/i.test(html)) {
+    return "mangareader-like";
+  }
+  if (/madara|wp-manga|reading-content|c-blog__heading/i.test(html)) {
+    return "madara";
+  }
+  return null;
 }
 
 router.get("/providers/inspect", async (req: Request, res: Response) => {
@@ -378,15 +421,21 @@ router.get("/providers/inspect", async (req: Request, res: Response) => {
       { selector: "img", count: images.length }
     ].filter(item => item.count > 0).sort((a, b) => b.count - a.count);
 
-    const imageAccess = await probeImages(images);
+    const imageAccess = await probeImages(images, normalizedTarget, origin);
     const readableImageCount = imageAccess.filter(image => image.ok).length;
-    const suggestedEngine = wpPostsAvailable ? "wordpress-comic" : selectorCandidates.length > 0 ? "generic-html" : "manual";
+    const directImageCount = imageAccess.filter(image => image.ok && image.accessMode === "direct").length;
+    const refererImageCount = imageAccess.filter(image => image.ok && image.accessMode === "referer").length;
+    const detectedHtmlEngine = detectHtmlEngine(origin, html);
+    const suggestedEngine = wpPostsAvailable ? "wordpress-comic" : detectedHtmlEngine || (selectorCandidates.length > 0 ? "generic-html" : "manual");
     const namespaces = Array.isArray(wpJson?.namespaces) ? wpJson.namespaces : [];
     const hasWordPressHtmlSignals = /wp-content|wp-includes/i.test(html) && /wp-json|wp-embed|wordpress/i.test(html);
     const wordpressDetected = namespaces.includes("wp/v2") || hasWordPressHtmlSignals;
-    const canReadInsideGibiFinder = readableImageCount > 0 && (wpPostsAvailable || selectorCandidates.length > 0);
+    const needsImageProxy = readableImageCount > 0 && directImageCount === 0;
+    const canReadInsideGibiFinder = directImageCount > 0 && (wpPostsAvailable || selectorCandidates.length > 0 || Boolean(detectedHtmlEngine));
     const verdict = canReadInsideGibiFinder
       ? "readable_provider"
+      : needsImageProxy
+        ? "needs_image_proxy"
       : pageRes.ok && !cloudflare && images.length === 0
         ? "catalog_or_external_only"
         : "manual_or_blocked";
@@ -412,6 +461,9 @@ router.get("/providers/inspect", async (req: Request, res: Response) => {
         totalFound: images.length,
         uniqueFound: unique(images.map(image => image.url)).length,
         accessibleInSample: readableImageCount,
+        directInSample: directImageCount,
+        refererOnlyInSample: refererImageCount,
+        needsProxy: needsImageProxy,
         sample: imageAccess
       },
       selectorCandidates,

@@ -17,7 +17,7 @@ interface InspectResult {
   cloudflare: boolean;
   suggestedEngine: string;
   integrationScore: number;
-  verdict?: "readable_provider" | "catalog_or_external_only" | "manual_or_blocked";
+  verdict?: "readable_provider" | "needs_image_proxy" | "catalog_or_external_only" | "manual_or_blocked";
   canReadInsideGibiFinder?: boolean;
   wordpress: {
     detected: boolean;
@@ -32,12 +32,16 @@ interface InspectResult {
     totalFound: number;
     uniqueFound: number;
     accessibleInSample: number;
+    directInSample?: number;
+    refererOnlyInSample?: number;
+    needsProxy?: boolean;
     sample: Array<{
       url: string;
       selector: string;
       ok: boolean;
       status: number;
       contentType: string;
+      accessMode?: "direct" | "referer";
       error?: string;
     }>;
   };
@@ -49,6 +53,11 @@ const VERDICT_COPY: Record<string, { title: string; description: string; tone: s
     title: "Dá para ler no Gibi Finder",
     description: "O site mostrou estrutura e imagens acessiveis. Vale criar ou ajustar um provider.",
     tone: "bg-green-100 text-green-900"
+  },
+  needs_image_proxy: {
+    title: "Precisa proxy de imagem",
+    description: "As imagens existem, mas dependem de Referer/hotlink. O provider precisa servir as imagens via backend ou proxy.",
+    tone: "bg-cyan-100 text-cyan-950"
   },
   catalog_or_external_only: {
     title: "Provavelmente só catálogo/link externo",
@@ -220,7 +229,7 @@ export function ProviderInspectorPanel({ initialAdminKey, showBackLink = true }:
               <StatusBadge ok={result.wordpress.detected} label="WordPress detectado" />
               <StatusBadge ok={result.wordpress.restAvailable} label="REST API" />
               <StatusBadge ok={result.wordpress.postsAvailable} label="Posts API" />
-              <StatusBadge ok={result.images.accessibleInSample > 0} label="Imagens acessiveis" />
+              <StatusBadge ok={result.images.accessibleInSample > 0} label={result.images.needsProxy ? "Imagens com referer" : "Imagens acessiveis"} />
             </div>
 
             {result.wordpress.detected && (
@@ -252,7 +261,7 @@ export function ProviderInspectorPanel({ initialAdminKey, showBackLink = true }:
 
               <div className="border-4 border-black bg-white p-5">
                 <h2 className="font-display text-2xl uppercase text-black">Imagens</h2>
-                <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                <div className="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
                   <div className="border-2 border-black p-2">
                     <p className="font-display text-2xl">{result.images.totalFound}</p>
                     <p className="font-sans text-2xs font-extrabold uppercase text-gray-500">Encontradas</p>
@@ -265,13 +274,23 @@ export function ProviderInspectorPanel({ initialAdminKey, showBackLink = true }:
                     <p className="font-display text-2xl">{result.images.accessibleInSample}</p>
                     <p className="font-sans text-2xs font-extrabold uppercase text-gray-500">OK amostra</p>
                   </div>
+                  <div className="border-2 border-black p-2">
+                    <p className="font-display text-2xl">{result.images.directInSample ?? result.images.accessibleInSample}</p>
+                    <p className="font-sans text-2xs font-extrabold uppercase text-gray-500">Diretas</p>
+                  </div>
+                  <div className="border-2 border-black p-2">
+                    <p className="font-display text-2xl">{result.images.refererOnlyInSample ?? 0}</p>
+                    <p className="font-sans text-2xs font-extrabold uppercase text-gray-500">Referer</p>
+                  </div>
                 </div>
                 <div className="mt-4 space-y-2">
                   {result.images.sample.map(image => (
                     <div key={image.url} className="border-2 border-black bg-gray-50 p-2">
                       <div className="flex items-center gap-2">
                         {image.ok ? <CheckCircle2 className="h-4 w-4 text-green-700" /> : <ShieldAlert className="h-4 w-4 text-red-700" />}
-                        <span className="font-display text-xs uppercase">HTTP {image.status || "erro"} - {image.selector}</span>
+                        <span className="font-display text-xs uppercase">
+                          HTTP {image.status || "erro"} - {image.selector}{image.accessMode === "referer" ? " - referer" : ""}
+                        </span>
                       </div>
                       <p className="mt-1 break-all font-sans text-2xs font-bold text-gray-600">{image.url}</p>
                     </div>
