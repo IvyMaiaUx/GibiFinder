@@ -364,15 +364,18 @@ export class ProviderManager {
 
   private static isRelevantSearchResult(query: string, result: UnifiedSearchResult): boolean {
     const terms = this.getSearchTerms(query);
-    if (terms.length <= 1) return true;
-
     const title = this.normalizeText(result.title || "");
     const compactTitle = title.replace(/\s+/g, "");
     const phrase = this.normalizeText(query).trim();
     const compactPhrase = phrase.replace(/\s+/g, "");
+    const rawTerms = phrase.split(/[^a-z0-9]+/i).filter(Boolean);
 
     if (phrase && title.includes(phrase)) return true;
     if (compactPhrase && compactTitle.includes(compactPhrase)) return true;
+
+    if (terms.length <= 1) {
+      return rawTerms.length <= 1;
+    }
 
     if (terms.includes("familia") && terms.includes("sacana")) {
       return (title.includes("familia") && title.includes("sacana")) || title.includes("sacanas");
