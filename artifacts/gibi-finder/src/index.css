@@ -176,75 +176,86 @@
 
 /* NSFW / Adult Theme Override */
 html.nsfw {
-  --background: 265 40% 6%; /* #0c0714 - very dark purple-gray */
-  --foreground: 250 40% 95%; /* soft white */
-  --border: 175 70% 45%; /* soft neon cyan/teal */
-  --input: 175 70% 45%;
-  --ring: 280 60% 60%; /* soft amethyst/violet */
-  --card: 265 30% 11%; /* dark plum card background */
-  --card-foreground: 250 40% 95%;
-  --primary: 175 70% 45%; /* soft cyan/teal main accent */
-  --primary-foreground: 265 40% 6%;
-  --secondary: 280 60% 60%; /* soft amethyst secondary */
-  --secondary-foreground: 0 0% 100%;
-  --muted: 265 30% 18%;
-  --muted-foreground: 250 40% 75%;
+  --background: 240 10% 6%; /* #0f0f11 - very dark charcoal */
+  --foreground: 240 5% 96%; /* #f4f4f5 - soft white text */
+  --border: 350 89% 60%; /* #f43f5e - crimson red */
+  --input: 350 89% 60%;
+  --ring: 350 89% 60%;
+  --card: 240 6% 10%; /* #18181b - clean dark gray card background */
+  --card-foreground: 240 5% 96%;
+  --primary: 350 89% 60%; /* crimson red */
+  --primary-foreground: 0 0% 100%; /* white text on red background */
+  --secondary: 240 5% 65%; /* #a1a1aa - muted gray */
+  --secondary-foreground: 240 10% 6%;
+  --muted: 240 5% 15%;
+  --muted-foreground: 240 5% 65%;
 }
 
 html.nsfw body {
-  background-image: radial-gradient(hsl(175 70% 45% / 0.08) 15%, transparent 15%) !important;
-  background-color: hsl(265 40% 6%) !important;
-  color: hsl(250 40% 95%) !important;
+  background-image: radial-gradient(hsl(350 89% 60% / 0.05) 15%, transparent 15%) !important;
+  background-color: hsl(240 10% 6%) !important;
+  color: hsl(240 5% 96%) !important;
 }
 
 html.nsfw .speech-bubble {
-  background-color: hsl(265 30% 11%) !important;
-  border-color: hsl(175 70% 45%) !important;
+  background-color: hsl(240 6% 10%) !important;
+  border-color: hsl(350 89% 60%) !important;
 }
 
 html.nsfw .speech-bubble:before {
-  border-right-color: hsl(265 30% 11%) !important;
+  border-right-color: hsl(240 6% 10%) !important;
 }
 
 html.nsfw .speech-bubble:after {
-  border-right-color: hsl(175 70% 45%) !important;
+  border-right-color: hsl(350 89% 60%) !important;
 }
 
 /* NSFW overrides for comic cards and layout components */
 html.nsfw .bg-white {
-  background-color: hsl(265 30% 11%) !important;
-  color: white !important;
+  background-color: hsl(240 6% 10%) !important;
+  color: hsl(240 5% 96%) !important;
 }
 
-html.nsfw .text-black {
-  color: white !important;
+html.nsfw .text-black,
+html.nsfw .text-zinc-950,
+html.nsfw .text-zinc-900,
+html.nsfw .text-zinc-800,
+html.nsfw .text-zinc-700,
+html.nsfw .text-gray-900,
+html.nsfw .text-gray-800,
+html.nsfw .text-gray-700,
+html.nsfw .text-gray-600 {
+  color: hsl(240 5% 96%) !important;
 }
 
-html.nsfw .text-gray-500 {
-  color: hsl(250 40% 75%) !important;
+html.nsfw .text-zinc-500,
+html.nsfw .text-zinc-400,
+html.nsfw .text-gray-500,
+html.nsfw .text-gray-400 {
+  color: hsl(240 5% 65%) !important;
 }
 
 html.nsfw .border-black {
-  border-color: hsl(175 70% 45%) !important;
+  border-color: hsl(350 89% 60%) !important;
 }
 
 html.nsfw .border-black\/20 {
-  border-color: hsl(175 70% 45% / 0.2) !important;
+  border-color: hsl(350 89% 60% / 0.2) !important;
 }
 
 html.nsfw .border-black\/10 {
-  border-color: hsl(280 60% 60% / 0.15) !important;
+  border-color: hsl(240 5% 65% / 0.15) !important;
 }
 
 html.nsfw .comic-shadow {
-  box-shadow: 4px 4px 0px hsl(280 60% 60%) !important;
+  box-shadow: 4px 4px 0px hsl(350 89% 60%) !important;
 }
 
 html.nsfw .hover\:shadow-\[8px_8px_0_rgba\(0\,0\,0\,1\)\]:hover {
-  box-shadow: 8px 8px 0px hsl(280 60% 60%) !important;
+  box-shadow: 8px 8px 0px hsl(350 89% 60%) !important;
 }
 
 html.nsfw .hover\:bg-yellow-50:hover {
-  background-color: hsl(265 50% 20%) !important;
+  background-color: hsl(240 5% 15%) !important;
 }
 

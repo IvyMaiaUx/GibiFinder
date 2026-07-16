@@ -139,7 +139,7 @@ export default function Explore() {
         <div className={cn(
           "border-4 border-black p-6 rounded-xl comic-shadow relative overflow-hidden transform -rotate-1",
           isNsfw 
-            ? "bg-primary text-primary-foreground border-white shadow-[0_0_20px_rgba(20,184,166,0.2)]" 
+            ? "bg-primary text-primary-foreground border-white shadow-[0_0_20px_rgba(244,63,94,0.2)]" 
             : "bg-primary text-white"
         )}>
           <div className="absolute top-0 right-0 w-24 h-24 opacity-10 bg-[radial-gradient(white_1px,transparent_1px)] [background-size:6px_6px] pointer-events-none" />
