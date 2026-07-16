@@ -766,50 +766,51 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
                   <h4 className="font-display text-base md:text-xl leading-none line-clamp-1 max-w-[120px] sm:max-w-xs md:max-w-md" title={selectedResult?.title || mangaTitle}>
                     {selectedResult?.title || mangaTitle}
                   </h4>
-                  <div className="flex items-center gap-1 mt-1 flex-wrap">
-                    <button
-                      disabled={!prevChapter}
-                      onClick={() => prevChapter && readChapter(prevChapter)}
-                      className="text-gray-400 hover:text-white disabled:opacity-20 transition-colors"
-                      title="Capítulo Anterior"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    
-                    {filteredChapters.length > 0 ? (
-                      <select
-                        value={selectedChapter?.id}
-                        onChange={(e) => {
-                          const targetCh = filteredChapters.find(ch => ch.id === e.target.value);
-                          if (targetCh) readChapter(targetCh);
-                        }}
-                        className="bg-zinc-800 text-white font-sans text-2xs sm:text-xs font-bold border border-white/20 px-1 py-0.5 rounded outline-none cursor-pointer max-w-[90px] sm:max-w-[140px] truncate"
-                      >
-                        {filteredChapters.map(ch => (
-                          <option key={ch.id} value={ch.id}>
-                            Cap. {ch.chapterNum}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="font-sans text-2xs sm:text-xs font-bold text-gray-400">Cap. {selectedChapter?.chapterNum}</span>
-                    )}
-                    
-                    <button
-                      disabled={!nextChapter}
-                      onClick={() => nextChapter && readChapter(nextChapter)}
-                      className="text-gray-400 hover:text-white disabled:opacity-20 transition-colors"
-                      title="Próximo Capítulo"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-
-                    <span className="font-sans text-2xs sm:text-xs font-bold text-gray-400 ml-1">· {currentPage + 1}/{pages.length}</span>
-                  </div>
+                  <p className="font-sans text-2xs sm:text-xs font-bold text-gray-400 mt-1">Capítulo {selectedChapter.chapterNum} · {currentPage + 1} / {pages.length}</p>
                 </div>
               </div>
 
               <div className="flex items-center gap-4">
+                {/* Chapter Selector */}
+                <div className="flex items-center gap-1 bg-zinc-900 border-2 border-white/20 p-1 rounded text-white text-xs font-sans font-bold">
+                  <button
+                    disabled={!prevChapter}
+                    onClick={() => prevChapter && readChapter(prevChapter)}
+                    className="text-gray-400 hover:text-white disabled:opacity-20 transition-colors p-1"
+                    title="Capítulo Anterior"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  
+                  {filteredChapters.length > 0 ? (
+                    <select
+                      value={selectedChapter?.id}
+                      onChange={(e) => {
+                        const targetCh = filteredChapters.find(ch => ch.id === e.target.value);
+                        if (targetCh) readChapter(targetCh);
+                      }}
+                      className="bg-black text-white font-sans text-xs font-bold border border-white/25 px-2 py-0.5 rounded outline-none cursor-pointer max-w-[90px] sm:max-w-[140px] truncate"
+                    >
+                      {filteredChapters.map(ch => (
+                        <option key={ch.id} value={ch.id}>
+                          Cap. {ch.chapterNum}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="font-sans text-xs font-bold text-gray-400 px-1">Cap. {selectedChapter?.chapterNum}</span>
+                  )}
+                  
+                  <button
+                    disabled={!nextChapter}
+                    onClick={() => nextChapter && readChapter(nextChapter)}
+                    className="text-gray-400 hover:text-white disabled:opacity-20 transition-colors p-1"
+                    title="Próximo Capítulo"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+
                 {/* Layout Switcher */}
                 <div className="hidden sm:flex border-2 border-white/20 rounded overflow-hidden">
                   <button
