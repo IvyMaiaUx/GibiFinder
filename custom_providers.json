@@ -137,6 +137,7 @@
     "name": "Jon Domingues",
     "language": "pt",
     "baseUrl": "https://jondomingues.com/",
+    "engine": "wordpress-comic",
     "active": true
   },
   {

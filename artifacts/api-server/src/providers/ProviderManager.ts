@@ -7,6 +7,7 @@ import { MugiwarasProvider } from "./MugiwarasProvider";
 import { MadaraProvider } from "./MadaraProvider";
 import { EightMusesProvider } from "./EightMusesProvider";
 import { NHentaiProvider } from "./NHentaiProvider";
+import { WordPressComicProvider } from "./WordPressComicProvider";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -78,9 +79,11 @@ export class ProviderManager {
       const filePath = this.getCustomProvidersPath();
       if (fs.existsSync(filePath)) {
         const content = fs.readFileSync(filePath, "utf-8");
-        const list = JSON.parse(content) as Array<{ id: string; name: string; language: string; baseUrl: string; active?: boolean }>;
+        const list = JSON.parse(content) as Array<{ id: string; name: string; language: string; baseUrl: string; active?: boolean; engine?: string }>;
         for (const item of list) {
-          const provider = new MadaraProvider(item.id, item.name, item.language, item.baseUrl);
+          const provider = item.engine === "wordpress-comic"
+            ? new WordPressComicProvider(item.id, item.name, item.language, item.baseUrl)
+            : new MadaraProvider(item.id, item.name, item.language, item.baseUrl);
           this.registerProvider(provider);
           this.activeStates.set(item.id, item.active !== false);
         }

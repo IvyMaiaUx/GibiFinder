@@ -1,0 +1,223 @@
+import { Chapter, MangaDetails, Page, Provider, SearchResult } from "./types";
+
+const BROWSER_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept": "application/json,text/html;q=0.9,*/*;q=0.8",
+  "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
+};
+
+type WpPost = {
+  id: number;
+  slug: string;
+  link: string;
+  title?: { rendered?: string };
+  excerpt?: { rendered?: string };
+  content?: { rendered?: string };
+  yoast_head_json?: { og_image?: Array<{ url?: string }> };
+  _embedded?: {
+    "wp:featuredmedia"?: Array<{ source_url?: string; media_details?: { sizes?: Record<string, { source_url?: string }> } }>;
+  };
+};
+
+export class WordPressComicProvider implements Provider {
+  constructor(
+    public id: string,
+    public name: string,
+    public language: string,
+    public baseUrl: string
+  ) {
+    this.baseUrl = this.baseUrl.replace(/\/+$/, "");
+  }
+
+  private api(path: string): string {
+    return `${this.baseUrl}/wp-json/wp/v2/${path.replace(/^\/+/, "")}`;
+  }
+
+  private decodeHtml(value = ""): string {
+    return value
+      .replace(/&amp;/g, "&")
+      .replace(/&#038;/g, "&")
+      .replace(/&quot;/g, "\"")
+      .replace(/&#039;/g, "'")
+      .replace(/&#8211;/g, "-")
+      .replace(/&#8212;/g, "-")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  private stripHtml(value = ""): string {
+    return this.decodeHtml(value.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "));
+  }
+
+  private async fetchJson<T>(url: string): Promise<T> {
+    const res = await fetch(url, { headers: BROWSER_HEADERS });
+    if (!res.ok) throw new Error(`WordPress API returned ${res.status}`);
+    return await res.json() as T;
+  }
+
+  private async fetchHtml(url: string): Promise<string> {
+    const res = await fetch(url, { headers: BROWSER_HEADERS });
+    if (!res.ok) throw new Error(`WordPress page returned ${res.status}`);
+    return await res.text();
+  }
+
+  private postCover(post: WpPost): string | undefined {
+    return post._embedded?.["wp:featuredmedia"]?.[0]?.media_details?.sizes?.large?.source_url ||
+      post._embedded?.["wp:featuredmedia"]?.[0]?.source_url ||
+      post.yoast_head_json?.og_image?.[0]?.url ||
+      post.content?.rendered?.match(/<img[^>]+src=["']([^"']+)["']/i)?.[1];
+  }
+
+  private toPostId(post: WpPost): string {
+    return `post:${post.slug || post.id}`;
+  }
+
+  private async getPost(id: string): Promise<WpPost | null> {
+    const clean = id.replace(/^post:/, "");
+    if (/^\d+$/.test(clean)) {
+      return await this.fetchJson<WpPost>(this.api(`posts/${clean}?_embed=1`));
+    }
+    const posts = await this.fetchJson<WpPost[]>(this.api(`posts?slug=${encodeURIComponent(clean)}&_embed=1`));
+    return posts[0] || null;
+  }
+
+  private async getPageById(id: string): Promise<WpPost | null> {
+    return await this.fetchJson<WpPost>(this.api(`pages/${encodeURIComponent(id)}`));
+  }
+
+  private extractReadLinks(html: string): Array<{ title: string; url: string }> {
+    const links: Array<{ title: string; url: string }> = [];
+    for (const match of html.matchAll(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+      const url = this.decodeHtml(match[1]);
+      const label = this.stripHtml(match[2]);
+      if (!/ler\s+(online|absolute|hq|quadrinho)|read\s+online/i.test(label) && !/\/ler-[^/]*|\/ler-online-/i.test(url)) continue;
+      if (!url.includes(this.baseUrl)) continue;
+      links.push({ title: label || "Ler Online", url });
+    }
+    return links;
+  }
+
+  private async findReadPage(post: WpPost): Promise<{ id: string; title: string; url: string } | null> {
+    const content = post.content?.rendered || "";
+    const direct = this.extractReadLinks(content)[0];
+    if (direct) {
+      const slug = new URL(direct.url).pathname.replace(/^\/+|\/+$/g, "");
+      const pages = await this.fetchJson<WpPost[]>(this.api(`pages?slug=${encodeURIComponent(slug)}&per_page=1`));
+      if (pages[0]) return { id: `page:${pages[0].id}`, title: direct.title, url: pages[0].link };
+    }
+
+    const title = this.stripHtml(post.title?.rendered || "");
+    const number = title.match(/#\s*([0-9]+)/)?.[1];
+    const series = title.replace(/#\s*[0-9]+.*/i, "").replace(/\([^)]*\)/g, "").trim();
+    const query = number ? `ler online ${series} ${number}` : `ler online ${title}`;
+    const hits = await this.fetchJson<Array<{ id: number; title: string; url: string; subtype: string }>>(this.api(`search?search=${encodeURIComponent(query)}&per_page=10`));
+    const pageHit = hits.find(hit => hit.subtype === "page" && /ler/i.test(hit.title) && (!number || hit.title.includes(`#${number}`) || new RegExp(`\\b${number}\\b`).test(hit.title)));
+    return pageHit ? { id: `page:${pageHit.id}`, title: pageHit.title, url: pageHit.url } : null;
+  }
+
+  private extractImages(html: string): string[] {
+    const urls = new Set<string>();
+    for (const img of html.matchAll(/<img[^>]+>/gi)) {
+      const tag = img[0];
+      const raw = tag.match(/\s(?:data-src|data-lazy-src|data-original|src)=["']([^"']+)["']/i)?.[1];
+      if (!raw) continue;
+      const url = this.decodeHtml(raw);
+      if (!/\.(?:jpg|jpeg|png|webp)(?:\?|$)/i.test(url)) continue;
+      if (/logo|avatar|banner|favicon|cropped-|removebg|195x300|googleads|pagead|\/ads?\//i.test(url)) continue;
+      urls.add(url);
+    }
+
+    for (const match of html.matchAll(/https?:\/\/[^"' <>()]+?\.(?:jpg|jpeg|png|webp)(?:\?[^"' <>()]*)?/gi)) {
+      const url = this.decodeHtml(match[0]);
+      if (/logo|avatar|banner|favicon|cropped-|removebg|195x300|googleads|pagead|\/ads?\//i.test(url)) continue;
+      urls.add(url);
+    }
+
+    return Array.from(urls);
+  }
+
+  async search(query: string): Promise<SearchResult[]> {
+    try {
+      const posts = await this.fetchJson<WpPost[]>(this.api(`posts?search=${encodeURIComponent(query)}&per_page=12&_embed=1`));
+      return posts.map(post => ({
+        id: this.toPostId(post),
+        title: this.stripHtml(post.title?.rendered || post.slug),
+        description: this.stripHtml(post.excerpt?.rendered || "").slice(0, 240),
+        coverUrl: this.postCover(post),
+        providerId: this.id
+      }));
+    } catch (err) {
+      console.warn(`WordPress provider [${this.id}] search failed:`, err);
+      return [];
+    }
+  }
+
+  async getDetails(id: string): Promise<MangaDetails> {
+    const post = await this.getPost(id);
+    if (!post) return { id, title: id.replace(/^post:/, "").replace(/-/g, " "), providerId: this.id };
+    return {
+      id: this.toPostId(post),
+      title: this.stripHtml(post.title?.rendered || post.slug),
+      description: this.stripHtml(post.excerpt?.rendered || post.content?.rendered || "").slice(0, 600),
+      coverUrl: this.postCover(post),
+      providerId: this.id
+    };
+  }
+
+  async getChapters(id: string): Promise<Chapter[]> {
+    const post = await this.getPost(id);
+    if (!post) return [];
+    const readPage = await this.findReadPage(post).catch(() => null);
+    return [{
+      id: readPage?.id || this.toPostId(post),
+      chapterNum: this.stripHtml(post.title?.rendered || "").match(/#\s*([0-9]+)/)?.[1] || "1",
+      title: readPage?.title || "Ler Online",
+      language: this.language,
+      providerId: this.id
+    }];
+  }
+
+  async getPages(chapterId: string): Promise<Page[]> {
+    try {
+      let html = "";
+      if (chapterId.startsWith("page:")) {
+        const page = await this.getPageById(chapterId.replace(/^page:/, ""));
+        html = page?.content?.rendered || "";
+      } else {
+        const post = await this.getPost(chapterId);
+        const readPage = post ? await this.findReadPage(post).catch(() => null) : null;
+        if (readPage?.id.startsWith("page:")) {
+          const page = await this.getPageById(readPage.id.replace(/^page:/, ""));
+          html = page?.content?.rendered || "";
+        } else if (readPage?.url) {
+          html = await this.fetchHtml(readPage.url);
+        } else {
+          html = post?.content?.rendered || "";
+        }
+      }
+
+      return this.extractImages(html).map((url, index) => ({ url, pageNumber: index + 1 }));
+    } catch (err) {
+      console.warn(`WordPress provider [${this.id}] pages failed:`, err);
+      return [];
+    }
+  }
+
+  async getCatalog(listType: "popular" | "latest"): Promise<SearchResult[]> {
+    try {
+      const orderby = listType === "latest" ? "date" : "date";
+      const posts = await this.fetchJson<WpPost[]>(this.api(`posts?per_page=12&orderby=${orderby}&_embed=1`));
+      return posts.map(post => ({
+        id: this.toPostId(post),
+        title: this.stripHtml(post.title?.rendered || post.slug),
+        description: this.stripHtml(post.excerpt?.rendered || "").slice(0, 240),
+        coverUrl: this.postCover(post),
+        providerId: this.id
+      }));
+    } catch {
+      return [];
+    }
+  }
+}
