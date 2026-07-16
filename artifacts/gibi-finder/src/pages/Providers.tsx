@@ -9,6 +9,9 @@ interface ProviderItem {
   name: string;
   language: string;
   active: boolean;
+  isCustom?: boolean;
+  engine?: string;
+  baseUrl?: string;
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -125,6 +128,19 @@ export default function Providers() {
                     <p className="font-sans font-bold text-gray-500 text-xs uppercase mb-3 tracking-wide">
                       Idioma: {p.language === "multi" ? "🌐 Multi-idioma" : p.language === "pt" ? "🇧🇷 Português" : "🇺🇸 Inglês"}
                     </p>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      <span className={cn(
+                        "font-display text-2xs px-2 py-0.5 border-2 border-black rounded uppercase",
+                        p.isCustom ? "bg-secondary text-black" : "bg-muted text-gray-600"
+                      )}>
+                        {p.engine || (p.isCustom ? "Madara/WordPress" : "Nativo")}
+                      </span>
+                      {p.isCustom && (
+                        <span className="font-sans font-extrabold text-2xs px-2 py-0.5 border-2 border-black rounded uppercase bg-white text-gray-500">
+                          Custom
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-gray-600 font-semibold font-sans leading-relaxed">
                       {p.id === "mangadex" && "Provedor oficial com milhões de capítulos e traduções geradas por grupos de scanlation."}
                       {p.id === "comicextra" && "Fonte de gibis e HQs da Marvel e DC digitalizadas em inglês de forma direta."}

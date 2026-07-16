@@ -11,6 +11,7 @@ import ResultDetail from "@/pages/ResultDetail";
 import Colecao from "@/pages/Colecao";
 import Admin from "@/pages/Admin";
 import Explore from "@/pages/Explore";
+import Providers from "@/pages/Providers";
 import Login from "@/pages/Login";
 import NotFound from "@/pages/not-found";
 
@@ -32,6 +33,7 @@ function Router() {
       <Route path="/gibi/:id" component={ResultDetail} />
       <Route path="/colecao" component={Colecao} />
       <Route path="/admin" component={Admin} />
+      <Route path="/provedores" component={Providers} />
       <Route path="/explorar" component={Explore} />
       <Route path="/login" component={Login} />
       <Route component={NotFound} />

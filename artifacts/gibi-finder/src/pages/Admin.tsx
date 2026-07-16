@@ -692,6 +692,16 @@ export default function Admin() {
                   <div>
                     <h3 className="font-display text-2xl text-black">{p.name}</h3>
                     <p className="text-2xs text-gray-500 font-bold uppercase mb-2">Idioma: {p.language.toUpperCase()}</p>
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      <span className={`font-display text-2xs px-2 py-0.5 border-2 border-black rounded uppercase ${p.isCustom ? "bg-secondary text-black" : "bg-muted text-gray-600"}`}>
+                        {p.engine || (p.isCustom ? "Madara/WordPress" : "Nativo")}
+                      </span>
+                      {p.isCustom && (
+                        <span className="font-sans font-extrabold text-2xs px-2 py-0.5 border-2 border-black rounded uppercase bg-white text-gray-500">
+                          Custom
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-gray-600 font-semibold font-sans leading-tight">
                       {p.id === "mangadex" && "Agregador global multilingue de mangás com API integrada em tempo real."}
                       {p.id === "comicextra" && "Fonte de HQs americanas digitalizadas em inglês de forma direta."}
