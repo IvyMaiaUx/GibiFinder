@@ -141,7 +141,17 @@ export class WordPressComicProvider implements Provider {
   async search(query: string): Promise<SearchResult[]> {
     try {
       const posts = await this.fetchJson<WpPost[]>(this.api(`posts?search=${encodeURIComponent(query)}&per_page=12&_embed=1`));
-      return posts.map(post => ({
+      const queryIssue = query.match(/#?\s*(\d+)\s*$/)?.[1];
+      const sorted = [...posts].sort((a, b) => {
+        if (!queryIssue) return 0;
+        const aTitle = this.stripHtml(a.title?.rendered || "");
+        const bTitle = this.stripHtml(b.title?.rendered || "");
+        const aExact = new RegExp(`#\\s*${queryIssue}\\b|\\b${queryIssue}\\b`).test(aTitle) ? 1 : 0;
+        const bExact = new RegExp(`#\\s*${queryIssue}\\b|\\b${queryIssue}\\b`).test(bTitle) ? 1 : 0;
+        return bExact - aExact;
+      });
+
+      return sorted.map(post => ({
         id: this.toPostId(post),
         title: this.stripHtml(post.title?.rendered || post.slug),
         description: this.stripHtml(post.excerpt?.rendered || "").slice(0, 240),
@@ -170,10 +180,11 @@ export class WordPressComicProvider implements Provider {
     const post = await this.getPost(id);
     if (!post) return [];
     const readPage = await this.findReadPage(post).catch(() => null);
+    if (!readPage) return [];
     return [{
-      id: readPage?.id || this.toPostId(post),
+      id: readPage.id,
       chapterNum: this.stripHtml(post.title?.rendered || "").match(/#\s*([0-9]+)/)?.[1] || "1",
-      title: readPage?.title || "Ler Online",
+      title: readPage.title,
       language: this.language,
       providerId: this.id
     }];
@@ -194,7 +205,7 @@ export class WordPressComicProvider implements Provider {
         } else if (readPage?.url) {
           html = await this.fetchHtml(readPage.url);
         } else {
-          html = post?.content?.rendered || "";
+          return [];
         }
       }
 
