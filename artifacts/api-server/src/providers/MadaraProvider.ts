@@ -73,6 +73,10 @@ export class MadaraProvider implements Provider {
     return this.baseUrl.includes("hqdesexo.com");
   }
 
+  private isMultiversoHq(): boolean {
+    return this.baseUrl.includes("multiversohq.com");
+  }
+
   private getContentUrl(id: string): string {
     if (this.isGenericId(id)) {
       const path = id.replace(/^post:/, "").replace(/^\/+|\/+$/g, "");
@@ -526,6 +530,10 @@ export class MadaraProvider implements Provider {
       const res = await fetch(this.getContentUrl(chapterId), { headers: BROWSER_HEADERS });
       if (!res.ok) throw new Error(`Pages status: ${res.status}`);
       const html = await res.text();
+
+      if (this.isMultiversoHq()) {
+        return [];
+      }
 
       const hentaiFoxThumbs = Array.from(html.matchAll(/data-src=["'](https?:\/\/[^"']+\/(\d+)t\.(?:webp|jpe?g|png))["']/gi));
       if (hentaiFoxThumbs.length > 0) {
