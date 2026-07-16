@@ -10,6 +10,8 @@ type WpPost = {
   id: number;
   slug: string;
   link: string;
+  date?: string;
+  modified?: string;
   title?: { rendered?: string };
   excerpt?: { rendered?: string };
   content?: { rendered?: string };
@@ -144,7 +146,8 @@ export class WordPressComicProvider implements Provider {
       title: this.stripHtml(post.title?.rendered || post.slug),
       description: this.stripHtml(post.excerpt?.rendered || "").slice(0, 240),
       coverUrl: this.postCover(post),
-      providerId: this.id
+      providerId: this.id,
+      releaseDate: post.date || post.modified
     };
   }
 

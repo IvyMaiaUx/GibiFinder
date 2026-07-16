@@ -18,6 +18,12 @@ export class MangaDexProvider implements Provider {
     return typeof firstVal === "string" ? firstVal : "";
   }
 
+  private getReleaseDate(item: any): string | undefined {
+    const year = item.attributes?.year;
+    if (typeof year === "number" && year > 0) return String(year);
+    return item.attributes?.createdAt || item.attributes?.updatedAt;
+  }
+
   private extractGenres(item: any): string[] {
     const tags = item.attributes?.tags || [];
     const translationMap: Record<string, string> = {
@@ -89,7 +95,7 @@ export class MangaDexProvider implements Provider {
           }
         }
 
-        return { id, title, description, coverUrl, genres, providerId: this.id };
+        return { id, title, description, coverUrl, genres, providerId: this.id, releaseDate: this.getReleaseDate(item) };
       });
     } catch (err) {
       console.error("MangaDex search failed:", err);
@@ -218,7 +224,7 @@ export class MangaDexProvider implements Provider {
           }
         }
 
-        return { id, title, description, coverUrl, genres, providerId: this.id };
+        return { id, title, description, coverUrl, genres, providerId: this.id, releaseDate: this.getReleaseDate(item) };
       });
     } catch (err) {
       console.error("MangaDex catalog failed:", err);

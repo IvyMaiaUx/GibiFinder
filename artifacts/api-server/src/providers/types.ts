@@ -5,6 +5,7 @@ export interface SearchResult {
   description?: string;
   providerId: string;
   genres?: string[];
+  releaseDate?: string;
 }
 
 export interface MangaDetails {
@@ -51,9 +52,11 @@ export interface UnifiedSearchResult {
   rating?: number;
   genres?: string[];
   isAdult?: boolean;
+  releaseDate?: string;
   sources: {
     providerId: string;
     id: string; // ID original do mangá no provedor
     title: string;
+    releaseDate?: string;
   }[];
 }

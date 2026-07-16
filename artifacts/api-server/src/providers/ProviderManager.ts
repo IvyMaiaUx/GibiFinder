@@ -240,6 +240,22 @@ export class ProviderManager {
     return searchable.some(text => this.adultTerms.some(term => text.includes(this.normalizeText(term))));
   }
 
+  private static getReleaseTime(date?: string): number {
+    if (!date) return 0;
+    const trimmed = String(date).trim();
+    if (/^\d{4}$/.test(trimmed)) {
+      return new Date(`${trimmed}-01-01T00:00:00.000Z`).getTime();
+    }
+    const time = new Date(trimmed).getTime();
+    return Number.isFinite(time) ? time : 0;
+  }
+
+  private static pickNewestReleaseDate(current?: string, next?: string): string | undefined {
+    if (!current) return next;
+    if (!next) return current;
+    return this.getReleaseTime(next) > this.getReleaseTime(current) ? next : current;
+  }
+
   private static stripAdultSources(result: UnifiedSearchResult): UnifiedSearchResult | null {
     const adultSources = result.sources.filter(source => this.isAdultProvider(source.providerId));
     const safeSources = result.sources.filter(source => !this.isAdultProvider(source.providerId));
@@ -411,7 +427,8 @@ export class ProviderManager {
           existing.sources.push({
             providerId: result.providerId,
             id: result.id,
-            title: result.title
+            title: result.title,
+            releaseDate: result.releaseDate
           });
         }
         // Fill coverUrl or description if missing
@@ -426,6 +443,7 @@ export class ProviderManager {
         } else if (existing.genres && result.genres) {
           existing.genres = Array.from(new Set([...existing.genres, ...result.genres]));
         }
+        existing.releaseDate = this.pickNewestReleaseDate(existing.releaseDate, result.releaseDate);
         existing.isAdult = this.isAdultResult(existing) || this.isAdultResult(result);
       } else {
         // Create new group
@@ -437,10 +455,12 @@ export class ProviderManager {
           description: result.description,
           genres: result.genres,
           isAdult: this.isAdultResult(result),
+          releaseDate: result.releaseDate,
           sources: [{
             providerId: result.providerId,
             id: result.id,
-            title: result.title
+            title: result.title,
+            releaseDate: result.releaseDate
           }]
         });
       }
@@ -518,7 +538,8 @@ export class ProviderManager {
           existing.sources.push({
             providerId: result.providerId,
             id: result.id,
-            title: result.title
+            title: result.title,
+            releaseDate: result.releaseDate
           });
         }
         if (!existing.coverUrl && result.coverUrl) {
@@ -532,6 +553,7 @@ export class ProviderManager {
         } else if (existing.genres && result.genres) {
           existing.genres = Array.from(new Set([...existing.genres, ...result.genres]));
         }
+        existing.releaseDate = this.pickNewestReleaseDate(existing.releaseDate, result.releaseDate);
         existing.isAdult = this.isAdultResult(existing) || this.isAdultResult(result);
       } else {
         const groupId = `${norm}_group`;
@@ -542,10 +564,12 @@ export class ProviderManager {
           description: result.description,
           genres: result.genres,
           isAdult: this.isAdultResult(result),
+          releaseDate: result.releaseDate,
           sources: [{
             providerId: result.providerId,
             id: result.id,
-            title: result.title
+            title: result.title,
+            releaseDate: result.releaseDate
           }]
         });
       }

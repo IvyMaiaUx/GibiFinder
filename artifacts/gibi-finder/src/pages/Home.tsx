@@ -5,7 +5,7 @@ import { SearchPanel } from "@/components/home/SearchPanel";
 import { ResultView } from "@/components/results/ResultView";
 import { useSearchActions } from "@/hooks/use-search-actions";
 import { useLocation } from "wouter";
-import { AlertTriangle, BookOpen, Filter, HelpCircle, Loader2, Star } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, BookOpen, Filter, HelpCircle, Loader2, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 
@@ -17,10 +17,12 @@ interface UnifiedSearchResult {
   rating?: number;
   genres?: string[];
   isAdult?: boolean;
+  releaseDate?: string;
   sources: {
     providerId: string;
     id: string;
     title: string;
+    releaseDate?: string;
   }[];
 }
 
@@ -39,6 +41,7 @@ const PUBLISHER_FILTERS = [
 ] as const;
 
 type PublisherFilter = typeof PUBLISHER_FILTERS[number]["id"];
+type ReleaseSort = "asc" | "desc" | null;
 
 const PUBLISHER_TERMS: Record<Exclude<PublisherFilter, "all">, string[]> = {
   dc: [
@@ -96,6 +99,41 @@ const getPublisherCounts = (items: UnifiedSearchResult[]) => {
   return counts;
 };
 
+const getReleaseTime = (date?: string) => {
+  if (!date) return 0;
+  const trimmed = String(date).trim();
+  if (/^\d{4}$/.test(trimmed)) {
+    return new Date(`${trimmed}-01-01T00:00:00.000Z`).getTime();
+  }
+  const time = new Date(trimmed).getTime();
+  return Number.isFinite(time) ? time : 0;
+};
+
+const formatReleaseDate = (date?: string) => {
+  if (!date) return "";
+  const trimmed = String(date).trim();
+  if (/^\d{4}$/.test(trimmed)) return trimmed;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return trimmed;
+  return parsed.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
+  });
+};
+
+const sortByReleaseDate = (items: UnifiedSearchResult[], direction: ReleaseSort) => {
+  if (!direction) return items;
+  return [...items].sort((a, b) => {
+    const aTime = getReleaseTime(a.releaseDate);
+    const bTime = getReleaseTime(b.releaseDate);
+    if (!aTime && !bTime) return 0;
+    if (!aTime) return 1;
+    if (!bTime) return -1;
+    return direction === "desc" ? bTime - aTime : aTime - bTime;
+  });
+};
+
 export default function Home() {
   const [, setLocation] = useLocation();
   const { 
@@ -114,6 +152,7 @@ export default function Home() {
   const [searchedQuery, setSearchedQuery] = useState("");
   const [adultSearchWarning, setAdultSearchWarning] = useState<{ hiddenCount: number; adultQuery: boolean } | null>(null);
   const [publisherFilter, setPublisherFilter] = useState<PublisherFilter>("all");
+  const [releaseSort, setReleaseSort] = useState<ReleaseSort>(null);
 
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -136,6 +175,7 @@ export default function Home() {
     setOnlineResults(null);
     setAdultSearchWarning(null);
     setPublisherFilter("all");
+    setReleaseSort(null);
 
     try {
       const res = await fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(query)}&nsfw=${isNsfw}`);
@@ -214,6 +254,7 @@ export default function Home() {
           });
           const publisherCounts = getPublisherCounts(filtered);
           const publisherFiltered = filtered.filter(item => matchesPublisher(item, publisherFilter));
+          const visibleResults = sortByReleaseDate(publisherFiltered, releaseSort);
 
           return (
             <div ref={resultsRef} className="scroll-mt-24 mt-12 space-y-8">
@@ -223,14 +264,45 @@ export default function Home() {
                   Resultados Online para "{searchedQuery}"
                 </h2>
                 <span className="font-sans font-extrabold text-xs uppercase bg-black text-white px-3 py-1">
-                  {publisherFiltered.length} Encontrado(s)
+                  {visibleResults.length} Encontrado(s)
                 </span>
               </div>
 
               <div className="bg-white border-4 border-black rounded-xl comic-shadow-sm p-3 sm:p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Filter className="w-5 h-5 text-primary" strokeWidth={3} />
-                  <h3 className="font-display text-xl text-black uppercase">Editora</h3>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Filter className="w-5 h-5 text-primary" strokeWidth={3} />
+                    <h3 className="font-display text-xl text-black uppercase">Editora</h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-display text-sm text-black uppercase">Lancamento</span>
+                    <div className="flex border-2 border-black rounded-lg overflow-hidden bg-white">
+                      <button
+                        type="button"
+                        onClick={() => setReleaseSort(releaseSort === "asc" ? null : "asc")}
+                        title="Mais antigos primeiro"
+                        aria-label="Ordenar por data: mais antigos primeiro"
+                        className={cn(
+                          "h-9 w-10 flex items-center justify-center border-r-2 border-black transition-colors",
+                          releaseSort === "asc" ? "bg-primary text-white" : "bg-white text-black hover:bg-yellow-100"
+                        )}
+                      >
+                        <ArrowUp className="h-4 w-4" strokeWidth={3} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReleaseSort(releaseSort === "desc" ? null : "desc")}
+                        title="Mais recentes primeiro"
+                        aria-label="Ordenar por data: mais recentes primeiro"
+                        className={cn(
+                          "h-9 w-10 flex items-center justify-center transition-colors",
+                          releaseSort === "desc" ? "bg-primary text-white" : "bg-white text-black hover:bg-yellow-100"
+                        )}
+                      >
+                        <ArrowDown className="h-4 w-4" strokeWidth={3} />
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
                   {PUBLISHER_FILTERS.map(option => {
@@ -274,7 +346,7 @@ export default function Home() {
                 </div>
               )}
 
-              {publisherFiltered.length === 0 ? (
+              {visibleResults.length === 0 ? (
                 <div className="text-center py-20 border-4 border-dashed border-black bg-white comic-shadow-sm">
                   <HelpCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                   <h3 className="font-display text-2xl text-black">NENHUM QUADRINHO ENCONTRADO</h3>
@@ -282,7 +354,7 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-                  {publisherFiltered.map((item) => (
+                  {visibleResults.map((item) => (
                     <button
                       key={item.id}
                       onClick={() => handleOpenOnlineResult(item)}
@@ -305,6 +377,11 @@ export default function Home() {
                           <p className="font-sans text-2xs text-gray-500 font-extrabold uppercase mt-1">
                             Fontes: {item.sources.map(s => s.providerId.toUpperCase()).join(", ")}
                           </p>
+                          {item.releaseDate && (
+                            <p className="font-sans text-2xs text-gray-500 font-extrabold uppercase mt-1">
+                              Lancamento: {formatReleaseDate(item.releaseDate)}
+                            </p>
+                          )}
                           {item.genres && item.genres.length > 0 && (() => {
                             const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
                             const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
