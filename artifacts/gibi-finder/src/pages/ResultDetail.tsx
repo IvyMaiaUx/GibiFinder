@@ -342,6 +342,8 @@ export default function ResultDetail() {
                       mangaTitle={(resultData as any).revista || (resultData as any).titulo || ""} 
                       coverUrl={(resultData as any).coverUrl || (resultData as any).images?.[0]} 
                       description={(resultData as any).sinopse || (resultData as any).description}
+                      initialProviderId={isOnlineResult ? providerId : undefined}
+                      initialMangaId={isOnlineResult ? mangaId : undefined}
                     />
                   )}
                 </div>

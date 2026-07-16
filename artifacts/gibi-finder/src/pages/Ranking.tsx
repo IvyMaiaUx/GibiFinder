@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Trophy, Flame, Loader2, AlertCircle } from "lucide-react";
 import { useLocation } from "wouter";
-import { cn, proxyCoverUrl } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { SafeImage } from "@/components/ui/SafeImage";
 
 interface UnifiedCatalogItem {
   id: string;
@@ -24,7 +25,6 @@ export default function Ranking() {
   const [items, setItems] = useState<UnifiedCatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
 
   const [isNsfw, setIsNsfw] = useState(() => document.documentElement.classList.contains("nsfw"));
 
@@ -114,7 +114,6 @@ export default function Ranking() {
           <div className="space-y-6">
             {items.map((item, index) => {
               const rank = index + 1;
-              const imgKey = `rank-${item.id}`;
               const providersString = item.sources.map(s => s.providerId.toUpperCase()).join(", ");
               
               // Colors for the rank badges
@@ -139,19 +138,11 @@ export default function Ranking() {
 
                   {/* Thumbnail Cover */}
                   <div className="w-14 h-20 sm:w-20 sm:h-28 bg-zinc-950 border-4 border-black shrink-0 relative overflow-hidden rounded-md">
-                    {item.coverUrl && !brokenImages[imgKey] ? (
-                      <img 
-                        src={proxyCoverUrl(item.coverUrl)} 
-                        alt={item.title} 
-                        className="w-full h-full object-cover"
-                        referrerPolicy="no-referrer"
-                        onError={() => setBrokenImages(prev => ({ ...prev, [imgKey]: true }))}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center font-display text-3xl text-white/20 select-none bg-gradient-to-br from-zinc-900 to-zinc-950">
-                        {item.title.charAt(0).toUpperCase()}
-                      </div>
-                    )}
+                    <SafeImage
+                      src={item.coverUrl}
+                      alt={item.title}
+                      className="w-full h-full object-cover"
+                    />
                   </div>
 
                   {/* Info Details */}

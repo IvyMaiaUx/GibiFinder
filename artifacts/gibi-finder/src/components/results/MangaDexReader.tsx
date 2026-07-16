@@ -16,12 +16,15 @@ import {
   Minimize,
   Info
 } from "lucide-react";
-import { cn, proxyCoverUrl } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { SafeImage } from "@/components/ui/SafeImage";
 
 interface MangaDexReaderProps {
   mangaTitle: string;
   coverUrl?: string;
   description?: string;
+  initialProviderId?: string;
+  initialMangaId?: string;
 }
 
 interface UnifiedSearchResult {
@@ -52,7 +55,7 @@ interface Page {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexReaderProps) {
+export function MangaDexReader({ mangaTitle, coverUrl, description, initialProviderId, initialMangaId }: MangaDexReaderProps) {
   // Tab/Source Navigation
   const [activeTab, setActiveTab] = useState<"aggregator" | "external">("aggregator");
   
@@ -142,6 +145,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
   const [lastReadProgress, setLastReadProgress] = useState<any>(null);
   const [showInfo, setShowInfo] = useState(false);
 
+  const initialSource = initialProviderId && initialMangaId
+    ? { providerId: initialProviderId, id: initialMangaId, title: mangaTitle }
+    : null;
+
 
 
   // Search across all providers on the backend
@@ -191,6 +198,9 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
       const res = await fetch(url);
       if (!res.ok) throw new Error("Erro ao carregar capítulos da fonte");
       const data = await res.json() as Chapter[];
+      if (data.length === 0) {
+        setError(`A fonte ${source.providerId.toUpperCase()} nao retornou capitulos legiveis para esta obra.`);
+      }
       setChapters(data);
 
       // Auto-set language filter based on provider language
@@ -221,11 +231,14 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
       if (!res.ok) throw new Error("Erro ao carregar páginas do capítulo");
       const data = await res.json() as Page[];
       
+      if (data.length === 0) {
+        throw new Error("Nenhuma pagina retornada pelo provedor");
+      }
       setPages(data);
       setShowReader(true);
     } catch (err) {
       console.error(err);
-      setError("Falha ao abrir o leitor para este capítulo.");
+      setError("Falha ao abrir o leitor para este capitulo. A fonte pode ter bloqueado as imagens ou mudado o formato das paginas.");
     } finally {
       setLoadingPages(false);
     }
@@ -318,12 +331,24 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
     }
   };
 
-  // Search on mount
+  // Search on mount, or open the exact provider source when the detail URL has one.
   useEffect(() => {
+    if (initialSource) {
+      setSelectedResult({
+        id: `${initialSource.providerId}-${initialSource.id}`,
+        title: mangaTitle,
+        coverUrl,
+        description,
+        sources: [initialSource]
+      });
+      loadChapters(initialSource);
+      return;
+    }
+
     if (mangaTitle) {
       searchAggregator(mangaTitle);
     }
-  }, [mangaTitle]);
+  }, [mangaTitle, initialProviderId, initialMangaId]);
 
   // Load progress on mount/change
   useEffect(() => {
@@ -504,7 +529,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
                     className="flex items-center gap-3 p-3 border-2 border-black hover:bg-muted/30 text-left font-sans font-bold transition-colors bg-white"
                   >
                     {r.coverUrl ? (
-                      <img src={proxyCoverUrl(r.coverUrl)} alt={r.title} className="w-10 h-14 object-cover border border-black shrink-0" referrerPolicy="no-referrer" />
+                      <SafeImage src={r.coverUrl} alt={r.title} className="w-10 h-14 object-cover border border-black shrink-0" />
                     ) : (
                       <div className="w-10 h-14 bg-muted border border-black shrink-0 flex items-center justify-center">?</div>
                     )}
@@ -523,11 +548,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
             <div className="border-4 border-black p-4 bg-muted/10 relative comic-shadow-sm">
               <div className="flex flex-col sm:flex-row gap-4">
                 {selectedResult.coverUrl && (
-                  <img 
-                    src={proxyCoverUrl(selectedResult.coverUrl)} 
-                    alt={selectedResult.title} 
+                  <SafeImage
+                    src={selectedResult.coverUrl}
+                    alt={selectedResult.title}
                     className="w-24 h-36 object-cover border-4 border-black shrink-0 mx-auto sm:mx-0"
-                    referrerPolicy="no-referrer"
                   />
                 )}
                 <div className="flex-1 min-w-0">
@@ -764,11 +788,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
               {/* Left Column: Title & Thumbnail */}
               <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                 {(coverUrl || selectedResult?.coverUrl) && (
-                  <img 
-                    src={proxyCoverUrl(coverUrl || selectedResult?.coverUrl)} 
-                    alt={mangaTitle} 
+                  <SafeImage
+                    src={coverUrl || selectedResult?.coverUrl}
+                    alt={mangaTitle}
                     className="w-8 h-11 sm:w-10 sm:h-14 object-cover border border-white/40 shrink-0 rounded"
-                    referrerPolicy="no-referrer"
                   />
                 )}
                 <div className="min-w-0">
@@ -886,7 +909,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
               <div className="max-w-2xl w-full space-y-4 flex flex-col items-center">
                 {pages.map((p, idx) => (
                   <div key={idx} className="relative w-full border-4 border-white/10 bg-zinc-900">
-                    <img 
+                    <SafeImage
                       src={p.url} 
                       alt={`Página ${p.pageNumber}`}
                       className="w-full h-auto select-none pointer-events-none"
@@ -948,7 +971,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
                     }
                   }}
                 >
-                  <img 
+                  <SafeImage
                     src={pages[currentPage]?.url} 
                     alt={`Página ${pages[currentPage]?.pageNumber}`} 
                     className="max-h-[75vh] max-w-full object-contain border-4 border-white/20 select-none pointer-events-none"

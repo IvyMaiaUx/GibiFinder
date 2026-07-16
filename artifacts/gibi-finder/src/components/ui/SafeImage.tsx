@@ -34,7 +34,7 @@ export function SafeImage({ src, alt, className, ...props }: SafeImageProps) {
 
   if (retryStage === 2 || !currentSrc) {
     return (
-      <div className="w-full h-full flex items-center justify-center font-display text-4xl text-white/20 select-none bg-gradient-to-br from-zinc-900 to-zinc-950">
+      <div className={`${className || "w-full h-full"} flex items-center justify-center font-display text-4xl text-white/20 select-none bg-gradient-to-br from-zinc-900 to-zinc-950`}>
         {(alt || "?").charAt(0).toUpperCase()}
       </div>
     );
@@ -45,9 +45,9 @@ export function SafeImage({ src, alt, className, ...props }: SafeImageProps) {
       src={currentSrc} 
       alt={alt} 
       className={className}
-      onError={handleError}
       referrerPolicy="no-referrer"
       {...props}
+      onError={handleError}
     />
   );
 }

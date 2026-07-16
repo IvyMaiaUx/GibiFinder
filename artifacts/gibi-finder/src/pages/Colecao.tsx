@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { BookOpen, Trash2, Compass, Clock, BookOpenCheck, Star } from "lucide-react";
 import { useLocation } from "wouter";
-import { cn, proxyCoverUrl } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { SafeImage } from "@/components/ui/SafeImage";
 import { useAuth } from "@/hooks/use-auth";
 
 interface ReadingProgress {
@@ -31,7 +32,6 @@ export default function Colecao() {
   const [activeTab, setActiveTab] = useState<"progress" | "favorites">("progress");
   const [shelfItems, setShelfItems] = useState<ReadingProgress[]>([]);
   const [favoriteItems, setFavoriteItems] = useState<FavoriteItem[]>([]);
-  const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
 
   // Load reading progress list from "gibi-finder:progress"
   const loadShelf = () => {
@@ -216,20 +216,12 @@ export default function Colecao() {
                     className="group cursor-pointer bg-white border-4 border-black rounded-xl overflow-hidden flex flex-col justify-between hover:translate-y-[-6px] transition-all duration-200 comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:bg-yellow-50"
                   >
                     <div className="relative aspect-[3/4] border-b-4 border-black bg-zinc-950 overflow-hidden shrink-0">
-                      {item.coverUrl && !brokenImages[imgKey] ? (
-                        <img 
-                          src={proxyCoverUrl(item.coverUrl)} 
-                          alt={item.title} 
-                          className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                          onError={() => setBrokenImages(prev => ({ ...prev, [imgKey]: true }))}
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center font-display text-5xl text-white/20 select-none bg-gradient-to-br from-zinc-900 to-zinc-950">
-                          {item.title.charAt(0).toUpperCase()}
-                        </div>
-                      )}
+                      <SafeImage
+                        src={item.coverUrl}
+                        alt={item.title}
+                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                        loading="lazy"
+                      />
 
                       <span className="absolute top-2 left-2 bg-secondary border border-black text-black text-3xs font-display px-1.5 py-0.5 rounded">
                         {item.providerId.toUpperCase()}
@@ -299,20 +291,12 @@ export default function Colecao() {
                     className="group cursor-pointer bg-white border-4 border-black rounded-xl overflow-hidden flex flex-col justify-between hover:translate-y-[-6px] transition-all duration-200 comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:bg-yellow-50"
                   >
                     <div className="relative aspect-[3/4] border-b-4 border-black bg-zinc-950 overflow-hidden shrink-0">
-                      {item.coverUrl && !brokenImages[imgKey] ? (
-                        <img 
-                          src={proxyCoverUrl(item.coverUrl)} 
-                          alt={item.title} 
-                          className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                          onError={() => setBrokenImages(prev => ({ ...prev, [imgKey]: true }))}
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center font-display text-5xl text-white/20 select-none bg-gradient-to-br from-zinc-900 to-zinc-950">
-                          {item.title.charAt(0).toUpperCase()}
-                        </div>
-                      )}
+                      <SafeImage
+                        src={item.coverUrl}
+                        alt={item.title}
+                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                        loading="lazy"
+                      />
 
                       <span className="absolute top-2 left-2 bg-secondary border border-black text-black text-3xs font-display px-1.5 py-0.5 rounded">
                         {item.providerId.toUpperCase()}

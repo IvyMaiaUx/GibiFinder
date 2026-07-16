@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, MessageSquare, Bug, Lightbulb, Archive, CheckCircle2, AlertCircle, Trophy, AlertTriangle, Database, User } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { useToast } from "@/hooks/use-toast";
+import { SafeImage } from "@/components/ui/SafeImage";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const STORAGE_KEY = "gibi_admin_key";
@@ -124,7 +125,7 @@ function GibiAdminCard({ gibi, adminKey, onReview, onEdit, onDelete }: { gibi: G
   return (
     <div className={`bg-white border-4 border-black flex gap-3 p-4 ${isPending ? "border-secondary" : ""}`}>
       <div className="w-14 h-18 border-4 border-black shrink-0 bg-muted overflow-hidden" style={{ height: "4.5rem" }}>
-        {gibi.imagem_url ? <img src={gibi.imagem_url} alt={gibi.titulo} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <div className="w-full h-full flex items-center justify-center bg-secondary/30"><BookOpen className="w-6 h-6 text-black/40" /></div>}
+        {gibi.imagem_url ? <SafeImage src={gibi.imagem_url} alt={gibi.titulo} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center bg-secondary/30"><BookOpen className="w-6 h-6 text-black/40" /></div>}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-start gap-2">

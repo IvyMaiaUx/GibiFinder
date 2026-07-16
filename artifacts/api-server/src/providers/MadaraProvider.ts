@@ -13,6 +13,89 @@ export class MadaraProvider implements Provider {
     }
   }
 
+  private decodeHtml(value: string): string {
+    return value
+      .replace(/&amp;/g, "&")
+      .replace(/&#038;/g, "&")
+      .replace(/&quot;/g, '"')
+      .replace(/&#039;/g, "'")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">");
+  }
+
+  private resolveUrl(value: string): string | null {
+    const cleaned = this.decodeHtml(value.trim()).replace(/\\\//g, "/");
+    if (!cleaned || cleaned.startsWith("data:")) return null;
+
+    try {
+      return new URL(cleaned, this.baseUrl).toString();
+    } catch {
+      return null;
+    }
+  }
+
+  private collectPageUrls(html: string): string[] {
+    const urls = new Set<string>();
+    const imageExt = /\.(?:webp|jpe?g|png)(?:[?#][^"' <>)\\]*)?$/i;
+    const badFragments = [
+      "logo",
+      "avatar",
+      "banner",
+      "ads",
+      "advert",
+      "placeholder",
+      "loading",
+      "wp-content/plugins",
+      "wp-includes"
+    ];
+
+    const addCandidate = (raw?: string) => {
+      if (!raw) return;
+      const resolved = this.resolveUrl(raw);
+      if (!resolved) return;
+      const lower = resolved.toLowerCase();
+      if (!imageExt.test(lower)) return;
+      if (badFragments.some(fragment => lower.includes(fragment))) return;
+      urls.add(resolved);
+    };
+
+    const readerBlocks = [
+      /<div[^>]+class="[^"]*(?:reading-content|entry-content|chapter-content|page-break|wp-manga-chapter-img)[^"]*"[\s\S]*?<\/div>/gi,
+      /<figure[\s\S]*?<\/figure>/gi,
+      /<img[^>]+>/gi
+    ];
+
+    for (const blockRegex of readerBlocks) {
+      for (const blockMatch of html.matchAll(blockRegex)) {
+        const block = blockMatch[0];
+        for (const imgMatch of block.matchAll(/<img[^>]+>/gi)) {
+          const tag = imgMatch[0];
+          const attrMatch = tag.match(/\s(?:data-src|data-lazy-src|data-original|src)=["']([^"']+)["']/i);
+          addCandidate(attrMatch?.[1]);
+
+          const srcsetMatch = tag.match(/\s(?:data-srcset|srcset)=["']([^"']+)["']/i);
+          if (srcsetMatch?.[1]) {
+            const firstSrc = srcsetMatch[1].split(",")[0]?.trim().split(/\s+/)[0];
+            addCandidate(firstSrc);
+          }
+        }
+      }
+    }
+
+    for (const urlMatch of html.matchAll(/https?:\\?\/\\?\/[^"' <>)\\]+?\.(?:webp|jpe?g|png)(?:\?[^"' <>)\\]*)?/gi)) {
+      addCandidate(urlMatch[0]);
+    }
+
+    return Array.from(urls).map((url, index) => ({ url, index }))
+      .sort((a, b) => {
+        const pageA = a.url.match(/(?:^|[^\d])(\d{1,4})(?:\D*)\.(?:webp|jpe?g|png)/i)?.[1];
+        const pageB = b.url.match(/(?:^|[^\d])(\d{1,4})(?:\D*)\.(?:webp|jpe?g|png)/i)?.[1];
+        if (pageA && pageB) return Number(pageA) - Number(pageB);
+        return a.index - b.index;
+      })
+      .map(item => item.url);
+  }
+
   async search(query: string): Promise<SearchResult[]> {
     try {
       const url = `${this.baseUrl}?s=${encodeURIComponent(query)}&post_type=wp-manga`;
@@ -167,6 +250,14 @@ export class MadaraProvider implements Provider {
       });
       if (!res.ok) throw new Error(`Pages status: ${res.status}`);
       const html = await res.text();
+
+      const extractedPageUrls = this.collectPageUrls(html);
+      if (extractedPageUrls.length > 0) {
+        return extractedPageUrls.map((url, index) => ({
+          url,
+          pageNumber: index + 1
+        }));
+      }
 
       const match = html.match(/a=(https?%3A%2F%2F[^\s"&]+|https?:\/\/[^\s"&]+)/i) ||
                     html.match(/src="([^"]+001\.(?:webp|jpg|jpeg|png))"/i) ||

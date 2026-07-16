@@ -4,25 +4,6 @@ import http from "http";
 
 const router = Router();
 
-const ALLOWED_HOSTS = [
-  "uploads.mangadex.org",
-  "cmdxd98sb0x3yprd.mangadex.network",
-  "og.mangadex.org",
-  "comicextra.se",
-  "www.comicextra.se",
-  "mangafire.to",
-  "cdn.mangafire.to",
-  "mangaplus.shueisha.co.jp",
-  "d2dq7ifhe7bu0f.cloudfront.net",
-  "s1.mangaplus.shueisha.co.jp",
-  "s2.mangaplus.shueisha.co.jp",
-  "s3.mangaplus.shueisha.co.jp",
-  "cdn.mangaplus.shueisha.co.jp",
-  "animesbr.lat",
-  "www.animesbr.lat",
-  "images.unsplash.com",
-];
-
 function fetchImage(url: string, headers: any): Promise<{ status: number; headers: any; buffer: Buffer }> {
   return new Promise((resolve, reject) => {
     const client = url.startsWith("https") ? https : http;
@@ -79,6 +60,7 @@ router.get("/image-proxy", async (req: Request, res: Response) => {
         : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
       "Accept-Language": "en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7",
+      "Referer": `${targetUrl.protocol}//${targetUrl.hostname}/`,
     };
 
     const result = await fetchImage(targetUrl.toString(), headers);

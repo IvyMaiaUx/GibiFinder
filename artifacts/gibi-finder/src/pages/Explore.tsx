@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Loader2, AlertCircle, Compass, Flame, Clock, Languages, Star } from "lucide-react";
 import { useLocation } from "wouter";
-import { cn, proxyCoverUrl } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { SafeImage } from "@/components/ui/SafeImage";
 
 interface UnifiedCatalogItem {
   id: string;
@@ -39,7 +40,6 @@ export default function Explore() {
   const [items, setItems] = useState<UnifiedCatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
 
   const [isNsfw, setIsNsfw] = useState(() => document.documentElement.classList.contains("nsfw"));
 
@@ -268,20 +268,12 @@ export default function Explore() {
                       className="group bg-white border-4 border-black rounded-xl overflow-hidden text-left flex flex-col justify-between hover:translate-y-[-6px] transition-all duration-200 comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:bg-yellow-50"
                     >
                       <div className="relative aspect-[3/4] border-b-4 border-black bg-zinc-950 overflow-hidden shrink-0">
-                        {item.coverUrl && !brokenImages[item.id] ? (
-                          <img 
-                            src={proxyCoverUrl(item.coverUrl)} 
-                            alt={item.title} 
-                            className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                            loading="lazy"
-                            referrerPolicy="no-referrer"
-                            onError={() => setBrokenImages(prev => ({ ...prev, [item.id]: true }))}
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center font-display text-5xl text-white/20 select-none bg-gradient-to-br from-zinc-900 to-zinc-950">
-                            {item.title.charAt(0).toUpperCase()}
-                          </div>
-                        )}
+                        <SafeImage
+                          src={item.coverUrl}
+                          alt={item.title}
+                          className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                          loading="lazy"
+                        />
                         
 
                       </div>

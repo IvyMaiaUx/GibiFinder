@@ -4,6 +4,7 @@ import { Link, useLocation } from "wouter";
 import { Search, ChevronRight, FileX, Trash2, RotateCcw, BookOpen, Clock } from "lucide-react";
 import { formatComicDate, cn } from "@/lib/utils";
 import { getLocalHistory, removeFromLocalHistory, clearLocalHistory, type LocalHistoryItem } from "@/hooks/use-local-history";
+import { SafeImage } from "@/components/ui/SafeImage";
 
 interface ReadingHistoryItem {
   id: string;
@@ -35,7 +36,6 @@ export default function History() {
   
   // Reading history states
   const [readingItems, setReadingItems] = useState<ReadingHistoryItem[]>([]);
-  const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
 
   const [filter, setFilter] = useState("");
   const [filterInput, setFilterInput] = useState("");
@@ -231,13 +231,10 @@ export default function History() {
                     className="block bg-white border-4 border-black rounded-xl overflow-hidden comic-shadow comic-hover h-full flex flex-col"
                   >
                     <div className="h-48 bg-muted relative border-b-4 border-black">
-                      <img
+                      <SafeImage
                         src={item.images?.[0] || `${import.meta.env.BASE_URL}images/comic-placeholder.png`}
                         alt={item.titulo || "Gibi"}
                         className="w-full h-full object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = `${import.meta.env.BASE_URL}images/comic-placeholder.png`;
-                        }}
                       />
                       <div className="absolute top-2 right-2 bg-white font-sans font-extrabold text-xs px-2 py-1 border-2 border-black rounded">
                         {formatComicDate(item.created_at)}
@@ -289,7 +286,6 @@ export default function History() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredReading.map((item) => {
-                const imgKey = `hist-${item.id}`;
                 return (
                   <div key={item.id} className="relative group">
                     <div
@@ -297,18 +293,11 @@ export default function History() {
                       className="cursor-pointer block bg-white border-4 border-black rounded-xl overflow-hidden comic-shadow comic-hover h-full flex flex-col"
                     >
                       <div className="h-48 bg-muted relative border-b-4 border-black">
-                        {item.coverUrl && !brokenImages[imgKey] ? (
-                          <img
-                            src={item.coverUrl}
-                            alt={item.title}
-                            className="w-full h-full object-cover"
-                            onError={() => setBrokenImages(prev => ({ ...prev, [imgKey]: true }))}
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center font-display text-5xl text-white/20 select-none bg-gradient-to-br from-zinc-900 to-zinc-950">
-                            {item.title.charAt(0).toUpperCase()}
-                          </div>
-                        )}
+                        <SafeImage
+                          src={item.coverUrl}
+                          alt={item.title}
+                          className="w-full h-full object-cover"
+                        />
                         <div className="absolute top-2 right-2 bg-white font-sans font-extrabold text-2xs px-2 py-1 border border-black rounded flex items-center gap-1">
                           <Clock className="w-3.5 h-3.5 text-gray-400" />
                           {formatDate(item.timestamp)}

@@ -114,22 +114,6 @@ app.post("/api/providers/toggle", (req, res) => {
 });
 
 // GET /api/image-proxy
-const ALLOWED_HOSTS = [
-  "uploads.mangadex.org",
-  "cmdxd98sb0x3yprd.mangadex.network",
-  "og.mangadex.org",
-  "comicextra.se",
-  "www.comicextra.se",
-  "mangafire.to",
-  "cdn.mangafire.to",
-  "mangaplus.shueisha.co.jp",
-  "d2dq7ifhe7bu0f.cloudfront.net",
-  "s1.mangaplus.shueisha.co.jp",
-  "s2.mangaplus.shueisha.co.jp",
-  "s3.mangaplus.shueisha.co.jp",
-  "cdn.mangaplus.shueisha.co.jp",
-];
-
 app.get("/api/image-proxy", async (req, res) => {
   const rawUrl = req.query.url as string;
   if (!rawUrl) {
@@ -143,8 +127,8 @@ app.get("/api/image-proxy", async (req, res) => {
     res.status(400).json({ error: "invalid_url" });
     return;
   }
-  if (!ALLOWED_HOSTS.includes(targetUrl.hostname)) {
-    res.status(403).json({ error: "forbidden_host" });
+  if (targetUrl.protocol !== "http:" && targetUrl.protocol !== "https:") {
+    res.status(400).json({ error: "invalid_protocol" });
     return;
   }
   try {
@@ -152,6 +136,7 @@ app.get("/api/image-proxy", async (req, res) => {
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; GibiFinder/1.0)",
         Accept: "image/webp,image/avif,image/jpeg,image/png,image/*,*/*",
+        Referer: `${targetUrl.protocol}//${targetUrl.hostname}/`,
       },
       redirect: "follow",
     });
