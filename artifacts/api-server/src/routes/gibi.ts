@@ -33,6 +33,7 @@ interface ComicResultData {
   nota?: string;
   balloon_text?: string;
   imagem_url?: string;
+  drive_url?: string;
   relatedResults?: ComicResultData[];
 }
 
@@ -54,6 +55,7 @@ function buildResult(data: ComicResultData, id: string, searchType: string, imag
     balloon_text: data.balloon_text || "",
     images: coverImages,
     search_type: searchType,
+    drive_url: data.drive_url || null,
     created_at: new Date().toISOString(),
   };
 }
