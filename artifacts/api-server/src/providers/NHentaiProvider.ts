@@ -58,36 +58,40 @@ export class NHentaiProvider implements Provider {
     return res.text();
   }
 
+  private parseGalleryCards(html: string): SearchResult[] {
+    const results: SearchResult[] = [];
+    const seen = new Set<string>();
+    const blocks = html.match(/<div[^>]+class=["'][^"']*gallery[^"']*["'][\s\S]*?<\/a>\s*<\/div>/gi) || [];
+
+    for (const block of blocks) {
+      const idMatch = block.match(/href=["']\/g\/(\d+)\/?["']/i);
+      if (!idMatch || seen.has(idMatch[1])) continue;
+
+      const titleMatch = block.match(/<div[^>]+class=["'][^"']*caption[^"']*["'][^>]*>([\s\S]*?)<\/div>/i) ||
+        block.match(/<img[^>]+alt=["']([^"']+)["']/i);
+      const coverMatch = block.match(/<img[^>]+src=["']([^"']+)["']/i);
+      const title = this.decodeHtml((titleMatch?.[1] || `nHentai #${idMatch[1]}`).replace(/<[^>]*>/g, ""));
+
+      seen.add(idMatch[1]);
+      results.push({
+        id: idMatch[1],
+        title,
+        description: `Disponivel no ${this.name}.`,
+        coverUrl: coverMatch ? this.resolveUrl(coverMatch[1]) : undefined,
+        providerId: this.id,
+        genres: ["Hentai", "Doujinshi"]
+      });
+    }
+
+    return results;
+  }
+
   async search(query: string): Promise<SearchResult[]> {
     try {
       const url = new URL("search/", this.baseUrl);
       url.searchParams.set("q", query);
       const html = await this.fetchHtml(url.toString());
-      const results: SearchResult[] = [];
-      const seen = new Set<string>();
-      const blocks = html.match(/<div[^>]+class=["'][^"']*gallery[^"']*["'][\s\S]*?<\/a>\s*<\/div>/gi) || [];
-
-      for (const block of blocks) {
-        const idMatch = block.match(/href=["']\/g\/(\d+)\/?["']/i);
-        if (!idMatch || seen.has(idMatch[1])) continue;
-
-        const titleMatch = block.match(/<div[^>]+class=["'][^"']*caption[^"']*["'][^>]*>([\s\S]*?)<\/div>/i) ||
-          block.match(/<img[^>]+alt=["']([^"']+)["']/i);
-        const coverMatch = block.match(/<img[^>]+src=["']([^"']+)["']/i);
-        const title = this.decodeHtml((titleMatch?.[1] || `nHentai #${idMatch[1]}`).replace(/<[^>]*>/g, ""));
-
-        seen.add(idMatch[1]);
-        results.push({
-          id: idMatch[1],
-          title,
-          description: `Disponivel no ${this.name}.`,
-          coverUrl: coverMatch ? this.resolveUrl(coverMatch[1]) : undefined,
-          providerId: this.id,
-          genres: ["Hentai", "Doujinshi"]
-        });
-      }
-
-      return results;
+      return this.parseGalleryCards(html);
     } catch (err) {
       console.error("nHentai search failed:", err);
       return [];
@@ -156,7 +160,14 @@ export class NHentaiProvider implements Provider {
     }
   }
 
-  async getCatalog(_listType: "popular" | "latest"): Promise<SearchResult[]> {
-    return [];
+  async getCatalog(listType: "popular" | "latest"): Promise<SearchResult[]> {
+    try {
+      const path = listType === "popular" ? "popular" : "language/english/";
+      const html = await this.fetchHtml(new URL(path, this.baseUrl).toString());
+      return this.parseGalleryCards(html);
+    } catch (err) {
+      console.error("nHentai catalog failed:", err);
+      return [];
+    }
   }
 }
