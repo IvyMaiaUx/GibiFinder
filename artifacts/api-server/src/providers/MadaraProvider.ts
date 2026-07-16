@@ -76,7 +76,7 @@ export class MadaraProvider implements Provider {
   }
 
   private isDownloadCatalogOnly(): boolean {
-    return this.baseUrl.includes("multiversohq.com") || this.baseUrl.includes("jondomingues.com");
+    return this.baseUrl.includes("jondomingues.com");
   }
 
   private getContentUrl(id: string): string {

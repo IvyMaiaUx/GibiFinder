@@ -133,13 +133,6 @@
     "active": true
   },
   {
-    "id": "multiverso-hq",
-    "name": "Multiverso HQ",
-    "language": "pt",
-    "baseUrl": "https://multiversohq.com/",
-    "active": true
-  },
-  {
     "id": "jon-domingues",
     "name": "Jon Domingues",
     "language": "pt",
