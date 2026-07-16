@@ -283,6 +283,49 @@ function extractImageCandidates(html: string, baseUrl: string) {
   return images;
 }
 
+function isDecorativeImage(url: string) {
+  return /logo|favicon|social|share|avatar|banner|placeholder|removebg|cropped-|icon|ads?\//i.test(url);
+}
+
+function getReadingEvidence(html: string, images: Array<{ url: string; selector: string }>) {
+  const usefulImages = images.filter(image => !isDecorativeImage(image.url));
+  const sequentialImages = usefulImages.filter(image =>
+    /(?:page|pagina|p[._-]?\d{1,3}|\/\d{1,3}\.(?:jpg|jpeg|png|webp)|-\d{1,3}\.(?:jpg|jpeg|png|webp))/i.test(image.url)
+  ).length;
+  const readingSelectors = [
+    "reading-content",
+    "chapter-content",
+    "entry-content",
+    "post-content",
+    "comicpic",
+    "page-break",
+    "reader",
+    "chapter"
+  ].filter(term => new RegExp(term, "i").test(html));
+  const chapterLinks = (html.match(/<a[^>]+href=["'][^"']*(?:chapter|capitulo|capitulo-|ler-online|read-online|issue|volume|\/\d+\/)[^"']*["']/gi) || []).length;
+  const likelyReadingImages = usefulImages.filter(image =>
+    /reading|chapter|reader|page|comic|manga|wp-manga/i.test(image.selector) ||
+    /(?:page|pagina|chapter|capitulo|scan|\/(?:chapters?|capitulos?|pages?)\/)/i.test(image.url)
+  ).length;
+  const score = [
+    usefulImages.length >= 3,
+    usefulImages.length >= 8,
+    sequentialImages >= 3,
+    readingSelectors.length > 0,
+    chapterLinks > 0,
+    likelyReadingImages >= 3
+  ].filter(Boolean).length;
+
+  return {
+    score,
+    usefulImages: usefulImages.length,
+    sequentialImages,
+    readingSelectors,
+    chapterLinks,
+    likelyReadingImages
+  };
+}
+
 function countSelectorImages(html: string, selector: string, blockRegex: RegExp) {
   const blocks: string[] = html.match(blockRegex) || [];
   const count = blocks.reduce<number>((sum, block) => sum + (block.match(/<img[^>]+>/gi)?.length || 0), 0);
@@ -446,17 +489,22 @@ router.get("/providers/inspect", async (req: Request, res: Response) => {
     const readableImageCount = imageAccess.filter(image => image.ok).length;
     const directImageCount = imageAccess.filter(image => image.ok && image.accessMode === "direct").length;
     const refererImageCount = imageAccess.filter(image => image.ok && image.accessMode === "referer").length;
+    const readingEvidence = getReadingEvidence(html, images);
     const detectedHtmlEngine = detectHtmlEngine(origin, html);
     const suggestedEngine = wpPostsAvailable ? "wordpress-comic" : detectedHtmlEngine || (selectorCandidates.length > 0 ? "generic-html" : "manual");
     const namespaces = Array.isArray(wpJson?.namespaces) ? wpJson.namespaces : [];
     const hasWordPressHtmlSignals = /wp-content|wp-includes/i.test(html) && /wp-json|wp-embed|wordpress/i.test(html);
     const wordpressDetected = namespaces.includes("wp/v2") || hasWordPressHtmlSignals;
     const needsImageProxy = readableImageCount > 0 && directImageCount === 0;
-    const canReadInsideGibiFinder = directImageCount > 0 && (wpPostsAvailable || selectorCandidates.length > 0 || Boolean(detectedHtmlEngine));
+    const hasReadingEvidence = readingEvidence.score >= 3;
+    const weakReadingEvidence = readingEvidence.score > 0 || readingEvidence.usefulImages > 1;
+    const canReadInsideGibiFinder = directImageCount > 0 && hasReadingEvidence && (wpPostsAvailable || selectorCandidates.length > 0 || Boolean(detectedHtmlEngine));
     const verdict = canReadInsideGibiFinder
       ? "readable_provider"
       : needsImageProxy
         ? "needs_image_proxy"
+      : pageRes.ok && (weakReadingEvidence || wpPostsAvailable || selectorCandidates.length > 0)
+        ? "needs_chapter_test"
       : pageRes.ok && !cloudflare && images.length === 0
         ? "catalog_or_external_only"
         : "manual_or_blocked";
@@ -481,12 +529,14 @@ router.get("/providers/inspect", async (req: Request, res: Response) => {
       images: {
         totalFound: images.length,
         uniqueFound: unique(images.map(image => image.url)).length,
+        usefulFound: readingEvidence.usefulImages,
         accessibleInSample: readableImageCount,
         directInSample: directImageCount,
         refererOnlyInSample: refererImageCount,
         needsProxy: needsImageProxy,
         sample: imageAccess
       },
+      readingEvidence,
       selectorCandidates,
       verdict,
       canReadInsideGibiFinder,
@@ -495,8 +545,8 @@ router.get("/providers/inspect", async (req: Request, res: Response) => {
         pageRes.ok,
         !cloudflare,
         wpPostsAvailable || selectorCandidates.length > 0,
-        images.length > 0,
-        readableImageCount > 0
+        readingEvidence.score >= 2,
+        readableImageCount > 0 && readingEvidence.score >= 3
       ].filter(Boolean).length
     });
   } catch (err) {

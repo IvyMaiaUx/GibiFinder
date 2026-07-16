@@ -17,7 +17,7 @@ interface InspectResult {
   cloudflare: boolean;
   suggestedEngine: string;
   integrationScore: number;
-  verdict?: "readable_provider" | "needs_image_proxy" | "catalog_or_external_only" | "manual_or_blocked";
+  verdict?: "readable_provider" | "needs_image_proxy" | "needs_chapter_test" | "catalog_or_external_only" | "manual_or_blocked";
   canReadInsideGibiFinder?: boolean;
   wordpress: {
     detected: boolean;
@@ -31,6 +31,7 @@ interface InspectResult {
   images: {
     totalFound: number;
     uniqueFound: number;
+    usefulFound?: number;
     accessibleInSample: number;
     directInSample?: number;
     refererOnlyInSample?: number;
@@ -45,6 +46,14 @@ interface InspectResult {
       error?: string;
     }>;
   };
+  readingEvidence?: {
+    score: number;
+    usefulImages: number;
+    sequentialImages: number;
+    readingSelectors: string[];
+    chapterLinks: number;
+    likelyReadingImages: number;
+  };
   selectorCandidates: Array<{ selector: string; count: number }>;
 }
 
@@ -58,6 +67,11 @@ const VERDICT_COPY: Record<string, { title: string; description: string; tone: s
     title: "Precisa proxy de imagem",
     description: "As imagens existem, mas dependem de Referer/hotlink. O provider precisa servir as imagens via backend ou proxy.",
     tone: "bg-cyan-100 text-cyan-950"
+  },
+  needs_chapter_test: {
+    title: "Teste uma pagina de capitulo",
+    description: "A home/catalogo tem sinais uteis, mas ainda nao provou o fluxo HQ -> capitulos -> paginas de leitura.",
+    tone: "bg-amber-100 text-amber-950"
   },
   catalog_or_external_only: {
     title: "Provavelmente só catálogo/link externo",
@@ -253,6 +267,41 @@ export function ProviderInspectorPanel({ initialAdminKey, showBackLink = true }:
               <StatusBadge ok={result.images.accessibleInSample > 0} label={result.images.needsProxy ? "Imagens com referer" : "Imagens acessiveis"} />
             </div>
 
+            {result.readingEvidence && (
+              <div className="border-4 border-black bg-white p-5">
+                <h2 className="font-display text-2xl uppercase text-black">Evidencia de leitura</h2>
+                <div className="mt-3 grid grid-cols-2 sm:grid-cols-6 gap-2 text-center">
+                  <div className="border-2 border-black p-2">
+                    <p className="font-display text-2xl">{result.readingEvidence.score}/6</p>
+                    <p className="font-sans text-2xs font-extrabold uppercase text-gray-500">Score</p>
+                  </div>
+                  <div className="border-2 border-black p-2">
+                    <p className="font-display text-2xl">{result.readingEvidence.usefulImages}</p>
+                    <p className="font-sans text-2xs font-extrabold uppercase text-gray-500">Uteis</p>
+                  </div>
+                  <div className="border-2 border-black p-2">
+                    <p className="font-display text-2xl">{result.readingEvidence.sequentialImages}</p>
+                    <p className="font-sans text-2xs font-extrabold uppercase text-gray-500">Sequenciais</p>
+                  </div>
+                  <div className="border-2 border-black p-2">
+                    <p className="font-display text-2xl">{result.readingEvidence.readingSelectors.length}</p>
+                    <p className="font-sans text-2xs font-extrabold uppercase text-gray-500">Seletores</p>
+                  </div>
+                  <div className="border-2 border-black p-2">
+                    <p className="font-display text-2xl">{result.readingEvidence.chapterLinks}</p>
+                    <p className="font-sans text-2xs font-extrabold uppercase text-gray-500">Links cap.</p>
+                  </div>
+                  <div className="border-2 border-black p-2">
+                    <p className="font-display text-2xl">{result.readingEvidence.likelyReadingImages}</p>
+                    <p className="font-sans text-2xs font-extrabold uppercase text-gray-500">Provaveis</p>
+                  </div>
+                </div>
+                <p className="mt-3 font-sans text-xs font-bold text-gray-500">
+                  Para provar leitura, procure score alto em uma URL de capitulo/reader. Home com capa/logo costuma ficar baixo.
+                </p>
+              </div>
+            )}
+
             {result.wordpress.detected && (
               <div className="border-4 border-black bg-white p-5">
                 <h2 className="font-display text-2xl uppercase text-black">WordPress</h2>
@@ -282,7 +331,7 @@ export function ProviderInspectorPanel({ initialAdminKey, showBackLink = true }:
 
               <div className="border-4 border-black bg-white p-5">
                 <h2 className="font-display text-2xl uppercase text-black">Imagens</h2>
-                <div className="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
+                <div className="mt-3 grid grid-cols-2 sm:grid-cols-6 gap-2 text-center">
                   <div className="border-2 border-black p-2">
                     <p className="font-display text-2xl">{result.images.totalFound}</p>
                     <p className="font-sans text-2xs font-extrabold uppercase text-gray-500">Encontradas</p>
@@ -290,6 +339,10 @@ export function ProviderInspectorPanel({ initialAdminKey, showBackLink = true }:
                   <div className="border-2 border-black p-2">
                     <p className="font-display text-2xl">{result.images.uniqueFound}</p>
                     <p className="font-sans text-2xs font-extrabold uppercase text-gray-500">Unicas</p>
+                  </div>
+                  <div className="border-2 border-black p-2">
+                    <p className="font-display text-2xl">{result.images.usefulFound ?? result.images.uniqueFound}</p>
+                    <p className="font-sans text-2xs font-extrabold uppercase text-gray-500">Uteis</p>
                   </div>
                   <div className="border-2 border-black p-2">
                     <p className="font-display text-2xl">{result.images.accessibleInSample}</p>
