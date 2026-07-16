@@ -15,6 +15,19 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 // ✏️  Troque pelo seu ID de afiliado real da Amazon Brasil
 const AMAZON_TAG = import.meta.env.VITE_AMAZON_TAG || "gibifinder-20";
 
+function getGoogleDriveEmbedUrl(driveUrl?: string): string | null {
+  if (!driveUrl) return null;
+  const matchD = driveUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (matchD && matchD[1]) {
+    return `https://drive.google.com/file/d/${matchD[1]}/preview`;
+  }
+  const matchId = driveUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (matchId && matchId[1]) {
+    return `https://drive.google.com/file/d/${matchId[1]}/preview`;
+  }
+  return null;
+}
+
 export default function ResultDetail() {
   const [, params] = useRoute("/gibi/:id");
   const id = params?.id || "";
@@ -298,17 +311,42 @@ export default function ResultDetail() {
               </button>
             </div>
 
-            {detailTab === "read" && (
-              <div className="space-y-12 animate-in fade-in duration-200">
-                <ComicCard result={resultData as any} isMain />
-                
-                <MangaDexReader 
-                  mangaTitle={(resultData as any).revista || (resultData as any).titulo || ""} 
-                  coverUrl={(resultData as any).coverUrl || (resultData as any).images?.[0]} 
-                  description={(resultData as any).sinopse || (resultData as any).description}
-                />
-              </div>
-            )}
+            {detailTab === "read" && (() => {
+              const driveEmbedUrl = (resultData as any)?.drive_url ? getGoogleDriveEmbedUrl((resultData as any).drive_url) : null;
+              return (
+                <div className="space-y-12 animate-in fade-in duration-200">
+                  <ComicCard result={resultData as any} isMain />
+                  
+                  {driveEmbedUrl ? (
+                    <div className="space-y-6">
+                      <div className="bg-white p-4 border-4 border-black rounded-xl comic-shadow">
+                        <h3 className="font-display text-2xl text-black uppercase flex items-center gap-2">
+                          📖 LEITOR GIBI-FINDER (PDF)
+                        </h3>
+                        <p className="font-sans font-bold text-gray-600 text-sm mt-1">
+                          Este quadrinho está disponível na nossa coleção local. Aproveite a leitura!
+                        </p>
+                      </div>
+                      
+                      <div className="border-4 border-black rounded-xl overflow-hidden comic-shadow bg-zinc-900 aspect-[3/4] sm:aspect-video w-full h-[600px] md:h-[800px]">
+                        <iframe 
+                          src={driveEmbedUrl}
+                          className="w-full h-full border-0"
+                          allow="autoplay"
+                          title={(resultData as any).titulo || "Leitor de PDF"}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <MangaDexReader 
+                      mangaTitle={(resultData as any).revista || (resultData as any).titulo || ""} 
+                      coverUrl={(resultData as any).coverUrl || (resultData as any).images?.[0]} 
+                      description={(resultData as any).sinopse || (resultData as any).description}
+                    />
+                  )}
+                </div>
+              );
+            })()}
 
             {detailTab === "buy" && (() => {
               const mangaTitle = (resultData as any).revista || (resultData as any).titulo || initialTitle || "";

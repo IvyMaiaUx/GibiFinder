@@ -5,6 +5,19 @@ export class MangaDexProvider implements Provider {
   name = "MangaDex";
   language = "multi";
 
+  private extractPtDescription(descMap: any): string {
+    if (!descMap) return "";
+    const keys = Object.keys(descMap);
+    const ptKey = keys.find(k => k.toLowerCase() === "pt-br" || k.toLowerCase() === "pt");
+    if (ptKey && descMap[ptKey]) return descMap[ptKey];
+    const ptAnyKey = keys.find(k => k.toLowerCase().includes("pt"));
+    if (ptAnyKey && descMap[ptAnyKey]) return descMap[ptAnyKey];
+    const enKey = keys.find(k => k.toLowerCase() === "en");
+    if (enKey && descMap[enKey]) return descMap[enKey];
+    const firstVal = Object.values(descMap)[0];
+    return typeof firstVal === "string" ? firstVal : "";
+  }
+
   private extractGenres(item: any): string[] {
     const tags = item.attributes?.tags || [];
     const translationMap: Record<string, string> = {
@@ -57,7 +70,7 @@ export class MangaDexProvider implements Provider {
         const titleMap = item.attributes?.title || {};
         const title = titleMap.en || titleMap.ja || (Object.values(titleMap).length > 0 ? Object.values(titleMap)[0] : "Sem título");
         const descMap = item.attributes?.description || {};
-        const description = descMap["pt-br"] || descMap.pt || descMap.en || (Object.values(descMap).length > 0 ? Object.values(descMap)[0] : "");
+        const description = this.extractPtDescription(descMap);
         
         const coverRel = item.relationships.find((r: any) => r.type === "cover_art");
         const coverFileName = coverRel?.attributes?.fileName;
@@ -91,7 +104,7 @@ export class MangaDexProvider implements Provider {
     const titleMap = item.attributes?.title || {};
     const title = titleMap.en || titleMap.ja || (Object.values(titleMap).length > 0 ? Object.values(titleMap)[0] : "Sem título");
     const descMap = item.attributes?.description || {};
-    const description = descMap["pt-br"] || descMap.pt || descMap.en || (Object.values(descMap).length > 0 ? Object.values(descMap)[0] : "");
+    const description = this.extractPtDescription(descMap);
     
     const coverRel = item.relationships.find((r: any) => r.type === "cover_art");
     const coverFileName = coverRel?.attributes?.fileName;
