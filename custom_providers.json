@@ -141,10 +141,19 @@
     "active": true
   },
   {
+    "id": "multiverso-hq",
+    "name": "Multiverso HQ",
+    "language": "pt",
+    "baseUrl": "https://multiversohq.com/",
+    "engine": "wordpress-comic",
+    "active": true
+  },
+  {
     "id": "batcave",
     "name": "Batcave",
     "language": "pt",
     "baseUrl": "https://batcave.biz/",
+    "engine": "wordpress-comic",
     "active": true
   }
 ]

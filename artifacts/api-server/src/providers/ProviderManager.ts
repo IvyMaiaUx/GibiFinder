@@ -195,9 +195,9 @@ export class ProviderManager {
       name: p.name,
       language: p.language,
       active: this.activeStates.get(p.id) === true,
-      isCustom: p instanceof MadaraProvider,
-      engine: p instanceof MadaraProvider ? "Madara/WordPress" : "Nativo",
-      baseUrl: p instanceof MadaraProvider ? (p as MadaraProvider).baseUrl : undefined
+      isCustom: p instanceof MadaraProvider || p instanceof WordPressComicProvider,
+      engine: p instanceof WordPressComicProvider ? "WordPress Comic" : p instanceof MadaraProvider ? "Madara/WordPress" : "Nativo",
+      baseUrl: p instanceof MadaraProvider || p instanceof WordPressComicProvider ? p.baseUrl : undefined
     }));
   }
 
