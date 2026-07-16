@@ -61,5 +61,47 @@
     "language": "pt",
     "baseUrl": "https://sombrasdehentai.com/",
     "active": true
+  },
+  {
+    "id": "mega-hentai",
+    "name": "MegaHentai",
+    "language": "pt",
+    "baseUrl": "https://megahentai.biz/",
+    "active": true
+  },
+  {
+    "id": "mangago",
+    "name": "Mangago",
+    "language": "en",
+    "baseUrl": "https://mangago.me/",
+    "active": true
+  },
+  {
+    "id": "insta-hentai",
+    "name": "InstaHentai",
+    "language": "pt",
+    "baseUrl": "http://instahentai.com/",
+    "active": true
+  },
+  {
+    "id": "hentai-fox",
+    "name": "HentaiFox",
+    "language": "en",
+    "baseUrl": "https://hentaifox.com/",
+    "active": true
+  },
+  {
+    "id": "toonily",
+    "name": "Toonily",
+    "language": "en",
+    "baseUrl": "https://toonily.com/",
+    "active": true
+  },
+  {
+    "id": "hentai2read",
+    "name": "Hentai2Read",
+    "language": "en",
+    "baseUrl": "https://hentai2read.com/",
+    "active": true
   }
 ]

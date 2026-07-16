@@ -43,7 +43,7 @@ export class MadaraProvider implements Provider {
     try {
       const parsed = new URL(this.decodeHtml(url), this.baseUrl);
       const path = parsed.pathname.replace(/^\/+|\/+$/g, "");
-      if (!path || path.startsWith("categoria/") || path.startsWith("category/") || path.startsWith("tag/")) {
+      if (!path || path.startsWith("categoria/") || path.startsWith("category/") || path.startsWith("tag/") || path.startsWith("search/")) {
         return null;
       }
       return `post:${path}`;
@@ -176,10 +176,14 @@ export class MadaraProvider implements Provider {
   private parseGenericWordPressSearch(html: string): SearchResult[] {
     const results: SearchResult[] = [];
     const seen = new Set<string>();
-    const blocks = html.match(/<li\b[\s\S]*?<\/li>/gi) || html.match(/<article\b[\s\S]*?<\/article>/gi) || [];
+    const blocks = [
+      ...(html.match(/<article\b[\s\S]*?<\/article>/gi) || []),
+      ...(html.match(/<li\b[\s\S]*?<\/li>/gi) || [])
+    ];
 
     for (const block of blocks) {
       const titleLink = block.match(/<a[^>]+class=["'][^"']*(?:titulo|title|entry-title)[^"']*["'][^>]+href=["']([^"']+)["'][^>]*title=["']([^"']+)["'][\s\S]*?<\/a>/i) ||
+        block.match(/<a[^>]+href=["']([^"']+)["'][^>]*(?:aria-label|title)=["']([^"']+)["'][\s\S]*?<\/a>/i) ||
         block.match(/<a[^>]+href=["']([^"']+)["'][^>]*title=["']([^"']+)["'][\s\S]*?<h[1-3][^>]*>/i) ||
         block.match(/<h[1-3][^>]*>[\s\S]*?<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
 
@@ -207,13 +211,46 @@ export class MadaraProvider implements Provider {
     return results;
   }
 
+  private parseHentaiFoxSearch(html: string): SearchResult[] {
+    const results: SearchResult[] = [];
+    const seen = new Set<string>();
+    const matches = html.matchAll(/<div[^>]+class=["'][^"']*thumb[^"']*["'][\s\S]*?<a[^>]+href=["']([^"']*\/gallery\/\d+\/?)["'][\s\S]*?<img[^>]+(?:data-src|src)=["']([^"']+)["'][\s\S]*?<h2[^>]+class=["'][^"']*g_title[^"']*["'][\s\S]*?<a[^>]+href=["'][^"']*\/gallery\/\d+\/?["'][^>]*>([\s\S]*?)<\/a>/gi);
+
+    for (const match of matches) {
+      const id = this.toGenericId(match[1]);
+      if (!id || seen.has(id)) continue;
+
+      const title = this.decodeHtml(match[3].replace(/<[^>]*>/g, ""));
+      if (!title) continue;
+
+      seen.add(id);
+      results.push({
+        id,
+        title,
+        description: `Disponivel no portal ${this.name}.`,
+        coverUrl: this.resolveUrl(match[2]) || undefined,
+        providerId: this.id,
+        genres: ["Hentai"]
+      });
+    }
+
+    return results;
+  }
+
   private parseSearchResults(html: string): SearchResult[] {
     const madaraResults = this.parseMadaraSearch(html);
     if (madaraResults.length > 0) return madaraResults;
-    return this.parseGenericWordPressSearch(html);
+    const genericResults = this.parseGenericWordPressSearch(html);
+    if (genericResults.length > 0) return genericResults;
+    return this.parseHentaiFoxSearch(html);
   }
 
   private getSearchUrl(query: string, page: number): string {
+    if (this.baseUrl.includes("hentaifox.com")) {
+      const suffix = page <= 1 ? "" : `${page}/`;
+      return new URL(`search/${encodeURIComponent(query)}/${suffix}`, this.baseUrl).toString();
+    }
+
     if (page <= 1) {
       return `${this.baseUrl}?s=${encodeURIComponent(query)}&post_type=wp-manga`;
     }
@@ -237,6 +274,10 @@ export class MadaraProvider implements Provider {
 
   async search(query: string): Promise<SearchResult[]> {
     try {
+      if (this.baseUrl.includes("hentai2read.com")) {
+        return [];
+      }
+
       const results = new Map<string, SearchResult>();
       let pageLimit = 1;
 
@@ -371,6 +412,14 @@ export class MadaraProvider implements Provider {
       const res = await fetch(this.getContentUrl(chapterId), { headers: BROWSER_HEADERS });
       if (!res.ok) throw new Error(`Pages status: ${res.status}`);
       const html = await res.text();
+
+      const hentaiFoxThumbs = Array.from(html.matchAll(/data-src=["'](https?:\/\/[^"']+\/(\d+)t\.(?:webp|jpe?g|png))["']/gi));
+      if (hentaiFoxThumbs.length > 0) {
+        return hentaiFoxThumbs.map((match, index) => ({
+          url: match[1].replace(/(\d+)t(\.(?:webp|jpe?g|png))$/i, "$1$2"),
+          pageNumber: index + 1
+        }));
+      }
 
       const extractedPageUrls = this.collectPageUrls(html);
       if (extractedPageUrls.length > 0) {

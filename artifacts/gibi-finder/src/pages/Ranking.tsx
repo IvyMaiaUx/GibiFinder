@@ -46,7 +46,7 @@ export default function Ranking() {
       const data = await res.json() as UnifiedCatalogItem[];
       
       const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
-      const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
+      const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "insta-hentai", "mega-hentai", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
       const filtered = data.filter(item => {
         const isAdult = item.isAdult ||
                         item.sources?.some(s => ADULT_PROVIDERS.includes(s.providerId)) ||

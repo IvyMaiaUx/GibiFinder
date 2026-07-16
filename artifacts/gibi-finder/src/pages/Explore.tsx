@@ -22,7 +22,7 @@ interface UnifiedCatalogItem {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const ITEMS_PER_PAGE = 20;
-const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
+const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "insta-hentai", "mega-hentai", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
 
 const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
 

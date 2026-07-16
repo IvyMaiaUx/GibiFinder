@@ -23,6 +23,10 @@ export class ProviderManager {
   private static adultProviderIds = new Set([
     "eightmuses",
     "hentai-home",
+    "hentai-fox",
+    "hentai2read",
+    "insta-hentai",
+    "mega-hentai",
     "universo-hentai",
     "hentai-teca",
     "sombras-de-hentai"
