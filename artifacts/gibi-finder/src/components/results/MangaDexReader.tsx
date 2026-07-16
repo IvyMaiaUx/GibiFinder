@@ -404,6 +404,11 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
     return true;
   });
 
+  // Calculate next and previous chapters in sequence
+  const currentChapterIndex = filteredChapters.findIndex(ch => ch.id === selectedChapter?.id);
+  const nextChapter = currentChapterIndex > -1 && currentChapterIndex < filteredChapters.length - 1 ? filteredChapters[currentChapterIndex + 1] : null;
+  const prevChapter = currentChapterIndex > 0 ? filteredChapters[currentChapterIndex - 1] : null;
+
   return (
     <div className="bg-white border-4 border-black p-6 rounded-xl comic-shadow relative overflow-hidden">
       {/* Background decoration */}
@@ -761,7 +766,46 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
                   <h4 className="font-display text-base md:text-xl leading-none line-clamp-1 max-w-[120px] sm:max-w-xs md:max-w-md" title={selectedResult?.title || mangaTitle}>
                     {selectedResult?.title || mangaTitle}
                   </h4>
-                  <p className="font-sans text-2xs sm:text-xs font-bold text-gray-400 mt-1">Capítulo {selectedChapter.chapterNum} · {currentPage + 1} / {pages.length}</p>
+                  <div className="flex items-center gap-1 mt-1 flex-wrap">
+                    <button
+                      disabled={!prevChapter}
+                      onClick={() => prevChapter && readChapter(prevChapter)}
+                      className="text-gray-400 hover:text-white disabled:opacity-20 transition-colors"
+                      title="Capítulo Anterior"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    
+                    {filteredChapters.length > 0 ? (
+                      <select
+                        value={selectedChapter?.id}
+                        onChange={(e) => {
+                          const targetCh = filteredChapters.find(ch => ch.id === e.target.value);
+                          if (targetCh) readChapter(targetCh);
+                        }}
+                        className="bg-zinc-800 text-white font-sans text-2xs sm:text-xs font-bold border border-white/20 px-1 py-0.5 rounded outline-none cursor-pointer max-w-[90px] sm:max-w-[140px] truncate"
+                      >
+                        {filteredChapters.map(ch => (
+                          <option key={ch.id} value={ch.id}>
+                            Cap. {ch.chapterNum}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="font-sans text-2xs sm:text-xs font-bold text-gray-400">Cap. {selectedChapter?.chapterNum}</span>
+                    )}
+                    
+                    <button
+                      disabled={!nextChapter}
+                      onClick={() => nextChapter && readChapter(nextChapter)}
+                      className="text-gray-400 hover:text-white disabled:opacity-20 transition-colors"
+                      title="Próximo Capítulo"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+
+                    <span className="font-sans text-2xs sm:text-xs font-bold text-gray-400 ml-1">· {currentPage + 1}/{pages.length}</span>
+                  </div>
                 </div>
               </div>
 
@@ -830,6 +874,31 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
                     </div>
                   </div>
                 ))}
+                
+                {/* Next/Prev Chapter Navigation at the bottom of cascade */}
+                <div className="w-full pt-8 pb-4 border-t-2 border-dashed border-white/20 flex flex-col sm:flex-row justify-between items-center gap-4">
+                  {prevChapter ? (
+                    <button
+                      onClick={() => readChapter(prevChapter)}
+                      className="w-full sm:w-auto bg-zinc-800 hover:bg-zinc-700 text-white border border-white/20 px-6 py-2.5 rounded font-sans font-bold text-sm flex items-center justify-center gap-2 transition-all"
+                    >
+                      <ChevronLeft className="w-4 h-4" /> ANTERIOR: CAP. {prevChapter.chapterNum}
+                    </button>
+                  ) : <div />}
+                  
+                  {nextChapter ? (
+                    <button
+                      onClick={() => readChapter(nextChapter)}
+                      className="w-full sm:w-auto bg-primary hover:bg-yellow-500 text-white border border-white/20 px-8 py-3 rounded font-display text-base flex items-center justify-center gap-2 transition-all hover:scale-105 shadow-[0_0_15px_rgba(253,224,71,0.2)] animate-pulse"
+                    >
+                      SEGUINTE: CAP. {nextChapter.chapterNum} <ChevronRight className="w-5 h-5" />
+                    </button>
+                  ) : (
+                    <div className="text-gray-400 font-sans font-bold text-sm">
+                      Fim da obra no provedor selecionado.
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               /* Page by Page Mode */
@@ -840,9 +909,19 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
                     const rect = e.currentTarget.getBoundingClientRect();
                     const x = e.clientX - rect.left;
                     if (x > rect.width / 2) {
-                      if (currentPage < pages.length - 1) setCurrentPage(currentPage + 1);
+                      if (currentPage < pages.length - 1) {
+                        setCurrentPage(currentPage + 1);
+                      } else if (nextChapter) {
+                        // Switch to next chapter if on last page and clicked right half
+                        readChapter(nextChapter);
+                      }
                     } else {
-                      if (currentPage > 0) setCurrentPage(currentPage - 1);
+                      if (currentPage > 0) {
+                        setCurrentPage(currentPage - 1);
+                      } else if (prevChapter) {
+                        // Switch to prev chapter if on first page and clicked left half
+                        readChapter(prevChapter);
+                      }
                     }
                   }}
                 >
@@ -864,24 +943,46 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
 
                 {/* Page Navigation Controls */}
                 {!isFullscreen && (
-                  <div className="flex items-center gap-6 bg-zinc-900 px-6 py-3 rounded-full border-2 border-white/20 select-none animate-in fade-in slide-in-from-bottom duration-200">
-                    <button
-                      disabled={currentPage === 0}
-                      onClick={() => setCurrentPage(currentPage - 1)}
-                      className="text-white hover:text-secondary disabled:opacity-30 disabled:hover:text-white"
-                    >
-                      <ChevronLeft className="w-8 h-8" strokeWidth={3} />
-                    </button>
-                    <span className="font-display text-xl text-white">
-                      Pág. {pages[currentPage]?.pageNumber} / {pages.length}
-                    </span>
-                    <button
-                      disabled={currentPage === pages.length - 1}
-                      onClick={() => setCurrentPage(currentPage + 1)}
-                      className="text-white hover:text-secondary disabled:opacity-30 disabled:hover:text-white"
-                    >
-                      <ChevronRight className="w-8 h-8" strokeWidth={3} />
-                    </button>
+                  <div className="flex flex-col items-center gap-2 select-none w-full">
+                    <div className="flex items-center gap-6 bg-zinc-900 px-6 py-3 rounded-full border-2 border-white/20 animate-in fade-in slide-in-from-bottom duration-200">
+                      <button
+                        disabled={currentPage === 0 && !prevChapter}
+                        onClick={() => {
+                          if (currentPage > 0) {
+                            setCurrentPage(currentPage - 1);
+                          } else if (prevChapter) {
+                            readChapter(prevChapter);
+                          }
+                        }}
+                        className="text-white hover:text-secondary disabled:opacity-30 disabled:hover:text-white"
+                      >
+                        <ChevronLeft className="w-8 h-8" strokeWidth={3} />
+                      </button>
+                      <span className="font-display text-xl text-white">
+                        Pág. {pages[currentPage]?.pageNumber} / {pages.length}
+                      </span>
+                      <button
+                        disabled={currentPage === pages.length - 1 && !nextChapter}
+                        onClick={() => {
+                          if (currentPage < pages.length - 1) {
+                            setCurrentPage(currentPage + 1);
+                          } else if (nextChapter) {
+                            readChapter(nextChapter);
+                          }
+                        }}
+                        className="text-white hover:text-secondary disabled:opacity-30 disabled:hover:text-white"
+                      >
+                        <ChevronRight className="w-8 h-8" strokeWidth={3} />
+                      </button>
+                    </div>
+                    {currentPage === pages.length - 1 && nextChapter && (
+                      <button
+                        onClick={() => readChapter(nextChapter)}
+                        className="bg-primary hover:bg-yellow-500 text-black text-xs px-4 py-2 border-2 border-black rounded font-display tracking-wide uppercase transition-all shadow-[2px_2px_0_rgba(255,255,255,0.2)]"
+                      >
+                        SEGUINTE: CAP. {nextChapter.chapterNum} ➔
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
