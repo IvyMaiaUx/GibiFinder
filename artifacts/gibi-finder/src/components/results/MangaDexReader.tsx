@@ -279,6 +279,12 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
         setShowReader(true);
         setIsFullscreen(true);
 
+        try {
+          const newUrl = new URL(window.location.href);
+          newUrl.searchParams.delete("resume");
+          window.history.replaceState({}, "", newUrl.toString());
+        } catch {}
+
         // Try to trigger native browser fullscreen after mount
         setTimeout(() => {
           const element = readerRef.current;
@@ -329,8 +335,14 @@ export function MangaDexReader({ mangaTitle, coverUrl, description }: MangaDexRe
       const pId = searchParams.get("providerId") || "";
       const mId = searchParams.get("id") || "";
       
-      const lookupKey = selectedResult?.id || mId || mangaTitle;
-      const prog = allProgress[lookupKey];
+      let prog = Object.values(allProgress).find(
+        (p: any) => p && p.mangaId === mId && p.providerId === pId
+      ) as any;
+
+      if (!prog) {
+        const lookupKey = selectedResult?.id || mId || mangaTitle;
+        prog = allProgress[lookupKey];
+      }
       
       if (prog) {
         setLastReadProgress(prog);
