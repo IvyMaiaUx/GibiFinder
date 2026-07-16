@@ -17,6 +17,8 @@ interface InspectResult {
   cloudflare: boolean;
   suggestedEngine: string;
   integrationScore: number;
+  verdict?: "readable_provider" | "catalog_or_external_only" | "manual_or_blocked";
+  canReadInsideGibiFinder?: boolean;
   wordpress: {
     detected: boolean;
     restAvailable: boolean;
@@ -41,6 +43,24 @@ interface InspectResult {
   };
   selectorCandidates: Array<{ selector: string; count: number }>;
 }
+
+const VERDICT_COPY: Record<string, { title: string; description: string; tone: string }> = {
+  readable_provider: {
+    title: "Dá para ler no Gibi Finder",
+    description: "O site mostrou estrutura e imagens acessiveis. Vale criar ou ajustar um provider.",
+    tone: "bg-green-100 text-green-900"
+  },
+  catalog_or_external_only: {
+    title: "Provavelmente só catálogo/link externo",
+    description: "A página abre, mas não mostrou imagens de leitura acessiveis para montar leitor interno.",
+    tone: "bg-amber-100 text-amber-950"
+  },
+  manual_or_blocked: {
+    title: "Precisa investigação manual",
+    description: "Pode ter bloqueio, fluxo dinâmico, login ou uma estrutura que o inspector ainda não reconhece.",
+    tone: "bg-red-100 text-red-900"
+  }
+};
 
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   return (
@@ -78,8 +98,17 @@ export default function ProviderInspector() {
       const res = await fetch(`${BASE}/api/providers/inspect?url=${encodeURIComponent(url)}`, {
         headers: { "x-admin-key": adminKey }
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Falha ao inspecionar URL");
+      const text = await res.text();
+      let data: any = null;
+      if (text.trim()) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error(`A API respondeu ${res.status}, mas nao retornou JSON valido. Confira se a API local esta rodando na porta 8080.`);
+        }
+      }
+      if (!res.ok) throw new Error(data?.message || `Falha ao inspecionar URL (HTTP ${res.status})`);
+      if (!data) throw new Error("A API respondeu sem conteudo. Tente novamente ou confira o log local.");
       setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -159,6 +188,17 @@ export default function ProviderInspector() {
                 <p className="mt-1 font-sans text-xs font-bold text-gray-500">HTTP {result.status} - {result.server || "server desconhecido"}</p>
               </div>
             </div>
+
+            {result.verdict && (
+              <div className={cn("border-4 border-black p-4", VERDICT_COPY[result.verdict]?.tone || "bg-gray-100 text-black")}>
+                <h2 className="font-display text-2xl uppercase">
+                  {VERDICT_COPY[result.verdict]?.title || "Veredito"}
+                </h2>
+                <p className="mt-1 font-sans text-sm font-extrabold">
+                  {VERDICT_COPY[result.verdict]?.description || "Resultado calculado pelo inspector."}
+                </p>
+              </div>
+            )}
 
             <div className="flex flex-wrap gap-2">
               <StatusBadge ok={result.ok} label="Pagina acessivel" />

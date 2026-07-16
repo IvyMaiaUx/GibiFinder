@@ -303,6 +303,16 @@ async function probeImages(images: Array<{ url: string; selector: string }>) {
   }));
 }
 
+async function readJsonIfPossible(res: globalThis.Response) {
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) return null;
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 router.get("/providers/inspect", async (req: Request, res: Response) => {
   const host = req.hostname;
   const forwardedHost = String(req.headers["x-forwarded-host"] || "");
@@ -344,11 +354,13 @@ router.get("/providers/inspect", async (req: Request, res: Response) => {
     let wpError: string | null = null;
     try {
       const wpRes = await fetchWithTimeout(`${origin}/wp-json/`, { headers: INSPECT_HEADERS }, 10000);
-      wpRestAvailable = wpRes.ok;
-      if (wpRes.ok) wpJson = await wpRes.json();
-      if (wpJson?.namespaces?.includes("wp/v2")) {
+      wpJson = wpRes.ok ? await readJsonIfPossible(wpRes) : null;
+      const namespaces = Array.isArray(wpJson?.namespaces) ? wpJson.namespaces : [];
+      wpRestAvailable = wpRes.ok && namespaces.length > 0;
+      if (namespaces.includes("wp/v2")) {
         const postsRes = await fetchWithTimeout(`${origin}/wp-json/wp/v2/posts?per_page=1&_embed=1`, { headers: INSPECT_HEADERS }, 10000);
-        wpPostsAvailable = postsRes.ok;
+        const postsJson = postsRes.ok ? await readJsonIfPossible(postsRes) : null;
+        wpPostsAvailable = postsRes.ok && Array.isArray(postsJson);
       }
     } catch (err) {
       wpError = err instanceof Error ? err.message : String(err);
@@ -369,6 +381,15 @@ router.get("/providers/inspect", async (req: Request, res: Response) => {
     const imageAccess = await probeImages(images);
     const readableImageCount = imageAccess.filter(image => image.ok).length;
     const suggestedEngine = wpPostsAvailable ? "wordpress-comic" : selectorCandidates.length > 0 ? "generic-html" : "manual";
+    const namespaces = Array.isArray(wpJson?.namespaces) ? wpJson.namespaces : [];
+    const hasWordPressHtmlSignals = /wp-content|wp-includes/i.test(html) && /wp-json|wp-embed|wordpress/i.test(html);
+    const wordpressDetected = namespaces.includes("wp/v2") || hasWordPressHtmlSignals;
+    const canReadInsideGibiFinder = readableImageCount > 0 && (wpPostsAvailable || selectorCandidates.length > 0);
+    const verdict = canReadInsideGibiFinder
+      ? "readable_provider"
+      : pageRes.ok && !cloudflare && images.length === 0
+        ? "catalog_or_external_only"
+        : "manual_or_blocked";
 
     res.json({
       url: normalizedTarget,
@@ -379,12 +400,12 @@ router.get("/providers/inspect", async (req: Request, res: Response) => {
       server,
       cloudflare,
       wordpress: {
-        detected: Boolean(wpJson?.namespaces || /wp-content|wp-json/i.test(html)),
+        detected: wordpressDetected,
         restAvailable: wpRestAvailable,
         postsAvailable: wpPostsAvailable,
         name: wpJson?.name,
         description: wpJson?.description,
-        namespaces: wpJson?.namespaces || [],
+        namespaces,
         error: wpError
       },
       images: {
@@ -394,6 +415,8 @@ router.get("/providers/inspect", async (req: Request, res: Response) => {
         sample: imageAccess
       },
       selectorCandidates,
+      verdict,
+      canReadInsideGibiFinder,
       suggestedEngine,
       integrationScore: [
         pageRes.ok,
