@@ -4,33 +4,77 @@ export class ComicExtraProvider implements Provider {
   id = "comicextra";
   name = "ComicExtra";
   language = "en";
+  private baseUrl = "https://www.comicextra.me";
 
   private headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9"
   };
+
+  private decodeHtml(value: string): string {
+    return value
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, "\"")
+      .replace(/&#039;/g, "'")
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">");
+  }
+
+  private absolutize(url: string): string {
+    if (url.startsWith("//")) return `https:${url}`;
+    if (url.startsWith("/")) return `${this.baseUrl}${url}`;
+    return url;
+  }
+
+  private async fetchHtml(url: string): Promise<string> {
+    const res = await fetch(url, { headers: this.headers });
+    if (!res.ok) throw new Error(`ComicExtra returned ${res.status}`);
+    let html = await res.text();
+
+    const redirectMatch = html.match(/window\.location\.replace\(['"]([^'"]+)['"]\)/i);
+    if (redirectMatch?.[1]) {
+      const redirectUrl = this.absolutize(this.decodeHtml(redirectMatch[1]));
+      const redirectRes = await fetch(redirectUrl, { headers: this.headers });
+      if (!redirectRes.ok) throw new Error(`ComicExtra redirect returned ${redirectRes.status}`);
+      html = await redirectRes.text();
+    }
+
+    return html;
+  }
+
+  private extractSlug(url: string): string {
+    const clean = this.decodeHtml(url).split("?")[0].replace(/\/+$/g, "");
+    const comicMatch = clean.match(/\/comic\/([^/]+)/i);
+    if (comicMatch?.[1]) return comicMatch[1];
+    return clean.split("/").filter(Boolean).pop() || "";
+  }
 
   async search(query: string): Promise<SearchResult[]> {
     try {
-      const url = `https://www.comicextra.me/search?keyword=${encodeURIComponent(query)}`;
-      const res = await fetch(url, { headers: this.headers });
-      if (!res.ok) throw new Error(`ComicExtra search returned ${res.status}`);
-      const html = await res.text();
+      const url = `${this.baseUrl}/search?keyword=${encodeURIComponent(query)}`;
+      const html = await this.fetchHtml(url);
 
       const results: SearchResult[] = [];
-      const regex = /<h3><a href="([^"]+)">([^<]+)<\/a><\/h3>[\s\S]*?<img src="([^"]+)"/g;
+      const regex = /<a[^>]+href=["']([^"']*\/comic\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>[\s\S]{0,800}?<img[^>]+(?:src|data-src)=["']([^"']+)["']/gi;
       let match;
+      const seen = new Set<string>();
 
       while ((match = regex.exec(html)) !== null && results.length < 10) {
         const comicUrl = match[1];
-        const title = match[2].trim();
-        const comicId = comicUrl.split("/").pop() || "";
-        if (!comicId) continue;
+        const comicId = this.extractSlug(comicUrl);
+        if (!comicId || seen.has(comicId)) continue;
+        seen.add(comicId);
+
+        const rawTitle = match[2].replace(/<[^>]*>/g, "").trim();
+        const title = this.decodeHtml(rawTitle || comicId.replace(/-/g, " "));
 
         results.push({
           id: comicId,
           title,
           description: "HQ importada de ComicExtra.",
-          coverUrl: match[3],
+          coverUrl: this.absolutize(this.decodeHtml(match[3])),
           providerId: this.id
         });
       }
@@ -44,21 +88,20 @@ export class ComicExtraProvider implements Provider {
 
   async getDetails(id: string): Promise<MangaDetails> {
     try {
-      const url = `https://www.comicextra.me/comic/${id}`;
-      const res = await fetch(url, { headers: this.headers });
-      if (!res.ok) throw new Error(`ComicExtra details returned ${res.status}`);
-      const html = await res.text();
+      const url = `${this.baseUrl}/comic/${id}`;
+      const html = await this.fetchHtml(url);
 
       const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
       const coverMatch = html.match(/<img[^>]+class="[^"]*chapter_img[^"]*"[^>]+src="([^"]+)"/i) ||
-        html.match(/<div[^>]+class="[^"]*comic_detail[^"]*"[\s\S]*?<img[^>]+src="([^"]+)"/i);
+        html.match(/<div[^>]+class="[^"]*comic_detail[^"]*"[\s\S]*?<img[^>]+(?:src|data-src)=["']([^"']+)["']/i) ||
+        html.match(/<img[^>]+(?:src|data-src)=["']([^"']+)["'][^>]+(?:alt|title)=["'][^"']*comic/i);
       const descMatch = html.match(/<p[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/p>/i);
 
       return {
         id,
-        title: titleMatch ? titleMatch[1].trim() : id.replace(/-/g, " ").toUpperCase(),
+        title: titleMatch ? this.decodeHtml(titleMatch[1].trim()) : id.replace(/-/g, " ").toUpperCase(),
         description: descMatch ? descMatch[1].replace(/<[^>]*>/g, "").trim() : "HQ importada de ComicExtra.",
-        coverUrl: coverMatch?.[1],
+        coverUrl: coverMatch?.[1] ? this.absolutize(this.decodeHtml(coverMatch[1])) : undefined,
         providerId: this.id
       };
     } catch (err) {
@@ -74,24 +117,29 @@ export class ComicExtraProvider implements Provider {
 
   async getChapters(id: string): Promise<Chapter[]> {
     try {
-      const url = `https://www.comicextra.me/comic/${id}`;
-      const res = await fetch(url, { headers: this.headers });
-      if (!res.ok) throw new Error(`ComicExtra chapters returned ${res.status}`);
-      const html = await res.text();
+      const url = `${this.baseUrl}/comic/${id}`;
+      const html = await this.fetchHtml(url);
 
       const chapters: Chapter[] = [];
-      const regex = /<a href="([^"]+\/chapter-([^"]+))">([^<]+)<\/a>/g;
+      const episodeBlock = html.match(/<div[^>]+class=["'][^"']*episode-list[^"']*["'][^>]*>([\s\S]*?)<\/div>/i)?.[1] || html;
+      const regex = /<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
       let match;
+      const seen = new Set<string>();
 
-      while ((match = regex.exec(html)) !== null) {
-        const chapterUrl = match[1];
-        const relativeId = chapterUrl.split("comicextra.me/").pop() || chapterUrl.split("/comic/").pop() || "";
-        if (!relativeId) continue;
+      while ((match = regex.exec(episodeBlock)) !== null) {
+        const chapterUrl = this.decodeHtml(match[1]);
+        if (!chapterUrl.includes(id) || !/\/issue-|\/chapter-/i.test(chapterUrl)) continue;
+        let relativeId = this.absolutize(chapterUrl).split("comicextra.me/").pop() || "";
+        relativeId = relativeId.replace(/^comic\//, "").replace(/\/full\/?$/i, "").replace(/^\/+|\/+$/g, "");
+        if (!relativeId || seen.has(relativeId)) continue;
+        seen.add(relativeId);
 
+        const label = this.decodeHtml(match[2].replace(/<[^>]*>/g, "").trim());
+        const numMatch = relativeId.match(/(?:issue|chapter)-([^/]+)/i);
         chapters.push({
-          id: relativeId.replace(/^comic\//, ""),
-          chapterNum: match[2],
-          title: match[3].trim(),
+          id: relativeId,
+          chapterNum: numMatch?.[1] || String(chapters.length + 1),
+          title: label || `Issue ${numMatch?.[1] || chapters.length + 1}`,
           language: "en",
           providerId: this.id
         });
@@ -106,18 +154,22 @@ export class ComicExtraProvider implements Provider {
 
   async getPages(chapterId: string): Promise<Page[]> {
     try {
-      const url = `https://www.comicextra.me/${chapterId}/full`;
-      const res = await fetch(url, { headers: this.headers });
-      if (!res.ok) throw new Error(`ComicExtra pages returned ${res.status}`);
-      const html = await res.text();
+      const url = `${this.baseUrl}/${chapterId.replace(/^\/+/, "")}/full`;
+      const html = await this.fetchHtml(url);
 
       const pages: Page[] = [];
-      const regex = /<img[^>]+class="chapter_img"[^>]+src="([^"]+)"/g;
+      const regex = /https?:\/\/[^"' <>()]+?\.(?:jpg|jpeg|png|webp)(?:\?[^"' <>()]*)?/gi;
       let match;
+      const seen = new Set<string>();
 
       while ((match = regex.exec(html)) !== null) {
+        const imageUrl = this.decodeHtml(match[0]);
+        if (seen.has(imageUrl)) continue;
+        if (/logo|avatar|cover|banner|favicon|ads?|button|icon/i.test(imageUrl)) continue;
+        seen.add(imageUrl);
+
         pages.push({
-          url: match[1],
+          url: imageUrl,
           pageNumber: pages.length + 1
         });
       }
