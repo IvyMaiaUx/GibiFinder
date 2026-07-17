@@ -52406,16 +52406,30 @@ async function searchCollectionByCharacter(character) {
 }
 router2.get("/colecao", async (req, res) => {
   const { q, editora, limit = "100", offset = "0" } = req.query;
-  const staticItems = searchDriveLibrary(q ? q.split(/\s+/).filter(Boolean) : []).filter((item) => !editora || item.editora?.toLowerCase().includes(editora.toLowerCase()));
+  const terms = q ? q.split(/\s+/).map((term) => term.replace(/[%(),]/g, "").trim()).filter(Boolean) : [];
+  const requestedLimit = parseInt(limit);
+  const requestedOffset = parseInt(offset);
+  const staticItems = searchDriveLibrary(terms).filter((item) => !editora || item.editora?.toLowerCase().includes(editora.toLowerCase()));
   if (!supabase) {
-    const start = parseInt(offset);
-    const end = start + parseInt(limit);
+    const start = requestedOffset;
+    const end = start + requestedLimit;
     res.json({ items: staticItems.slice(start, end), total: staticItems.length });
     return;
   }
   try {
-    let query = supabase.from("gibis").select("*", { count: "exact" }).eq("status", "approved").order("revista", { ascending: true }).order("titulo", { ascending: true }).limit(parseInt(limit)).range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
-    if (q) query = query.or(`titulo.ilike.%${q}%,revista.ilike.%${q}%,editora.ilike.%${q}%`);
+    let query = supabase.from("gibis").select("*", { count: "exact" }).eq("status", "approved").order("revista", { ascending: true }).order("titulo", { ascending: true }).limit(terms.length > 0 ? 200 : requestedLimit);
+    if (terms.length > 0) {
+      query = query.or(
+        terms.flatMap((term) => [
+          `titulo.ilike.%${term}%`,
+          `revista.ilike.%${term}%`,
+          `editora.ilike.%${term}%`,
+          `descricao.ilike.%${term}%`
+        ]).join(",")
+      );
+    } else {
+      query = query.range(requestedOffset, requestedOffset + requestedLimit - 1);
+    }
     if (editora) query = query.ilike("editora", `%${editora}%`);
     const { data, count, error } = await query;
     if (error) {
@@ -52423,9 +52437,15 @@ router2.get("/colecao", async (req, res) => {
       res.json({ items: staticItems, total: staticItems.length });
       return;
     }
-    const dbItems = data || [];
+    let dbItems = data || [];
+    let total = count || 0;
+    if (terms.length > 0) {
+      dbItems = rankCollectionResults(terms, dbItems);
+      total = dbItems.length;
+      dbItems = dbItems.slice(requestedOffset, requestedOffset + requestedLimit);
+    }
     const driveOnly = staticItems.filter((item) => !dbItems.some((db) => db.drive_url && db.drive_url === item.drive_url));
-    res.json({ items: [...dbItems, ...driveOnly], total: (count || 0) + driveOnly.length });
+    res.json({ items: [...dbItems, ...driveOnly], total: total + driveOnly.length });
   } catch (err) {
     console.error("Colecao list exception:", err);
     res.json({ items: staticItems, total: staticItems.length });
