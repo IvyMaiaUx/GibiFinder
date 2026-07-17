@@ -318,6 +318,10 @@ export class ProviderManager {
   private static getSearchTerms(query: string): string[] {
     const stopWords = new Set([
       "and",
+      "colecao",
+      "completa",
+      "complete",
+      "completo",
       "das",
       "de",
       "del",
@@ -329,6 +333,10 @@ export class ProviderManager {
       "les",
       "los",
       "the",
+      "toda",
+      "todas",
+      "todo",
+      "todos",
       "uma",
       "uns"
     ]);

@@ -54,6 +54,46 @@ export class WordPressComicProvider implements Provider {
     return this.decodeHtml(value.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "));
   }
 
+  private normalizeText(value = ""): string {
+    return value
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }
+
+  private getSearchTerms(query: string): string[] {
+    const stopWords = new Set([
+      "and",
+      "colecao",
+      "completa",
+      "complete",
+      "completo",
+      "das",
+      "de",
+      "do",
+      "dos",
+      "ler",
+      "online",
+      "the",
+      "toda",
+      "todas",
+      "todo",
+      "todos"
+    ]);
+
+    return this.normalizeText(query)
+      .split(/[^a-z0-9]+/i)
+      .map(term => term.trim())
+      .filter(term => term.length > 2 && !stopWords.has(term));
+  }
+
+  private titleMatchesQuery(title: string, query: string): boolean {
+    const terms = this.getSearchTerms(query);
+    if (terms.length === 0) return true;
+    const normalizedTitle = this.normalizeText(title);
+    return terms.every(term => normalizedTitle.includes(term));
+  }
+
   private async fetchJson<T>(url: string): Promise<T> {
     const res = await fetch(url, { headers: BROWSER_HEADERS });
     if (!res.ok) throw new Error(`WordPress API returned ${res.status}`);
@@ -82,7 +122,7 @@ export class WordPressComicProvider implements Provider {
   }
 
   private cleanReadPageTitle(title: string): string {
-    const clean = this.stripHtml(title).replace(/^ler\s+online\s+/i, "").trim();
+    const clean = this.stripHtml(title).replace(/^ler\s+(?:online\s+)?/i, "").trim();
     if (/\([^)]*\)/.test(clean)) return clean;
     return /#\s*\d+/.test(clean) ? `${clean} (2024)` : clean;
   }
@@ -194,9 +234,10 @@ export class WordPressComicProvider implements Provider {
 
   async search(query: string): Promise<SearchResult[]> {
     try {
+      const searchText = this.getSearchTerms(query).join(" ") || query;
       const [posts, pages] = await Promise.all([
-        this.fetchJson<WpPost[]>(this.api(`posts?search=${encodeURIComponent(query)}&per_page=12&_embed=1`)),
-        this.fetchJson<WpPost[]>(this.api(`pages?search=${encodeURIComponent(query)}&per_page=20&_embed=1`)).catch(() => [])
+        this.fetchJson<WpPost[]>(this.api(`posts?search=${encodeURIComponent(searchText)}&per_page=12&_embed=1`)),
+        this.fetchJson<WpPost[]>(this.api(`pages?search=${encodeURIComponent(searchText)}&per_page=100&_embed=1`)).catch(() => [])
       ]);
       const queryIssue = (query.match(/#\s*(\d+)\s*$/) || query.match(/\b(\d{1,3})\s*$/))?.[1];
       const sorted = [...posts].sort((a, b) => {
@@ -218,9 +259,14 @@ export class WordPressComicProvider implements Provider {
 
       const pageResults = pages
         .filter(page => /^ler/i.test(this.stripHtml(page.title?.rendered || "")))
+        .filter(page => this.titleMatchesQuery(page.title?.rendered || "", query))
+        .filter(page => !queryIssue || new RegExp(`#\\s*${queryIssue}\\b`).test(this.stripHtml(page.title?.rendered || "")))
         .filter(page => this.extractImages(page.content?.rendered || "").length > 0)
         .map(page => this.toPageSearchResult(page));
-      const postResults = readable.filter(item => item.readable).map(item => this.toSearchResult(item.post));
+      const postResults = readable
+        .filter(item => item.readable)
+        .map(item => this.toSearchResult(item.post))
+        .filter(result => this.titleMatchesQuery(result.title, query));
       const seenTitles = new Set<string>();
 
       return [...pageResults, ...postResults].filter(result => {

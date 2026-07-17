@@ -54987,6 +54987,36 @@ var WordPressComicProvider = class {
   stripHtml(value = "") {
     return this.decodeHtml(value.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "));
   }
+  normalizeText(value = "") {
+    return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
+  getSearchTerms(query) {
+    const stopWords = /* @__PURE__ */ new Set([
+      "and",
+      "colecao",
+      "completa",
+      "complete",
+      "completo",
+      "das",
+      "de",
+      "do",
+      "dos",
+      "ler",
+      "online",
+      "the",
+      "toda",
+      "todas",
+      "todo",
+      "todos"
+    ]);
+    return this.normalizeText(query).split(/[^a-z0-9]+/i).map((term) => term.trim()).filter((term) => term.length > 2 && !stopWords.has(term));
+  }
+  titleMatchesQuery(title, query) {
+    const terms = this.getSearchTerms(query);
+    if (terms.length === 0) return true;
+    const normalizedTitle = this.normalizeText(title);
+    return terms.every((term) => normalizedTitle.includes(term));
+  }
   async fetchJson(url) {
     const res = await fetch(url, { headers: BROWSER_HEADERS4 });
     if (!res.ok) throw new Error(`WordPress API returned ${res.status}`);
@@ -55007,7 +55037,7 @@ var WordPressComicProvider = class {
     return `page:${page.id}`;
   }
   cleanReadPageTitle(title) {
-    const clean = this.stripHtml(title).replace(/^ler\s+online\s+/i, "").trim();
+    const clean = this.stripHtml(title).replace(/^ler\s+(?:online\s+)?/i, "").trim();
     if (/\([^)]*\)/.test(clean)) return clean;
     return /#\s*\d+/.test(clean) ? `${clean} (2024)` : clean;
   }
@@ -55106,9 +55136,10 @@ var WordPressComicProvider = class {
   }
   async search(query) {
     try {
+      const searchText = this.getSearchTerms(query).join(" ") || query;
       const [posts, pages] = await Promise.all([
-        this.fetchJson(this.api(`posts?search=${encodeURIComponent(query)}&per_page=12&_embed=1`)),
-        this.fetchJson(this.api(`pages?search=${encodeURIComponent(query)}&per_page=20&_embed=1`)).catch(() => [])
+        this.fetchJson(this.api(`posts?search=${encodeURIComponent(searchText)}&per_page=12&_embed=1`)),
+        this.fetchJson(this.api(`pages?search=${encodeURIComponent(searchText)}&per_page=100&_embed=1`)).catch(() => [])
       ]);
       const queryIssue = (query.match(/#\s*(\d+)\s*$/) || query.match(/\b(\d{1,3})\s*$/))?.[1];
       const sorted = [...posts].sort((a, b) => {
@@ -55124,8 +55155,8 @@ var WordPressComicProvider = class {
         post: post2,
         readable: await this.hasReadablePages(post2)
       })));
-      const pageResults = pages.filter((page) => /^ler/i.test(this.stripHtml(page.title?.rendered || ""))).filter((page) => this.extractImages(page.content?.rendered || "").length > 0).map((page) => this.toPageSearchResult(page));
-      const postResults = readable.filter((item) => item.readable).map((item) => this.toSearchResult(item.post));
+      const pageResults = pages.filter((page) => /^ler/i.test(this.stripHtml(page.title?.rendered || ""))).filter((page) => this.titleMatchesQuery(page.title?.rendered || "", query)).filter((page) => !queryIssue || new RegExp(`#\\s*${queryIssue}\\b`).test(this.stripHtml(page.title?.rendered || ""))).filter((page) => this.extractImages(page.content?.rendered || "").length > 0).map((page) => this.toPageSearchResult(page));
+      const postResults = readable.filter((item) => item.readable).map((item) => this.toSearchResult(item.post)).filter((result) => this.titleMatchesQuery(result.title, query));
       const seenTitles = /* @__PURE__ */ new Set();
       return [...pageResults, ...postResults].filter((result) => {
         const key = result.title.toLowerCase().replace(/\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
@@ -55486,6 +55517,10 @@ var ProviderManager = class {
   static getSearchTerms(query) {
     const stopWords = /* @__PURE__ */ new Set([
       "and",
+      "colecao",
+      "completa",
+      "complete",
+      "completo",
       "das",
       "de",
       "del",
@@ -55497,6 +55532,10 @@ var ProviderManager = class {
       "les",
       "los",
       "the",
+      "toda",
+      "todas",
+      "todo",
+      "todos",
       "uma",
       "uns"
     ]);
