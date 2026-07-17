@@ -52732,10 +52732,10 @@ router2.post("/admin/import-google-sites-drive", async (req, res) => {
     res.status(503).json({ error: "db_unavailable", message: "Banco nao configurado" });
     return;
   }
-  const decodeHtml = (value) => value.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-  const cleanTitle = (fileName) => decodeHtml(fileName).replace(/\.(?:pdf|cbr|cbz)$/i, "").replace(/\s+/g, " ").trim();
+  const decodeHtml2 = (value) => value.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+  const cleanTitle2 = (fileName) => decodeHtml2(fileName).replace(/\.(?:pdf|cbr|cbz)$/i, "").replace(/\s+/g, " ").trim();
   const parseEntry = (fileName) => {
-    const title = cleanTitle(fileName);
+    const title = cleanTitle2(fileName);
     const year = title.match(/\((20\d{2}|19\d{2})\)/)?.[1] || "";
     const issue = title.match(/#\s*0*([0-9]+(?:[.,][0-9]+)?)/)?.[1] || "";
     const series = title.replace(/\s*\((20\d{2}|19\d{2})\)\s*/g, " ").replace(/\s*#\s*0*[0-9]+(?:[.,][0-9]+)?.*$/i, "").replace(/[._-]+/g, " ").replace(/\s+/g, " ").trim() || title;
@@ -52767,7 +52767,7 @@ router2.post("/admin/import-google-sites-drive", async (req, res) => {
     const entries = /* @__PURE__ */ new Map();
     const embedRegex = /aria-label="Drive,\s*([^"]+\.(?:pdf|cbr|cbz))"[^>]+data-src="https:\/\/drive\.google\.com\/file\/d\/([^/"]+)\/preview"/gi;
     for (const match of html.matchAll(embedRegex)) {
-      const fileName = decodeHtml(match[1]).trim();
+      const fileName = decodeHtml2(match[1]).trim();
       const id = match[2].trim();
       if (fileName && id && !entries.has(id)) entries.set(id, { id, fileName });
     }
@@ -55816,6 +55816,286 @@ var SlimeReadProvider = class {
   }
 };
 
+// src/providers/CuratedComicsProvider.ts
+var EMBED_PREFIX = "embed:";
+var STATIC_ITEMS = [
+  {
+    id: "turma-monica-jovem-ii-01",
+    title: "Turma da M\xF4nica Jovem II - Edi\xE7\xE3o 01",
+    description: "Edi\xE7\xE3o da Turma da M\xF4nica Jovem II dispon\xEDvel no PubHTML5.",
+    genres: ["Infantil", "Nacional"],
+    sourceLabel: "PubHTML5",
+    coverUrl: "https://pubhtml5.com/files/html5/turma_da_monica_jovem_ii_-_edicao_01/001.jpg",
+    chapters: [{
+      id: "ch1",
+      chapterNum: "1",
+      title: "Edi\xE7\xE3o 01",
+      readerUrl: "https://pubhtml5.com/wydw/aero/Turma_da_M%C3%B4nica_Jovem_II_-_Edi%C3%A7%C3%A3o_01/",
+      readerKind: "embed"
+    }]
+  },
+  {
+    id: "cebolinha-107",
+    title: "Cebolinha #107",
+    description: "Gibi do Cebolinha em PDF (Verboaria).",
+    genres: ["Infantil", "Nacional"],
+    sourceLabel: "Verboaria",
+    chapters: [{
+      id: "ch1",
+      chapterNum: "107",
+      title: "Edi\xE7\xE3o 107",
+      readerUrl: "https://verboaria.com.br/wp-content/uploads/2020/04/Cebolinha-107.pdf",
+      readerKind: "embed"
+    }]
+  }
+];
+var GOOGLE_SITES_URL = "https://sites.google.com/educacao.quintana.sp.gov.br/biblioteca-virtual/hist%C3%B3rias-em-quadrinhos";
+var DRIVE_FOLDER_ID = "1Etdsik4rGHDhNv5g4_8J_DDTuuvvlunN";
+var SHAREPOINT_URL = "https://liveuel-my.sharepoint.com/:f:/g/personal/desireebt_1310_live_uel_br/Eg-xTek0aHVGmknAwok3WNsBn5MY46O7QX862ZwlntLPJg?e=NTwbC6";
+function normalizeText(value) {
+  return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+}
+function matchesQuery(query, item) {
+  const terms = normalizeText(query).split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+  const haystack = normalizeText([item.title, item.description || "", ...item.genres || []].join(" "));
+  return terms.every((term) => haystack.includes(term));
+}
+function decodeHtml(value) {
+  return value.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+}
+function cleanTitle(fileName) {
+  return decodeHtml(fileName).replace(/\.(?:pdf|cbr|cbz)$/i, "").replace(/\s+/g, " ").trim();
+}
+var CuratedComicsProvider = class {
+  id;
+  name;
+  language;
+  catalogCache = null;
+  constructor(id, name, language = "pt") {
+    this.id = id;
+    this.name = name;
+    this.language = language;
+  }
+  toSearchResult(item) {
+    return {
+      id: item.id,
+      title: item.title,
+      coverUrl: item.coverUrl,
+      description: item.description,
+      providerId: this.id,
+      genres: item.genres
+    };
+  }
+  toDetails(item) {
+    return {
+      id: item.id,
+      title: item.title,
+      description: item.description,
+      coverUrl: item.coverUrl,
+      providerId: this.id,
+      genres: item.genres
+    };
+  }
+  findItem(id, dynamicItems = []) {
+    return [...STATIC_ITEMS, ...dynamicItems].find((item) => item.id === id);
+  }
+  async fetchGoogleSitesItems() {
+    try {
+      const res = await fetch(GOOGLE_SITES_URL, {
+        headers: { "user-agent": "Mozilla/5.0 GibiFinder/1.0" }
+      });
+      if (!res.ok) return [];
+      const html = await res.text();
+      const entries = /* @__PURE__ */ new Map();
+      const embedRegex = /aria-label="Drive,\s*([^"]+\.(?:pdf|cbr|cbz))"[^>]+data-src="https:\/\/drive\.google\.com\/file\/d\/([^/"]+)\/preview"/gi;
+      for (const match of html.matchAll(embedRegex)) {
+        const fileName = decodeHtml(match[1]).trim();
+        const driveId = match[2].trim();
+        if (fileName && driveId && !entries.has(driveId)) {
+          entries.set(driveId, { id: driveId, fileName });
+        }
+      }
+      if (entries.size === 0) {
+        const idRegex = /https:\/\/drive\.google\.com\/file\/d\/([^/"]+)\/preview/gi;
+        for (const match of html.matchAll(idRegex)) {
+          const driveId = match[1].trim();
+          if (driveId && !entries.has(driveId)) {
+            entries.set(driveId, { id: driveId, fileName: `${driveId}.pdf` });
+          }
+        }
+      }
+      return Array.from(entries.values()).slice(0, 120).map((entry) => {
+        const title = cleanTitle(entry.fileName);
+        const slug = `quintana-${entry.id}`;
+        return {
+          id: slug,
+          title,
+          description: `HQ da Biblioteca Virtual de Quintana (Google Sites).`,
+          genres: ["Nacional", "Biblioteca"],
+          sourceLabel: "Biblioteca Quintana",
+          coverUrl: `https://drive.google.com/thumbnail?id=${entry.id}&sz=w400`,
+          chapters: [{
+            id: `ch-${entry.id}`,
+            chapterNum: "1",
+            title,
+            readerUrl: `https://drive.google.com/file/d/${entry.id}/preview`,
+            readerKind: "embed"
+          }]
+        };
+      });
+    } catch (err) {
+      console.warn(`Curated provider [${this.id}] Google Sites fetch failed:`, err);
+      return [];
+    }
+  }
+  async fetchDriveFolderItems() {
+    const driveApiKey = process.env["GOOGLE_DRIVE_API_KEY"];
+    if (!driveApiKey) return [];
+    try {
+      const items = [];
+      let pageToken;
+      do {
+        const params = new URLSearchParams({
+          q: `'${DRIVE_FOLDER_ID}' in parents and trashed=false and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`,
+          key: driveApiKey,
+          pageSize: "100",
+          fields: "nextPageToken,files(id,name,mimeType)"
+        });
+        if (pageToken) params.set("pageToken", pageToken);
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`);
+        if (!res.ok) break;
+        const data = await res.json();
+        for (const file of data.files || []) {
+          if (file.mimeType === "application/vnd.google-apps.folder") continue;
+          const title = cleanTitle(file.name);
+          items.push({
+            id: `drive-${file.id}`,
+            title,
+            description: "Gibi importado da biblioteca Google Drive compartilhada.",
+            genres: ["Biblioteca", "Drive"],
+            sourceLabel: "Google Drive",
+            coverUrl: `https://drive.google.com/thumbnail?id=${file.id}&sz=w400`,
+            chapters: [{
+              id: `ch-${file.id}`,
+              chapterNum: "1",
+              title,
+              readerUrl: `https://drive.google.com/file/d/${file.id}/preview`,
+              readerKind: "embed"
+            }]
+          });
+        }
+        pageToken = data.nextPageToken;
+      } while (pageToken && items.length < 200);
+      return items;
+    } catch (err) {
+      console.warn(`Curated provider [${this.id}] Drive folder fetch failed:`, err);
+      return [];
+    }
+  }
+  async getDynamicCatalog(force = false) {
+    const now = Date.now();
+    if (!force && this.catalogCache && now - this.catalogCache.fetchedAt < 1e3 * 60 * 30) {
+      return this.catalogCache.items;
+    }
+    const [sitesItems, driveItems] = await Promise.all([
+      this.fetchGoogleSitesItems(),
+      this.fetchDriveFolderItems()
+    ]);
+    const catalogLinkItems = [
+      {
+        id: "catalog-quintana",
+        title: "Biblioteca Virtual de Quintana",
+        description: "Cat\xE1logo completo de HQs no Google Sites da educa\xE7\xE3o de Quintana/SP.",
+        genres: ["Biblioteca", "Cat\xE1logo"],
+        sourceLabel: "Google Sites",
+        chapters: [{
+          id: "open",
+          chapterNum: "1",
+          title: "Abrir cat\xE1logo",
+          readerUrl: GOOGLE_SITES_URL,
+          readerKind: "external"
+        }]
+      },
+      {
+        id: "catalog-drive-biblioteca",
+        title: "Biblioteca Google Drive (UEL)",
+        description: "Pasta compartilhada com quadrinhos em PDF no Google Drive.",
+        genres: ["Biblioteca", "Drive"],
+        sourceLabel: "Google Drive",
+        chapters: [{
+          id: "open",
+          chapterNum: "1",
+          title: "Abrir pasta",
+          readerUrl: `https://drive.google.com/drive/folders/${DRIVE_FOLDER_ID}`,
+          readerKind: "external"
+        }]
+      },
+      {
+        id: "catalog-sharepoint-uel",
+        title: "Biblioteca SharePoint UEL",
+        description: "Acervo compartilhado no SharePoint da UEL.",
+        genres: ["Biblioteca", "SharePoint"],
+        sourceLabel: "SharePoint",
+        chapters: [{
+          id: "open",
+          chapterNum: "1",
+          title: "Abrir pasta",
+          readerUrl: SHAREPOINT_URL,
+          readerKind: "external"
+        }]
+      }
+    ];
+    const items = [...sitesItems, ...driveItems, ...catalogLinkItems];
+    this.catalogCache = { fetchedAt: now, items };
+    return items;
+  }
+  async search(query) {
+    const dynamicItems = await this.getDynamicCatalog();
+    const allItems = [...STATIC_ITEMS, ...dynamicItems];
+    return allItems.filter((item) => matchesQuery(query, item)).map((item) => this.toSearchResult(item));
+  }
+  async getDetails(id) {
+    const dynamicItems = await this.getDynamicCatalog();
+    const item = this.findItem(id, dynamicItems);
+    if (!item) {
+      return { id, title: id, providerId: this.id };
+    }
+    return this.toDetails(item);
+  }
+  async getChapters(id) {
+    const dynamicItems = await this.getDynamicCatalog();
+    const item = this.findItem(id, dynamicItems);
+    if (!item) return [];
+    return item.chapters.map((ch) => ({
+      id: ch.id,
+      chapterNum: ch.chapterNum,
+      title: ch.title,
+      language: "pt",
+      providerId: this.id
+    }));
+  }
+  async getPages(chapterId) {
+    const dynamicItems = await this.getDynamicCatalog();
+    const allItems = [...STATIC_ITEMS, ...dynamicItems];
+    for (const item of allItems) {
+      const chapter = item.chapters.find((ch) => ch.id === chapterId);
+      if (!chapter) continue;
+      if (chapter.readerKind === "external") {
+        return [{ url: chapter.readerUrl, pageNumber: 1 }];
+      }
+      return [{ url: `${EMBED_PREFIX}${chapter.readerUrl}`, pageNumber: 1 }];
+    }
+    return [];
+  }
+  async getCatalog(listType) {
+    const dynamicItems = await this.getDynamicCatalog();
+    const allItems = [...STATIC_ITEMS, ...dynamicItems];
+    const sorted = listType === "latest" ? [...allItems].reverse() : allItems;
+    return sorted.slice(0, 40).map((item) => this.toSearchResult(item));
+  }
+};
+
 // src/providers/ProviderManager.ts
 import * as fs from "fs";
 import * as path from "path";
@@ -55889,6 +56169,7 @@ var ProviderManager = class {
     ["mugiwaras", true],
     ["eightmuses", true],
     ["nhentai", true],
+    ["biblioteca-br", true],
     ["bato", false],
     ["hqnow", false]
   ]);
@@ -55919,6 +56200,7 @@ var ProviderManager = class {
     this.registerProvider(new MugiwarasProvider());
     this.registerProvider(new EightMusesProvider());
     this.registerProvider(new NHentaiProvider());
+    this.registerProvider(new CuratedComicsProvider("biblioteca-br", "Biblioteca BR", "pt"));
     this.registerProvider(new StubProvider("bato", "Bato", "multi"));
     this.registerProvider(new StubProvider("hqnow", "HQ Now", "pt"));
     this.loadCustomProviders();

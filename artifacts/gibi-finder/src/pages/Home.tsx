@@ -8,6 +8,9 @@ import { useLocation } from "wouter";
 import { AlertTriangle, ArrowDown, ArrowUp, BookOpen, Filter, HelpCircle, Loader2, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
+import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
+import { isFavorite, toggleFavorite } from "@/lib/favorites";
 
 interface UnifiedSearchResult {
   id: string;
@@ -136,6 +139,8 @@ const sortByReleaseDate = (items: UnifiedSearchResult[], direction: ReleaseSort)
 
 export default function Home() {
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
+  const { toast } = useToast();
   const { 
     results,
     resultSource,
@@ -153,6 +158,7 @@ export default function Home() {
   const [adultSearchWarning, setAdultSearchWarning] = useState<{ hiddenCount: number; adultQuery: boolean } | null>(null);
   const [publisherFilter, setPublisherFilter] = useState<PublisherFilter>("all");
   const [releaseSort, setReleaseSort] = useState<ReleaseSort>(null);
+  const [favoriteVersion, setFavoriteVersion] = useState(0);
 
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -207,10 +213,27 @@ export default function Home() {
 
   const handleOpenOnlineResult = (item: UnifiedSearchResult) => {
     if (item.sources.length === 0) return;
-    // Use first source details to load the detail aggregator view
     const src = item.sources[0];
-    const url = `/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}`;
+    const url = `/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}&resume=true`;
     setLocation(url);
+  };
+
+  const handleToggleFavorite = (item: UnifiedSearchResult, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (item.sources.length === 0) return;
+    const src = item.sources[0];
+    const added = toggleFavorite({
+      providerId: src.providerId,
+      mangaId: src.id,
+      title: item.title,
+      coverUrl: item.coverUrl,
+      description: item.description
+    }, user?.id);
+    setFavoriteVersion(v => v + 1);
+    toast({
+      title: added ? "Adicionado aos favoritos!" : "Removido dos favoritos",
+      description: added ? "Salvo na sua estante." : "Removido da sua estante."
+    });
   };
 
   return (
@@ -354,7 +377,11 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-                  {visibleResults.map((item) => (
+                  {visibleResults.map((item) => {
+                    const src = item.sources[0];
+                    const favorited = src ? isFavorite(src.providerId, src.id) : false;
+                    void favoriteVersion;
+                    return (
                     <button
                       key={item.id}
                       onClick={() => handleOpenOnlineResult(item)}
@@ -367,6 +394,19 @@ export default function Home() {
                           className="w-full h-full object-cover transition-transform group-hover:scale-105"
                           loading="lazy"
                         />
+                        {src && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleFavorite(item, e)}
+                            className={cn(
+                              "absolute top-2 right-2 p-1.5 border-2 border-black rounded-full transition-colors shadow-[2px_2px_0_rgba(0,0,0,1)]",
+                              favorited ? "bg-secondary text-black" : "bg-white/90 text-gray-500 hover:bg-secondary hover:text-black"
+                            )}
+                            title={favorited ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+                          >
+                            <Star className={cn("w-4 h-4", favorited && "fill-black")} strokeWidth={3} />
+                          </button>
+                        )}
                       </div>
 
                       <div className="p-4 flex-1 flex flex-col justify-between min-w-0">
@@ -423,7 +463,8 @@ export default function Home() {
                         </div>
                       </div>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

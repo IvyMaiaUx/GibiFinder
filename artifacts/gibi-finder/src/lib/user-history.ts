@@ -4,6 +4,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const SEARCH_HISTORY_KEY = "gibi_local_history";
 const READING_HISTORY_KEY = "gibi-finder:reading-history";
 const PROGRESS_KEY = "gibi-finder:progress";
+const COMPLETED_KEY = "gibi-finder:completed";
 const MAX_SEARCH_ITEMS = 50;
 const MAX_READING_ITEMS = 100;
 
@@ -25,12 +26,24 @@ export interface ReadingProgressItem {
   chapterId: string;
   chapterNum: string;
   pageNumber: number;
+  totalPages?: number;
   title: string;
   coverUrl?: string;
   providerId?: string;
   mangaId?: string;
   language?: string;
+  readerMode?: "page" | "scroll";
   updatedAt: string;
+}
+
+export interface CompletedReadingItem {
+  providerId: string;
+  mangaId: string;
+  title: string;
+  coverUrl?: string;
+  chapterId: string;
+  chapterNum: string;
+  completedAt: string;
 }
 
 const readJson = <T,>(key: string, fallback: T): T => {
@@ -117,6 +130,31 @@ export const getLocalProgress = () => readJson<Record<string, ReadingProgressIte
 
 export const saveLocalProgress = (items: Record<string, ReadingProgressItem>) => {
   writeJson(PROGRESS_KEY, items);
+};
+
+export const getLocalCompleted = () => readJson<CompletedReadingItem[]>(COMPLETED_KEY, []);
+
+export const saveLocalCompleted = (items: CompletedReadingItem[]) => {
+  writeJson(COMPLETED_KEY, items);
+};
+
+export const markChapterCompleted = (
+  item: CompletedReadingItem,
+  userId?: string
+) => {
+  const existing = getLocalCompleted();
+  const filtered = existing.filter(
+    entry => !(entry.mangaId === item.mangaId && entry.providerId === item.providerId && entry.chapterId === item.chapterId)
+  );
+  const updated = [{ ...item, completedAt: new Date().toISOString() }, ...filtered].slice(0, MAX_READING_ITEMS);
+  saveLocalCompleted(updated);
+
+  if (!userId) return;
+  fetch(`${BASE}/api/auth/history/completed/upsert`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, item })
+  }).catch(err => console.error("Failed to sync completed reading:", err));
 };
 
 export const getSyncedReadingHistory = async (userId?: string) => {

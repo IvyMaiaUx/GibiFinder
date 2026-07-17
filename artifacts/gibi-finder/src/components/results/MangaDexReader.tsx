@@ -19,7 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { useAuth } from "@/hooks/use-auth";
-import { getLocalProgress, saveReadingState } from "@/lib/user-history";
+import { getLocalProgress, saveReadingState, markChapterCompleted } from "@/lib/user-history";
 
 interface MangaDexReaderProps {
   mangaTitle: string;
@@ -73,6 +73,15 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
   // Fullscreen States & Handlers
   const readerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
+  // Guards the intersection observer from clobbering the saved page while we
+  // are auto-scrolling back to it on resume.
+  const resumingRef = useRef(false);
+  // When resuming into cascade mode, holds the page index we must land on. It
+  // also forces every image up to that page to load eagerly so the layout
+  // heights are correct before we scroll.
+  const [resumeTargetPage, setResumeTargetPage] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
@@ -221,11 +230,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   };
 
   // Fetch chapter pages from provider
-  const readChapter = async (chapter: Chapter) => {
+  const readChapter = async (chapter: Chapter, resumePage?: number) => {
     setSelectedChapter(chapter);
     setLoadingPages(true);
     setPages([]);
-    setCurrentPage(0);
     setError(null);
 
     try {
@@ -237,8 +245,30 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
       if (data.length === 0) {
         throw new Error("Nenhuma pagina retornada pelo provedor");
       }
+
+      const progressKey = selectedResult?.id || mangaTitle;
+      const savedProgress = getLocalProgress()[progressKey];
+      let startPage = resumePage ?? 0;
+      if (resumePage === undefined && savedProgress?.chapterId === chapter.id) {
+        startPage = Math.max(0, (savedProgress.pageNumber || 1) - 1);
+        if (savedProgress.readerMode) {
+          setReaderMode(savedProgress.readerMode);
+        }
+      }
+
+      setCurrentPage(startPage);
       setPages(data);
       setShowReader(true);
+
+      // Hand the resume-scroll to the dedicated effect below, which waits for
+      // images to load and the layout to settle before landing on the page.
+      if (startPage > 0) {
+        resumingRef.current = true;
+        setResumeTargetPage(startPage);
+      } else {
+        resumingRef.current = false;
+        setResumeTargetPage(null);
+      }
     } catch (err) {
       console.error(err);
       setError("Falha ao abrir o leitor para este capitulo. A fonte pode ter bloqueado as imagens ou mudado o formato das paginas.");
@@ -246,6 +276,18 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
       setLoadingPages(false);
     }
   };
+
+  const getEmbedUrl = (pageUrl?: string): string | null => {
+    if (!pageUrl) return null;
+    if (pageUrl.startsWith("embed:")) return pageUrl.slice(6);
+    if (/\.pdf(\?|$)/i.test(pageUrl) || /drive\.google\.com\/file/i.test(pageUrl) || /pubhtml5\.com/i.test(pageUrl)) {
+      return pageUrl;
+    }
+    return null;
+  };
+
+  const isExternalLink = (pageUrl?: string) =>
+    !!pageUrl && pageUrl.startsWith("http") && !getEmbedUrl(pageUrl);
 
   const autoResumeReader = async (source: { providerId: string; id: string; title: string }, prog: any) => {
     setSelectedSource(source);
@@ -285,15 +327,28 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
         // Set the page index (pageNumber is 1-indexed, currentPage is 0-indexed)
         const pageIdx = (prog.pageNumber || 1) - 1;
         setCurrentPage(pageIdx);
+        if (prog.readerMode) {
+          setReaderMode(prog.readerMode);
+        }
 
         const pagesUrl = `${BASE}/api/providers/pages?providerId=${targetChapter.providerId}&chapterId=${encodeURIComponent(targetChapter.id)}`;
         const pagesRes = await fetch(pagesUrl);
         if (!pagesRes.ok) throw new Error();
         const pagesData = await pagesRes.json() as Page[];
-        
+
         setPages(pagesData);
         setShowReader(true);
         setIsFullscreen(true);
+
+        // Drive the resume-scroll effect so cascade mode lands on the saved page
+        // instead of opening at the top.
+        if (pageIdx > 0) {
+          resumingRef.current = true;
+          setResumeTargetPage(pageIdx);
+        } else {
+          resumingRef.current = false;
+          setResumeTargetPage(null);
+        }
 
         try {
           const newUrl = new URL(window.location.href);
@@ -397,11 +452,13 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
           chapterId: selectedChapter.id,
           chapterNum: selectedChapter.chapterNum,
           pageNumber: currentPage + 1,
+          totalPages: pages.length,
           title: selectedResult?.title || mangaTitle,
           coverUrl: selectedResult?.coverUrl,
           providerId: selectedSource?.providerId || selectedChapter.providerId,
           mangaId: selectedSource?.id || selectedResult?.id || mangaTitle,
           language: selectedChapter.language,
+          readerMode,
           updatedAt: new Date().toISOString()
         };
 
@@ -420,11 +477,140 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
         };
 
         saveReadingState(progressKey, progress, newEntry, user?.id);
+
+        if (pages.length > 0 && currentPage >= pages.length - 1) {
+          markChapterCompleted({
+            providerId: selectedSource?.providerId || selectedChapter.providerId,
+            mangaId: selectedSource?.id || selectedResult?.id || mangaTitle,
+            title: selectedResult?.title || mangaTitle,
+            coverUrl: selectedResult?.coverUrl,
+            chapterId: selectedChapter.id,
+            chapterNum: selectedChapter.chapterNum,
+            completedAt: new Date().toISOString()
+          }, user?.id);
+        }
       } catch (e) {
         console.error("Failed to save progress:", e);
       }
     }
-  }, [currentPage, selectedChapter, showReader, pages, selectedResult, mangaTitle, selectedSource, user?.id]);
+  }, [currentPage, selectedChapter, showReader, pages, selectedResult, mangaTitle, selectedSource, user?.id, readerMode]);
+
+  // Resume: after the reader opens, scroll back to the saved page. Images load
+  // asynchronously and grow the layout, so we re-align on every frame until the
+  // target's position stabilizes, then hand control back to the observer. The
+  // resume aborts the moment the user scrolls or presses a key.
+  useEffect(() => {
+    const target = resumeTargetPage;
+    if (!showReader || pages.length === 0 || target == null || target <= 0) {
+      return;
+    }
+
+    // Page mode keeps the saved index directly — no scrolling needed.
+    if (readerMode !== "scroll") {
+      resumingRef.current = false;
+      setResumeTargetPage(null);
+      return;
+    }
+
+    const container = scrollContainerRef.current;
+    let cancelled = false;
+    let rafId = 0;
+    let timerId: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+    let stableCount = 0;
+    let lastTop = -1;
+    const maxAttempts = 40;
+
+    const finish = () => {
+      if (cancelled) return;
+      cancelled = true;
+      cleanupListeners();
+      resumingRef.current = false;
+      setResumeTargetPage(null);
+    };
+
+    const align = () => {
+      if (cancelled) return;
+      const el = pageRefs.current[target];
+      if (el && container) {
+        el.scrollIntoView({ behavior: "auto", block: "start" });
+        const top = el.offsetTop;
+        stableCount = Math.abs(top - lastTop) < 2 ? stableCount + 1 : 0;
+        lastTop = top;
+      }
+      attempts += 1;
+      if (stableCount >= 3 || attempts >= maxAttempts) {
+        finish();
+        return;
+      }
+      rafId = requestAnimationFrame(() => { timerId = setTimeout(align, 120); });
+    };
+
+    const onUserInteract = () => finish();
+    const cleanupListeners = () => {
+      container?.removeEventListener("wheel", onUserInteract);
+      container?.removeEventListener("touchstart", onUserInteract);
+      window.removeEventListener("keydown", onUserInteract);
+    };
+    container?.addEventListener("wheel", onUserInteract, { passive: true });
+    container?.addEventListener("touchstart", onUserInteract, { passive: true });
+    window.addEventListener("keydown", onUserInteract);
+
+    rafId = requestAnimationFrame(() => { timerId = setTimeout(align, 60); });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+      if (timerId) clearTimeout(timerId);
+      cleanupListeners();
+    };
+  }, [showReader, pages.length, selectedChapter?.id, readerMode, resumeTargetPage]);
+
+  // Track the current page while scrolling in cascade mode. A scroll-position
+  // scan (instead of an IntersectionObserver) is used so it stays correct even
+  // for pages taller than the viewport, whose visible ratio never crosses a
+  // fixed threshold.
+  useEffect(() => {
+    if (readerMode !== "scroll" || !showReader || pages.length === 0) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    let raf = 0;
+
+    const computeCurrent = () => {
+      raf = 0;
+      // Don't let scroll tracking overwrite the saved page during a resume.
+      if (resumingRef.current) return;
+      // "Current" = the last page whose top has passed a marker line 30% down
+      // the viewport. Pages render in order, so we can stop at the first one
+      // still below the marker.
+      const marker = container.getBoundingClientRect().top + container.clientHeight * 0.3;
+      let bestIdx = 0;
+      for (let i = 0; i < pageRefs.current.length; i++) {
+        const el = pageRefs.current[i];
+        if (!el) continue;
+        if (el.getBoundingClientRect().top <= marker) {
+          bestIdx = i;
+        } else {
+          break;
+        }
+      }
+      setCurrentPage(prev => (prev === bestIdx ? prev : bestIdx));
+    };
+
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(computeCurrent);
+    };
+
+    container.addEventListener("scroll", onScroll, { passive: true });
+    computeCurrent();
+
+    return () => {
+      container.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [readerMode, showReader, pages.length, selectedChapter?.id]);
 
   // Filtered chapters for display
   const filteredChapters = chapters.filter(ch => {
@@ -613,7 +799,6 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                     providerId: lastReadProgress.providerId
                   };
                   await readChapter(targetChapter);
-                  setCurrentPage(Math.max(0, lastReadProgress.pageNumber - 1));
                 }}
                 className="bg-primary text-white font-display text-xs px-4 py-2 border-2 border-black hover:bg-yellow-400 hover:text-black transition-colors"
               >
@@ -693,6 +878,93 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+            <a
+              href="https://pubhtml5.com/wydw/aero/Turma_da_M%C3%B4nica_Jovem_II_-_Edi%C3%A7%C3%A3o_01/"
+              target="_blank"
+              rel="noreferrer"
+              className="relative p-6 border-4 border-black bg-green-100 hover:bg-green-200 transition-all comic-shadow-sm flex flex-col justify-between group"
+            >
+              <div>
+                <span className="absolute top-2 right-2 bg-secondary text-black text-2xs font-display px-2 py-0.5 border-2 border-black -rotate-2">NACIONAL</span>
+                <h4 className="font-display text-xl text-black tracking-wide">TURMA DA MÔNICA JOVEM II</h4>
+                <p className="font-sans text-xs font-bold text-gray-700 mt-2">
+                  Edição 01 no PubHTML5 — leitor flipbook online.
+                </p>
+              </div>
+              <span className="mt-4 font-display text-sm text-primary flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                LER NO PUBHTML5 <ChevronRight className="w-4 h-4" />
+              </span>
+            </a>
+
+            <a
+              href="https://verboaria.com.br/wp-content/uploads/2020/04/Cebolinha-107.pdf"
+              target="_blank"
+              rel="noreferrer"
+              className="relative p-6 border-4 border-black bg-lime-100 hover:bg-lime-200 transition-all comic-shadow-sm flex flex-col justify-between group"
+            >
+              <div>
+                <h4 className="font-display text-xl text-black tracking-wide">CEBOLINHA #107 (PDF)</h4>
+                <p className="font-sans text-xs font-bold text-gray-700 mt-2">
+                  PDF direto da Verboaria para leitura ou download.
+                </p>
+              </div>
+              <span className="mt-4 font-display text-sm text-primary flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                ABRIR PDF <ChevronRight className="w-4 h-4" />
+              </span>
+            </a>
+
+            <a
+              href="https://sites.google.com/educacao.quintana.sp.gov.br/biblioteca-virtual/hist%C3%B3rias-em-quadrinhos"
+              target="_blank"
+              rel="noreferrer"
+              className="relative p-6 border-4 border-black bg-purple-100 hover:bg-purple-200 transition-all comic-shadow-sm flex flex-col justify-between group"
+            >
+              <div>
+                <h4 className="font-display text-xl text-black tracking-wide">BIBLIOTECA QUINTANA</h4>
+                <p className="font-sans text-xs font-bold text-gray-700 mt-2">
+                  HQs em quadrinhos da educação de Quintana/SP (Google Sites).
+                </p>
+              </div>
+              <span className="mt-4 font-display text-sm text-primary flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                ABRIR CATÁLOGO <ChevronRight className="w-4 h-4" />
+              </span>
+            </a>
+
+            <a
+              href="https://drive.google.com/drive/folders/1Etdsik4rGHDhNv5g4_8J_DDTuuvvlunN"
+              target="_blank"
+              rel="noreferrer"
+              className="relative p-6 border-4 border-black bg-sky-100 hover:bg-sky-200 transition-all comic-shadow-sm flex flex-col justify-between group"
+            >
+              <div>
+                <h4 className="font-display text-xl text-black tracking-wide">BIBLIOTECA GOOGLE DRIVE</h4>
+                <p className="font-sans text-xs font-bold text-gray-700 mt-2">
+                  Pasta compartilhada com PDFs de quadrinhos.
+                </p>
+              </div>
+              <span className="mt-4 font-display text-sm text-primary flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                ABRIR PASTA <ChevronRight className="w-4 h-4" />
+              </span>
+            </a>
+
+            <a
+              href="https://liveuel-my.sharepoint.com/:f:/g/personal/desireebt_1310_live_uel_br/Eg-xTek0aHVGmknAwok3WNsBn5MY46O7QX862ZwlntLPJg?e=NTwbC6"
+              target="_blank"
+              rel="noreferrer"
+              className="relative p-6 border-4 border-black bg-indigo-100 hover:bg-indigo-200 transition-all comic-shadow-sm flex flex-col justify-between group sm:col-span-2"
+            >
+              <div>
+                <span className="absolute top-2 right-2 bg-primary text-white text-2xs font-display px-2 py-0.5 border-2 border-black rotate-2">UEL</span>
+                <h4 className="font-display text-xl text-black tracking-wide">BIBLIOTECA SHAREPOINT UEL</h4>
+                <p className="font-sans text-xs font-bold text-gray-700 mt-2">
+                  Acervo compartilhado no SharePoint da Universidade Estadual de Londrina.
+                </p>
+              </div>
+              <span className="mt-4 font-display text-sm text-primary flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                ABRIR SHAREPOINT <ChevronRight className="w-4 h-4" />
+              </span>
+            </a>
             
             {/* Retro Ad Box 1: Google */}
             <a 
@@ -896,17 +1168,45 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
           )}
 
           {/* Reader Body */}
-          <div className="flex-1 overflow-y-auto flex justify-center p-4">
-            {readerMode === "scroll" ? (
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto flex justify-center p-4">
+            {getEmbedUrl(pages[currentPage]?.url) ? (
+              <div className="w-full max-w-5xl h-full min-h-[70vh] border-4 border-white/20 bg-zinc-900 rounded-lg overflow-hidden">
+                <iframe
+                  src={getEmbedUrl(pages[currentPage]?.url) || ""}
+                  className="w-full h-full min-h-[70vh] border-0"
+                  allow="autoplay"
+                  title={selectedResult?.title || mangaTitle}
+                />
+              </div>
+            ) : isExternalLink(pages[currentPage]?.url) ? (
+              <div className="max-w-lg w-full bg-white border-4 border-black p-8 text-center text-black rounded-xl comic-shadow">
+                <h4 className="font-display text-2xl uppercase mb-3">Abrir catálogo externo</h4>
+                <p className="font-sans font-bold text-sm text-gray-600 mb-6">
+                  Este título abre um catálogo em outro site. Clique abaixo para continuar.
+                </p>
+                <a
+                  href={pages[currentPage]?.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 bg-primary text-white font-display px-6 py-3 border-2 border-black hover:bg-yellow-400 hover:text-black transition-colors"
+                >
+                  ABRIR FONTE <ExternalLink className="w-4 h-4" />
+                </a>
+              </div>
+            ) : readerMode === "scroll" ? (
               /* Continuous Scroll Mode */
               <div className="max-w-2xl w-full space-y-4 flex flex-col items-center">
                 {pages.map((p, idx) => (
-                  <div key={idx} className="relative w-full border-4 border-white/10 bg-zinc-900">
+                  <div
+                    key={idx}
+                    ref={(el) => { pageRefs.current[idx] = el; }}
+                    className="relative w-full border-4 border-white/10 bg-zinc-900"
+                  >
                     <SafeImage
-                      src={p.url} 
+                      src={p.url}
                       alt={`Página ${p.pageNumber}`}
                       className="w-full h-auto select-none pointer-events-none"
-                      loading={idx > 2 ? "lazy" : undefined}
+                      loading={idx <= 2 || (resumeTargetPage !== null && idx <= resumeTargetPage) ? undefined : "lazy"}
                     />
                     <div className="absolute bottom-2 right-2 bg-black/60 text-white font-sans text-xs px-2 py-1">
                       Pág. {p.pageNumber}

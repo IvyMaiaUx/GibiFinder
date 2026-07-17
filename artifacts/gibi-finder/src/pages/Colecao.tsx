@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
-import { BookOpen, Trash2, Compass, Clock, BookOpenCheck, Star } from "lucide-react";
+import { BookOpen, Trash2, Compass, Clock, BookOpenCheck, Star, CheckCircle2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { useAuth } from "@/hooks/use-auth";
+import { getLocalCompleted, saveLocalCompleted, type CompletedReadingItem } from "@/lib/user-history";
 
 interface ReadingProgress {
   providerId: string;
@@ -29,9 +30,10 @@ interface FavoriteItem {
 export default function Colecao() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<"progress" | "favorites">("progress");
+  const [activeTab, setActiveTab] = useState<"progress" | "favorites" | "completed">("progress");
   const [shelfItems, setShelfItems] = useState<ReadingProgress[]>([]);
   const [favoriteItems, setFavoriteItems] = useState<FavoriteItem[]>([]);
+  const [completedItems, setCompletedItems] = useState<CompletedReadingItem[]>([]);
 
   // Load reading progress list from "gibi-finder:progress"
   const loadShelf = () => {
@@ -73,9 +75,20 @@ export default function Colecao() {
     }
   };
 
+  const loadCompleted = () => {
+    try {
+      const items = getLocalCompleted();
+      items.sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime());
+      setCompletedItems(items);
+    } catch (err) {
+      console.error("Error reading completed shelf:", err);
+    }
+  };
+
   useEffect(() => {
     loadShelf();
     loadFavorites();
+    loadCompleted();
   }, []);
 
   const handleResume = (item: ReadingProgress) => {
@@ -107,6 +120,24 @@ export default function Colecao() {
       loadShelf();
     } catch (err) {
       console.error("Error removing from shelf:", err);
+    }
+  };
+
+  const handleOpenCompleted = (item: CompletedReadingItem) => {
+    const url = `/gibi/online?providerId=${item.providerId}&id=${encodeURIComponent(item.mangaId)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&resume=true`;
+    setLocation(url);
+  };
+
+  const handleRemoveCompleted = (item: CompletedReadingItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const filtered = getLocalCompleted().filter(
+        entry => !(entry.mangaId === item.mangaId && entry.providerId === item.providerId && entry.chapterId === item.chapterId)
+      );
+      saveLocalCompleted(filtered);
+      loadCompleted();
+    } catch (err) {
+      console.error("Error removing from completed shelf:", err);
     }
   };
 
@@ -164,7 +195,7 @@ export default function Colecao() {
           <button
             onClick={() => setActiveTab("progress")}
             className={cn(
-              "flex-1 py-4 font-display text-xl sm:text-2xl transition-all flex items-center justify-center gap-2 border-r-4 border-black",
+              "flex-1 py-4 font-display text-lg sm:text-xl transition-all flex items-center justify-center gap-2 border-r-4 border-black",
               activeTab === "progress"
                 ? "bg-primary text-white"
                 : "bg-white text-gray-500 hover:bg-muted/30 hover:text-black"
@@ -174,9 +205,21 @@ export default function Colecao() {
             LENDO ({shelfItems.length})
           </button>
           <button
+            onClick={() => setActiveTab("completed")}
+            className={cn(
+              "flex-1 py-4 font-display text-lg sm:text-xl transition-all flex items-center justify-center gap-2 border-r-4 border-black",
+              activeTab === "completed"
+                ? "bg-emerald-600 text-white"
+                : "bg-white text-gray-500 hover:bg-muted/30 hover:text-black"
+            )}
+          >
+            <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={3} />
+            JÁ LIDOS ({completedItems.length})
+          </button>
+          <button
             onClick={() => setActiveTab("favorites")}
             className={cn(
-              "flex-1 py-4 font-display text-xl sm:text-2xl transition-all flex items-center justify-center gap-2",
+              "flex-1 py-4 font-display text-lg sm:text-xl transition-all flex items-center justify-center gap-2",
               activeTab === "favorites"
                 ? "bg-secondary text-black"
                 : "bg-white text-gray-500 hover:bg-muted/30 hover:text-black"
@@ -257,6 +300,73 @@ export default function Colecao() {
                       <div className="mt-4 pt-3 border-t border-dashed border-black/20 flex items-center justify-between">
                         <span className="font-display text-xs text-primary group-hover:translate-x-1 transition-transform">
                           CONTINUAR LENDO →
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )
+        ) : activeTab === "completed" ? (
+          completedItems.length === 0 ? (
+            <div className="py-20 text-center border-4 border-dashed border-black bg-white rounded-xl max-w-lg mx-auto p-8 comic-shadow">
+              <CheckCircle2 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="font-display text-2xl mb-2 uppercase">Nenhum Capítulo Concluído</h3>
+              <p className="font-sans font-bold text-gray-500 mb-6">
+                Quando você terminar um capítulo, ele aparecerá aqui automaticamente.
+              </p>
+              <button onClick={() => setLocation("/")} className="bg-primary text-white font-display text-sm px-6 py-3 border-4 border-black rounded-lg hover:bg-yellow-500 hover:text-black transition-colors">
+                IR PARA BUSCA
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+              {completedItems.map((item) => {
+                const imgKey = `done-${item.providerId}-${item.mangaId}-${item.chapterId}`;
+                return (
+                  <div
+                    key={imgKey}
+                    onClick={() => handleOpenCompleted(item)}
+                    className="group cursor-pointer bg-white border-4 border-black rounded-xl overflow-hidden flex flex-col justify-between hover:translate-y-[-6px] transition-all duration-200 comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:bg-emerald-50"
+                  >
+                    <div className="relative aspect-[3/4] border-b-4 border-black bg-zinc-950 overflow-hidden shrink-0">
+                      <SafeImage
+                        src={item.coverUrl}
+                        alt={item.title}
+                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                        loading="lazy"
+                      />
+                      <span className="absolute top-2 left-2 bg-emerald-500 border border-black text-white text-3xs font-display px-1.5 py-0.5 rounded">
+                        LIDO
+                      </span>
+                      <button
+                        onClick={(e) => handleRemoveCompleted(item, e)}
+                        className="absolute top-2 right-2 p-1.5 bg-red-600 border border-black rounded hover:bg-red-700 text-white transition-colors"
+                        title="Remover dos Já Lidos"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="p-4 flex-1 flex flex-col justify-between min-w-0 bg-white">
+                      <div>
+                        <h4 className="font-display text-base sm:text-lg text-black leading-tight group-hover:text-emerald-700 transition-colors line-clamp-2">
+                          {item.title}
+                        </h4>
+                        <div className="mt-3 space-y-1">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-gray-700 font-sans">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <span>Cap. {item.chapterNum} concluído</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-2xs text-gray-400 font-bold font-sans">
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>{formatDate(new Date(item.completedAt).getTime())}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-dashed border-black/20">
+                        <span className="font-display text-xs text-emerald-700 group-hover:translate-x-1 transition-transform inline-block">
+                          RELER →
                         </span>
                       </div>
                     </div>
