@@ -9,6 +9,7 @@ import { EightMusesProvider } from "./EightMusesProvider";
 import { NHentaiProvider } from "./NHentaiProvider";
 import { OrionProvider } from "./OrionProvider";
 import { WordPressComicProvider } from "./WordPressComicProvider";
+import { SlimeReadProvider } from "./SlimeReadProvider";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -31,6 +32,8 @@ export class ProviderManager {
     "hq-desejo",
     "insta-hentai",
     "mega-hentai",
+    "mega-hq",
+    "meu-hentai",
     "my-manga-comics",
     "nhentai",
     "quadrinhos-de-sexo",
@@ -86,7 +89,9 @@ export class ProviderManager {
             ? new WordPressComicProvider(item.id, item.name, item.language, item.baseUrl)
             : item.engine === "orion"
               ? new OrionProvider(item.id, item.name, item.language, item.baseUrl)
-              : new MadaraProvider(item.id, item.name, item.language, item.baseUrl);
+              : item.engine === "slimeread"
+                ? new SlimeReadProvider(item.id, item.name, item.language, item.baseUrl)
+                : new MadaraProvider(item.id, item.name, item.language, item.baseUrl);
           this.registerProvider(provider);
           this.activeStates.set(item.id, item.active !== false);
         }
@@ -198,9 +203,9 @@ export class ProviderManager {
       name: p.name,
       language: p.language,
       active: this.activeStates.get(p.id) === true,
-      isCustom: p instanceof MadaraProvider || p instanceof WordPressComicProvider || p instanceof OrionProvider,
-      engine: p instanceof WordPressComicProvider ? "WordPress Comic" : p instanceof OrionProvider ? "Orion" : p instanceof MadaraProvider ? "Madara/WordPress" : "Nativo",
-      baseUrl: p instanceof MadaraProvider || p instanceof WordPressComicProvider || p instanceof OrionProvider ? p.baseUrl : undefined
+      isCustom: p instanceof MadaraProvider || p instanceof WordPressComicProvider || p instanceof OrionProvider || p instanceof SlimeReadProvider,
+      engine: p instanceof WordPressComicProvider ? "WordPress Comic" : p instanceof OrionProvider ? "Orion" : p instanceof SlimeReadProvider ? "SlimeRead" : p instanceof MadaraProvider ? "Madara/WordPress" : "Nativo",
+      baseUrl: p instanceof MadaraProvider || p instanceof WordPressComicProvider || p instanceof OrionProvider || p instanceof SlimeReadProvider ? p.baseUrl : undefined
     }));
   }
 

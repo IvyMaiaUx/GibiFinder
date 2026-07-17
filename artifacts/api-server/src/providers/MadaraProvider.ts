@@ -306,6 +306,43 @@ export class MadaraProvider implements Provider {
     return this.parseHentaiFoxSearch(html);
   }
 
+  private parseChapterLinks(html: string): Chapter[] {
+    const chapters: Chapter[] = [];
+    const seen = new Set<string>();
+    const addChapter = (href: string, rawTitle = "") => {
+      const slugMatch = this.decodeHtml(href).match(/\/manga\/([^\/]+)\/([^\/?#]+)/);
+      if (!slugMatch) return;
+
+      const id = `${slugMatch[1]}/${slugMatch[2]}`;
+      if (seen.has(id)) return;
+
+      const title = this.decodeHtml(rawTitle.replace(/<[^>]*>/g, "")) || slugMatch[2].replace(/-/g, " ");
+      const numMatch = title.match(/capitulo\s+([0-9]+(?:[.,][0-9]+)?)/i) ||
+        title.match(/cap[íi]tulo\s+([0-9]+(?:[.,][0-9]+)?)/i) ||
+        title.match(/cap\.?\s*([0-9]+(?:[.,][0-9]+)?)/i) ||
+        slugMatch[2].match(/(?:capitulo|chapter|cap)-?([0-9]+(?:[.,][0-9]+)?)/i);
+
+      seen.add(id);
+      chapters.push({
+        id,
+        chapterNum: numMatch ? numMatch[1] : title.replace(/[^0-9.,]/g, "") || "Especial",
+        title,
+        language: this.getLanguage(),
+        providerId: this.id
+      });
+    };
+
+    for (const m of html.matchAll(/<li[^>]*class="[^"]*wp-manga-chapter[^"]*"[\s\S]*?<a[^>]+href="([^"]+)"[\s\S]*?>([\s\S]*?)<\/a>/gi)) {
+      addChapter(m[1], m[2]);
+    }
+
+    for (const m of html.matchAll(/<a[^>]+href="([^"]+\/manga\/[^"\/]+\/(?:capitulo|chapter|cap)-[^"]+\/?)"[^>]*>([\s\S]*?)<\/a>/gi)) {
+      addChapter(m[1], m[2]);
+    }
+
+    return chapters;
+  }
+
   private getSearchUrl(query: string, page: number): string {
     if (this.baseUrl.includes("hentaifox.com")) {
       const suffix = page <= 1 ? "" : `${page}/`;
@@ -462,23 +499,14 @@ export class MadaraProvider implements Provider {
       if (!res.ok) throw new Error(`Chapters status: ${res.status}`);
       const html = await res.text();
 
-      const chapters: Chapter[] = [];
-      const matches = html.matchAll(/<li[^>]*class="[^"]*wp-manga-chapter[^"]*"[\s\S]*?<a[^>]+href="([^"]+)"[\s\S]*?>([\s\S]*?)<\/a>/gi);
+      let chapters = this.parseChapterLinks(html);
 
-      for (const m of matches) {
-        const href = m[1];
-        const rawTitle = this.decodeHtml(m[2].replace(/<[^>]*>/g, ""));
-        const slugMatch = href.match(/\/manga\/([^\/]+)\/([^\/]+)/);
-        if (!slugMatch) continue;
-
-        const numMatch = rawTitle.match(/capitulo\s+(\d+)/i) || rawTitle.match(/cap\.?\s*(\d+)/i);
-        chapters.push({
-          id: `${slugMatch[1]}/${slugMatch[2]}`,
-          chapterNum: numMatch ? numMatch[1] : rawTitle.replace(/[^0-9]/g, "") || "Especial",
-          title: rawTitle,
-          language: this.getLanguage(),
-          providerId: this.id
-        });
+      if (chapters.length === 0 || html.includes("<!DOCTYPE html")) {
+        const detailsRes = await fetch(this.getContentUrl(id), { headers: BROWSER_HEADERS });
+        if (detailsRes.ok) {
+          const detailsHtml = await detailsRes.text();
+          chapters = this.parseChapterLinks(detailsHtml);
+        }
       }
 
       return chapters.reverse();

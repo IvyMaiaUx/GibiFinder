@@ -54706,6 +54706,33 @@ var MadaraProvider = class {
     if (genericResults.length > 0) return genericResults;
     return this.parseHentaiFoxSearch(html);
   }
+  parseChapterLinks(html) {
+    const chapters = [];
+    const seen = /* @__PURE__ */ new Set();
+    const addChapter = (href, rawTitle = "") => {
+      const slugMatch = this.decodeHtml(href).match(/\/manga\/([^\/]+)\/([^\/?#]+)/);
+      if (!slugMatch) return;
+      const id = `${slugMatch[1]}/${slugMatch[2]}`;
+      if (seen.has(id)) return;
+      const title = this.decodeHtml(rawTitle.replace(/<[^>]*>/g, "")) || slugMatch[2].replace(/-/g, " ");
+      const numMatch = title.match(/capitulo\s+([0-9]+(?:[.,][0-9]+)?)/i) || title.match(/cap[íi]tulo\s+([0-9]+(?:[.,][0-9]+)?)/i) || title.match(/cap\.?\s*([0-9]+(?:[.,][0-9]+)?)/i) || slugMatch[2].match(/(?:capitulo|chapter|cap)-?([0-9]+(?:[.,][0-9]+)?)/i);
+      seen.add(id);
+      chapters.push({
+        id,
+        chapterNum: numMatch ? numMatch[1] : title.replace(/[^0-9.,]/g, "") || "Especial",
+        title,
+        language: this.getLanguage(),
+        providerId: this.id
+      });
+    };
+    for (const m of html.matchAll(/<li[^>]*class="[^"]*wp-manga-chapter[^"]*"[\s\S]*?<a[^>]+href="([^"]+)"[\s\S]*?>([\s\S]*?)<\/a>/gi)) {
+      addChapter(m[1], m[2]);
+    }
+    for (const m of html.matchAll(/<a[^>]+href="([^"]+\/manga\/[^"\/]+\/(?:capitulo|chapter|cap)-[^"]+\/?)"[^>]*>([\s\S]*?)<\/a>/gi)) {
+      addChapter(m[1], m[2]);
+    }
+    return chapters;
+  }
   getSearchUrl(query, page) {
     if (this.baseUrl.includes("hentaifox.com")) {
       const suffix = page <= 1 ? "" : `${page}/`;
@@ -54830,21 +54857,13 @@ var MadaraProvider = class {
       const res = await fetch(url, { method: "POST", headers: BROWSER_HEADERS });
       if (!res.ok) throw new Error(`Chapters status: ${res.status}`);
       const html = await res.text();
-      const chapters = [];
-      const matches = html.matchAll(/<li[^>]*class="[^"]*wp-manga-chapter[^"]*"[\s\S]*?<a[^>]+href="([^"]+)"[\s\S]*?>([\s\S]*?)<\/a>/gi);
-      for (const m of matches) {
-        const href = m[1];
-        const rawTitle = this.decodeHtml(m[2].replace(/<[^>]*>/g, ""));
-        const slugMatch = href.match(/\/manga\/([^\/]+)\/([^\/]+)/);
-        if (!slugMatch) continue;
-        const numMatch = rawTitle.match(/capitulo\s+(\d+)/i) || rawTitle.match(/cap\.?\s*(\d+)/i);
-        chapters.push({
-          id: `${slugMatch[1]}/${slugMatch[2]}`,
-          chapterNum: numMatch ? numMatch[1] : rawTitle.replace(/[^0-9]/g, "") || "Especial",
-          title: rawTitle,
-          language: this.getLanguage(),
-          providerId: this.id
-        });
+      let chapters = this.parseChapterLinks(html);
+      if (chapters.length === 0 || html.includes("<!DOCTYPE html")) {
+        const detailsRes = await fetch(this.getContentUrl(id), { headers: BROWSER_HEADERS });
+        if (detailsRes.ok) {
+          const detailsHtml = await detailsRes.text();
+          chapters = this.parseChapterLinks(detailsHtml);
+        }
       }
       return chapters.reverse();
     } catch (err) {
@@ -55455,6 +55474,7 @@ var WordPressComicProvider = class {
     };
   }
   async hasReadablePages(post2) {
+    if (this.extractImages(post2.content?.rendered || "").length > 0) return true;
     const readPage = await this.findReadPage(post2).catch(() => null);
     if (!readPage) return false;
     try {
@@ -55542,8 +55562,20 @@ var WordPressComicProvider = class {
     }
     const post2 = await this.getPost(id);
     if (!post2) return [];
+    const directImages = this.extractImages(post2.content?.rendered || "");
+    if (directImages.length > 0) {
+      return [{
+        id: this.toPostId(post2),
+        chapterNum: this.stripHtml(post2.title?.rendered || "").match(/#\s*([0-9]+)/)?.[1] || "1",
+        title: this.stripHtml(post2.title?.rendered || post2.slug),
+        language: this.language,
+        providerId: this.id
+      }];
+    }
     const readPage = await this.findReadPage(post2).catch(() => null);
-    if (!readPage) return [];
+    if (!readPage) {
+      return [];
+    }
     return [{
       id: readPage.id,
       chapterNum: this.stripHtml(post2.title?.rendered || "").match(/#\s*([0-9]+)/)?.[1] || "1",
@@ -55567,7 +55599,7 @@ var WordPressComicProvider = class {
         } else if (readPage?.url) {
           html = await this.fetchHtml(readPage.url);
         } else {
-          return [];
+          html = post2?.content?.rendered || "";
         }
       }
       return this.extractImages(html).map((url, index) => ({ url, pageNumber: index + 1 }));
@@ -55588,6 +55620,199 @@ var WordPressComicProvider = class {
     } catch {
       return [];
     }
+  }
+};
+
+// src/providers/SlimeReadProvider.ts
+var BROWSER_HEADERS5 = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
+};
+var SlimeReadProvider = class {
+  constructor(id, name, language, baseUrl) {
+    this.id = id;
+    this.name = name;
+    this.language = language;
+    this.baseUrl = baseUrl;
+    this.baseUrl = this.baseUrl.replace(/\/+$/, "");
+  }
+  decodeHtml(value = "") {
+    return value.replace(/&amp;/g, "&").replace(/&#038;/g, "&").replace(/&quot;/g, '"').replace(/&#34;/g, '"').replace(/&#039;/g, "'").replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
+  }
+  stripHtml(value = "") {
+    return this.decodeHtml(value.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "));
+  }
+  normalizeText(value = "") {
+    return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
+  isAdultText(value = "") {
+    const text = this.normalizeText(value);
+    return [
+      "adult",
+      "afrodisiaco",
+      "censura",
+      "ecchi",
+      "hentai",
+      "incesto",
+      "irma",
+      "madrasta",
+      "milf",
+      "nsfw",
+      "pet sexual",
+      "sexo",
+      "sogro"
+    ].some((term) => text.includes(this.normalizeText(term)));
+  }
+  resolveUrl(value) {
+    if (!value) return void 0;
+    const cleaned = this.decodeHtml(value.trim()).replace(/\\\//g, "/");
+    if (!cleaned || cleaned.startsWith("data:")) return void 0;
+    try {
+      return new URL(cleaned, this.baseUrl).toString();
+    } catch {
+      return void 0;
+    }
+  }
+  slugFromId(id) {
+    return id.replace(/^\/?manga\//, "").replace(/\/+$/g, "");
+  }
+  async fetchHtml(pathOrUrl) {
+    const url = this.resolveUrl(pathOrUrl) || pathOrUrl;
+    const res = await fetch(url, { headers: BROWSER_HEADERS5 });
+    if (!res.ok) throw new Error(`SlimeRead returned ${res.status}`);
+    return await res.text();
+  }
+  extractSpotlight(html) {
+    const script = html.match(/<script[^>]+id=["']heroSpotlightData["'][^>]*>([\s\S]*?)<\/script>/i)?.[1];
+    if (!script) return [];
+    try {
+      const items = JSON.parse(this.decodeHtml(script));
+      return items.filter((item) => item.slug && item.title).map((item) => {
+        const genres = [...item.genres || [], ...item.tags || []].filter(Boolean);
+        const adult = item.isAdult || item.adult || this.isAdultText(`${item.title} ${genres.join(" ")}`);
+        return {
+          id: item.slug || "",
+          title: item.title || "",
+          description: item.synopsis || `Disponivel no portal ${this.name}.`,
+          coverUrl: this.resolveUrl(item.cover || item.banner),
+          providerId: this.id,
+          genres: adult ? Array.from(/* @__PURE__ */ new Set([...genres, "Hentai"])) : genres
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+  extractMangaLinks(html) {
+    const results = /* @__PURE__ */ new Map();
+    const linkRegex = /<a[^>]+href=["'](\/manga\/[^"']+)["'][^>]*([\s\S]*?)<\/a>/gi;
+    for (const match of html.matchAll(linkRegex)) {
+      const href = match[1];
+      if (/\/chapter\//i.test(href)) continue;
+      const block = match[0] + match[2];
+      const slug = this.slugFromId(href);
+      const ariaTitle = block.match(/aria-label=["']Abrir\s+([^"']+)["']/i)?.[1];
+      const altTitle = block.match(/<img[^>]+alt=["']([^"']+)["']/i)?.[1];
+      const headingTitle = block.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i)?.[1];
+      const title = this.decodeHtml((ariaTitle || altTitle || headingTitle || slug.replace(/-/g, " ")).replace(/^Abrir\s+/i, ""));
+      const image = block.match(/<img[^>]+(?:data-src|src)=["']([^"']+)["']/i)?.[1];
+      if (!slug || !title || results.has(slug)) continue;
+      const adult = this.isAdultText(title);
+      results.set(slug, {
+        id: slug,
+        title,
+        description: `Disponivel no portal ${this.name}.`,
+        coverUrl: this.resolveUrl(image),
+        providerId: this.id,
+        genres: adult ? ["Hentai"] : void 0
+      });
+    }
+    return Array.from(results.values());
+  }
+  titleMatchesQuery(title, query) {
+    const terms = this.normalizeText(query).split(/[^a-z0-9]+/i).map((term) => term.trim()).filter((term) => term.length > 2);
+    if (terms.length === 0) return true;
+    const normalizedTitle = this.normalizeText(title);
+    return terms.every((term) => normalizedTitle.includes(term));
+  }
+  async search(query, nsfw) {
+    try {
+      const html = await this.fetchHtml("/");
+      const allResults = [...this.extractSpotlight(html), ...this.extractMangaLinks(html)];
+      const unique2 = /* @__PURE__ */ new Map();
+      for (const result of allResults) {
+        if (!unique2.has(result.id)) unique2.set(result.id, result);
+      }
+      return Array.from(unique2.values()).filter((result) => this.titleMatchesQuery(result.title, query)).filter((result) => nsfw || !(result.genres || []).some((genre) => this.isAdultText(genre))).slice(0, 24);
+    } catch (err) {
+      console.error(`SlimeReadProvider [${this.id}] search failed:`, err);
+      return [];
+    }
+  }
+  async getDetails(id) {
+    try {
+      const slug = this.slugFromId(id);
+      const html = await this.fetchHtml(`/manga/${slug}`);
+      const title = this.stripHtml(html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] || slug.replace(/-/g, " "));
+      const description = this.decodeHtml(
+        html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i)?.[1] || `Disponivel no portal ${this.name}.`
+      );
+      const cover = this.resolveUrl(html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1]);
+      const genres = this.isAdultText(`${title} ${description}`) ? ["Hentai"] : [];
+      return { id: slug, title, description, coverUrl: cover, providerId: this.id, genres };
+    } catch {
+      return { id, title: this.slugFromId(id).replace(/-/g, " "), providerId: this.id };
+    }
+  }
+  async getChapters(id) {
+    try {
+      const slug = this.slugFromId(id);
+      const html = await this.fetchHtml(`/manga/${slug}`);
+      const seen = /* @__PURE__ */ new Set();
+      const chapters = [];
+      for (const match of html.matchAll(/href=["'](\/manga\/[^"']+\/chapter\/([^"']+))["']/gi)) {
+        const href = match[1];
+        const chapterNum = this.decodeHtml(match[2]);
+        const chapterId = href.replace(/^\/+/, "");
+        if (seen.has(chapterId)) continue;
+        seen.add(chapterId);
+        chapters.push({
+          id: chapterId,
+          chapterNum,
+          title: `Capitulo ${chapterNum}`,
+          language: this.language,
+          providerId: this.id
+        });
+      }
+      return chapters.sort((a, b) => Number(a.chapterNum) - Number(b.chapterNum));
+    } catch (err) {
+      console.error(`SlimeReadProvider [${this.id}] chapters failed:`, err);
+      return [];
+    }
+  }
+  async getPages(chapterId) {
+    try {
+      const html = await this.fetchHtml(`/${chapterId.replace(/^\/+/, "")}`);
+      const urls = /* @__PURE__ */ new Set();
+      for (const match of html.matchAll(/<img[^>]+(?:data-src|src)=["']([^"']+\.(?:webp|jpe?g|png)(?:\?[^"']*)?)["']/gi)) {
+        const url = this.resolveUrl(match[1]);
+        if (!url) continue;
+        const lower = url.toLowerCase();
+        if (!lower.includes("/uploads/chapters/")) continue;
+        urls.add(url);
+      }
+      return Array.from(urls).map((url, index) => ({ url, pageNumber: index + 1 }));
+    } catch (err) {
+      console.error(`SlimeReadProvider [${this.id}] pages failed:`, err);
+      return [];
+    }
+  }
+  async getCatalog(listType, nsfw) {
+    const html = await this.fetchHtml(listType === "latest" ? "/atualizacoes" : "/populares").catch(() => this.fetchHtml("/"));
+    const results = [...this.extractSpotlight(html), ...this.extractMangaLinks(html)];
+    const unique2 = Array.from(new Map(results.map((result) => [result.id, result])).values());
+    return unique2.filter((result) => nsfw || !(result.genres || []).some((genre) => this.isAdultText(genre))).slice(0, 24);
   }
 };
 
@@ -55626,6 +55851,8 @@ var ProviderManager = class {
     "hq-desejo",
     "insta-hentai",
     "mega-hentai",
+    "mega-hq",
+    "meu-hentai",
     "my-manga-comics",
     "nhentai",
     "quadrinhos-de-sexo",
@@ -55675,7 +55902,7 @@ var ProviderManager = class {
         const content = fs.readFileSync(filePath, "utf-8");
         const list = JSON.parse(content);
         for (const item of list) {
-          const provider = item.engine === "wordpress-comic" ? new WordPressComicProvider(item.id, item.name, item.language, item.baseUrl) : item.engine === "orion" ? new OrionProvider(item.id, item.name, item.language, item.baseUrl) : new MadaraProvider(item.id, item.name, item.language, item.baseUrl);
+          const provider = item.engine === "wordpress-comic" ? new WordPressComicProvider(item.id, item.name, item.language, item.baseUrl) : item.engine === "orion" ? new OrionProvider(item.id, item.name, item.language, item.baseUrl) : item.engine === "slimeread" ? new SlimeReadProvider(item.id, item.name, item.language, item.baseUrl) : new MadaraProvider(item.id, item.name, item.language, item.baseUrl);
           this.registerProvider(provider);
           this.activeStates.set(item.id, item.active !== false);
         }
@@ -55762,9 +55989,9 @@ var ProviderManager = class {
       name: p.name,
       language: p.language,
       active: this.activeStates.get(p.id) === true,
-      isCustom: p instanceof MadaraProvider || p instanceof WordPressComicProvider || p instanceof OrionProvider,
-      engine: p instanceof WordPressComicProvider ? "WordPress Comic" : p instanceof OrionProvider ? "Orion" : p instanceof MadaraProvider ? "Madara/WordPress" : "Nativo",
-      baseUrl: p instanceof MadaraProvider || p instanceof WordPressComicProvider || p instanceof OrionProvider ? p.baseUrl : void 0
+      isCustom: p instanceof MadaraProvider || p instanceof WordPressComicProvider || p instanceof OrionProvider || p instanceof SlimeReadProvider,
+      engine: p instanceof WordPressComicProvider ? "WordPress Comic" : p instanceof OrionProvider ? "Orion" : p instanceof SlimeReadProvider ? "SlimeRead" : p instanceof MadaraProvider ? "Madara/WordPress" : "Nativo",
+      baseUrl: p instanceof MadaraProvider || p instanceof WordPressComicProvider || p instanceof OrionProvider || p instanceof SlimeReadProvider ? p.baseUrl : void 0
     }));
   }
   // Normalizes a string to compare titles (e.g. "One Piece" -> "onepiece")

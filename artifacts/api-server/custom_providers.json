@@ -137,6 +137,7 @@
     "name": "Jon Domingues",
     "language": "pt",
     "baseUrl": "https://jondomingues.com/",
+    "engine": "wordpress-comic",
     "active": true
   },
   {
@@ -144,6 +145,7 @@
     "name": "Batcave",
     "language": "pt",
     "baseUrl": "https://batcave.biz/",
+    "engine": "wordpress-comic",
     "active": true
   },
   {
@@ -152,6 +154,38 @@
     "language": "pt",
     "baseUrl": "https://plumacomics.cloud/",
     "engine": "orion",
+    "active": true
+  },
+  {
+    "id": "slimeread",
+    "name": "SlimeRead",
+    "language": "pt",
+    "baseUrl": "https://slimeread.app/",
+    "engine": "slimeread",
+    "active": true
+  },
+  {
+    "id": "manga-livre",
+    "name": "MangaLivre",
+    "language": "pt",
+    "baseUrl": "https://mangalivre.to/",
+    "engine": "madara",
+    "active": true
+  },
+  {
+    "id": "mega-hq",
+    "name": "MegaHQ",
+    "language": "pt",
+    "baseUrl": "https://megahq.com.br/",
+    "engine": "wordpress-comic",
+    "active": true
+  },
+  {
+    "id": "meu-hentai",
+    "name": "MeuHentai",
+    "language": "pt",
+    "baseUrl": "https://meuhentai.com/",
+    "engine": "wordpress-comic",
     "active": true
   }
 ]

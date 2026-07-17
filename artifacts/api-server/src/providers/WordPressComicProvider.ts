@@ -235,6 +235,8 @@ export class WordPressComicProvider implements Provider {
   }
 
   private async hasReadablePages(post: WpPost): Promise<boolean> {
+    if (this.extractImages(post.content?.rendered || "").length > 0) return true;
+
     const readPage = await this.findReadPage(post).catch(() => null);
     if (!readPage) return false;
 
@@ -341,8 +343,21 @@ export class WordPressComicProvider implements Provider {
 
     const post = await this.getPost(id);
     if (!post) return [];
+    const directImages = this.extractImages(post.content?.rendered || "");
+    if (directImages.length > 0) {
+      return [{
+        id: this.toPostId(post),
+        chapterNum: this.stripHtml(post.title?.rendered || "").match(/#\s*([0-9]+)/)?.[1] || "1",
+        title: this.stripHtml(post.title?.rendered || post.slug),
+        language: this.language,
+        providerId: this.id
+      }];
+    }
+
     const readPage = await this.findReadPage(post).catch(() => null);
-    if (!readPage) return [];
+    if (!readPage) {
+      return [];
+    }
     return [{
       id: readPage.id,
       chapterNum: this.stripHtml(post.title?.rendered || "").match(/#\s*([0-9]+)/)?.[1] || "1",
@@ -367,7 +382,7 @@ export class WordPressComicProvider implements Provider {
         } else if (readPage?.url) {
           html = await this.fetchHtml(readPage.url);
         } else {
-          return [];
+          html = post?.content?.rendered || "";
         }
       }
 
