@@ -679,7 +679,7 @@ router.post("/search", async (req: Request, res: Response) => {
     if (!query || typeof query !== "string" || query.trim().length === 0) {
       res.status(400).json({ error: "invalid_input", message: "Forneça uma descrição para buscar" }); return;
     }
-    const terms = query.trim().split(/\s+/).filter(t => t.length > 2);
+    const terms = query.trim().split(/\s+/).filter(t => t.length > 2 || /^\d+$/.test(t));
 
     // Search DB and Fandom in parallel
     const [dbResults, fandomCtx] = await Promise.all([

@@ -52838,7 +52838,7 @@ router2.post("/search", async (req, res) => {
       res.status(400).json({ error: "invalid_input", message: "Forne\xE7a uma descri\xE7\xE3o para buscar" });
       return;
     }
-    const terms = query.trim().split(/\s+/).filter((t) => t.length > 2);
+    const terms = query.trim().split(/\s+/).filter((t) => t.length > 2 || /^\d+$/.test(t));
     const [dbResults, fandomCtx] = await Promise.all([
       searchCollection(terms.length > 0 ? terms : [query.trim()]),
       fetchFandomContext(query, "gibi")
