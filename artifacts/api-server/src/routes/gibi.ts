@@ -83,6 +83,34 @@ function searchDriveLibrary(terms: string[]): ComicResultData[] {
   });
 }
 
+function normalizeCollectionText(value = "") {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function rankCollectionResults(terms: string[], results: ComicResultData[]) {
+  const normalizedTerms = terms.map(normalizeCollectionText).filter(Boolean);
+  const wordTerms = normalizedTerms.filter(term => !/^\d+$/.test(term));
+  const issueTerm = normalizedTerms.find(term => /^\d+$/.test(term));
+  return results
+    .map(result => {
+      const text = normalizeCollectionText([result.titulo, result.revista, result.editora, result.ano, result.descricao].filter(Boolean).join(" "));
+      const resultIssue = String((result as ComicResultData & { numero?: string }).numero || result.titulo?.match(/#\s*([0-9]+)/)?.[1] || "");
+      const wordsMatch = wordTerms.every(term => text.includes(term));
+      const issueMatches = !issueTerm || resultIssue === issueTerm || new RegExp(`#\\s*${issueTerm}\\b`).test(text);
+      let score = 0;
+      if (wordsMatch) score += 100;
+      if (issueMatches) score += 50;
+      score += wordTerms.filter(term => text.includes(term)).length * 5;
+      return { result, wordsMatch, issueMatches, score };
+    })
+    .filter(item => item.wordsMatch && item.issueMatches)
+    .sort((a, b) => b.score - a.score)
+    .map(item => item.result);
+}
+
 function buildResult(data: ComicResultData, id: string, searchType: string, images: string[] = []) {
   // Always include cover images if available
   const coverImages = images.length > 0 ? images : (data.imagem_url ? [data.imagem_url] : []);
@@ -132,7 +160,7 @@ async function saveToSupabase(result: ReturnType<typeof buildResult>, query: str
 }
 
 async function searchCollection(terms: string[]): Promise<ComicResultData[]> {
-  const driveMatches = searchDriveLibrary(terms);
+  const driveMatches = rankCollectionResults(terms, searchDriveLibrary(terms));
   if (!supabase) return driveMatches;
   try {
     const { data, error } = await supabase
@@ -146,7 +174,7 @@ async function searchCollection(terms: string[]): Promise<ComicResultData[]> {
       )
       .limit(10);
     if (error) { console.error("Collection search error:", JSON.stringify(error)); return driveMatches; }
-    const dbResults = data || [];
+    const dbResults = rankCollectionResults(terms, data || []);
     const driveOnly = driveMatches.filter(item => !dbResults.some(db => db.drive_url && db.drive_url === item.drive_url));
     return [...dbResults, ...driveOnly].slice(0, 20);
   } catch { return driveMatches; }
