@@ -10,6 +10,7 @@ type WpPost = {
   id: number;
   slug: string;
   link: string;
+  type?: string;
   date?: string;
   modified?: string;
   title?: { rendered?: string };
@@ -74,6 +75,16 @@ export class WordPressComicProvider implements Provider {
 
   private toPostId(post: WpPost): string {
     return `post:${post.slug || post.id}`;
+  }
+
+  private toPageId(page: WpPost): string {
+    return `page:${page.id}`;
+  }
+
+  private cleanReadPageTitle(title: string): string {
+    const clean = this.stripHtml(title).replace(/^ler\s+online\s+/i, "").trim();
+    if (/\([^)]*\)/.test(clean)) return clean;
+    return /#\s*\d+/.test(clean) ? `${clean} (2024)` : clean;
   }
 
   private async getPost(id: string): Promise<WpPost | null> {
@@ -151,6 +162,18 @@ export class WordPressComicProvider implements Provider {
     };
   }
 
+  private toPageSearchResult(page: WpPost): SearchResult {
+    const images = this.extractImages(page.content?.rendered || "");
+    return {
+      id: this.toPageId(page),
+      title: this.cleanReadPageTitle(page.title?.rendered || page.slug),
+      description: this.stripHtml(page.excerpt?.rendered || "").slice(0, 240),
+      coverUrl: images[0] || this.postCover(page),
+      providerId: this.id,
+      releaseDate: page.date || page.modified
+    };
+  }
+
   private async hasReadablePages(post: WpPost): Promise<boolean> {
     const readPage = await this.findReadPage(post).catch(() => null);
     if (!readPage) return false;
@@ -171,7 +194,10 @@ export class WordPressComicProvider implements Provider {
 
   async search(query: string): Promise<SearchResult[]> {
     try {
-      const posts = await this.fetchJson<WpPost[]>(this.api(`posts?search=${encodeURIComponent(query)}&per_page=12&_embed=1`));
+      const [posts, pages] = await Promise.all([
+        this.fetchJson<WpPost[]>(this.api(`posts?search=${encodeURIComponent(query)}&per_page=12&_embed=1`)),
+        this.fetchJson<WpPost[]>(this.api(`pages?search=${encodeURIComponent(query)}&per_page=20&_embed=1`)).catch(() => [])
+      ]);
       const queryIssue = (query.match(/#\s*(\d+)\s*$/) || query.match(/\b(\d{1,3})\s*$/))?.[1];
       const sorted = [...posts].sort((a, b) => {
         if (!queryIssue) return 0;
@@ -190,7 +216,19 @@ export class WordPressComicProvider implements Provider {
         readable: await this.hasReadablePages(post)
       })));
 
-      return readable.filter(item => item.readable).map(item => this.toSearchResult(item.post));
+      const pageResults = pages
+        .filter(page => /^ler/i.test(this.stripHtml(page.title?.rendered || "")))
+        .filter(page => this.extractImages(page.content?.rendered || "").length > 0)
+        .map(page => this.toPageSearchResult(page));
+      const postResults = readable.filter(item => item.readable).map(item => this.toSearchResult(item.post));
+      const seenTitles = new Set<string>();
+
+      return [...pageResults, ...postResults].filter(result => {
+        const key = result.title.toLowerCase().replace(/\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
+        if (seenTitles.has(key)) return false;
+        seenTitles.add(key);
+        return true;
+      });
     } catch (err) {
       console.warn(`WordPress provider [${this.id}] search failed:`, err);
       return [];
@@ -198,6 +236,19 @@ export class WordPressComicProvider implements Provider {
   }
 
   async getDetails(id: string): Promise<MangaDetails> {
+    if (id.startsWith("page:")) {
+      const page = await this.getPageById(id.replace(/^page:/, ""));
+      if (!page) return { id, title: id.replace(/^page:/, "").replace(/-/g, " "), providerId: this.id };
+      const images = this.extractImages(page.content?.rendered || "");
+      return {
+        id: this.toPageId(page),
+        title: this.cleanReadPageTitle(page.title?.rendered || page.slug),
+        description: this.stripHtml(page.excerpt?.rendered || page.content?.rendered || "").slice(0, 600),
+        coverUrl: images[0] || this.postCover(page),
+        providerId: this.id
+      };
+    }
+
     const post = await this.getPost(id);
     if (!post) return { id, title: id.replace(/^post:/, "").replace(/-/g, " "), providerId: this.id };
     return {
@@ -210,6 +261,18 @@ export class WordPressComicProvider implements Provider {
   }
 
   async getChapters(id: string): Promise<Chapter[]> {
+    if (id.startsWith("page:")) {
+      const page = await this.getPageById(id.replace(/^page:/, ""));
+      if (!page) return [];
+      return [{
+        id: this.toPageId(page),
+        chapterNum: this.stripHtml(page.title?.rendered || "").match(/#\s*([0-9]+)/)?.[1] || "1",
+        title: this.cleanReadPageTitle(page.title?.rendered || page.slug),
+        language: this.language,
+        providerId: this.id
+      }];
+    }
+
     const post = await this.getPost(id);
     if (!post) return [];
     const readPage = await this.findReadPage(post).catch(() => null);
