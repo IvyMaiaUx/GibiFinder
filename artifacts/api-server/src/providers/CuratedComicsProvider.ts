@@ -189,50 +189,70 @@ export class CuratedComicsProvider implements Provider {
     const driveApiKey = process.env["GOOGLE_DRIVE_API_KEY"];
     if (!driveApiKey) return [];
 
+    const items: CuratedItem[] = [];
+    const seen = new Set<string>();
+    // Breadth-first walk so PDFs nested inside subfolders are imported too,
+    // not just the ones sitting at the root of the shared folder.
+    const folderQueue: string[] = [DRIVE_FOLDER_ID];
+    const MAX_ITEMS = 500;
+    const MAX_FOLDERS = 80;
+    let foldersVisited = 0;
+
     try {
-      const items: CuratedItem[] = [];
-      let pageToken: string | undefined;
+      while (folderQueue.length > 0 && items.length < MAX_ITEMS && foldersVisited < MAX_FOLDERS) {
+        const folderId = folderQueue.shift()!;
+        if (seen.has(folderId)) continue;
+        seen.add(folderId);
+        foldersVisited += 1;
+        let pageToken: string | undefined;
 
-      do {
-        const params = new URLSearchParams({
-          q: `'${DRIVE_FOLDER_ID}' in parents and trashed=false and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`,
-          key: driveApiKey,
-          pageSize: "100",
-          fields: "nextPageToken,files(id,name,mimeType)"
-        });
-        if (pageToken) params.set("pageToken", pageToken);
-
-        const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`);
-        if (!res.ok) break;
-        const data = await res.json() as { nextPageToken?: string; files?: { id: string; name: string; mimeType: string }[] };
-
-        for (const file of data.files || []) {
-          if (file.mimeType === "application/vnd.google-apps.folder") continue;
-          const title = cleanTitle(file.name);
-          items.push({
-            id: `drive-${file.id}`,
-            title,
-            description: "Gibi importado da biblioteca Google Drive compartilhada.",
-            genres: ["Biblioteca", "Drive"],
-            sourceLabel: "Google Drive",
-            coverUrl: `https://drive.google.com/thumbnail?id=${file.id}&sz=w400`,
-            chapters: [{
-              id: `ch-${file.id}`,
-              chapterNum: "1",
-              title,
-              readerUrl: `https://drive.google.com/file/d/${file.id}/preview`,
-              readerKind: "embed"
-            }]
+        do {
+          const params = new URLSearchParams({
+            q: `'${folderId}' in parents and trashed=false and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`,
+            key: driveApiKey,
+            pageSize: "100",
+            fields: "nextPageToken,files(id,name,mimeType)"
           });
-        }
+          if (pageToken) params.set("pageToken", pageToken);
 
-        pageToken = data.nextPageToken;
-      } while (pageToken && items.length < 200);
+          const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`);
+          if (!res.ok) break;
+          const data = await res.json() as { nextPageToken?: string; files?: { id: string; name: string; mimeType: string }[] };
+
+          for (const file of data.files || []) {
+            if (file.mimeType === "application/vnd.google-apps.folder") {
+              if (!seen.has(file.id)) folderQueue.push(file.id);
+              continue;
+            }
+            if (seen.has(file.id)) continue;
+            seen.add(file.id);
+            const title = cleanTitle(file.name);
+            items.push({
+              id: `drive-${file.id}`,
+              title,
+              description: "Gibi importado da biblioteca Google Drive compartilhada.",
+              genres: ["Biblioteca", "Drive"],
+              sourceLabel: "Google Drive",
+              coverUrl: `https://drive.google.com/thumbnail?id=${file.id}&sz=w400`,
+              chapters: [{
+                id: `ch-${file.id}`,
+                chapterNum: "1",
+                title,
+                readerUrl: `https://drive.google.com/file/d/${file.id}/preview`,
+                readerKind: "embed"
+              }]
+            });
+            if (items.length >= MAX_ITEMS) break;
+          }
+
+          pageToken = data.nextPageToken;
+        } while (pageToken && items.length < MAX_ITEMS);
+      }
 
       return items;
     } catch (err) {
       console.warn(`Curated provider [${this.id}] Drive folder fetch failed:`, err);
-      return [];
+      return items;
     }
   }
 

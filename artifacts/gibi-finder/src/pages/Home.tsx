@@ -11,6 +11,7 @@ import { SafeImage } from "@/components/ui/SafeImage";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { isFavorite, toggleFavorite } from "@/lib/favorites";
+import { addSearchHistoryItem } from "@/lib/user-history";
 
 interface UnifiedSearchResult {
   id: string;
@@ -30,6 +31,7 @@ interface UnifiedSearchResult {
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+export const LAST_ONLINE_SEARCH_KEY = "gibi-finder:last-online-search";
 const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erotico", "erotica", "adulto", "adult"];
 const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
 
@@ -172,6 +174,27 @@ export default function Home() {
     return () => window.removeEventListener("nsfw-change", handleNsfwChange);
   }, []);
 
+  // On mount: re-run a search coming from history (?q=...), otherwise restore
+  // the last online search so returning from a result page keeps the list.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q && q.trim()) {
+      searchByOnline(q.trim());
+      return;
+    }
+    if (onlineResults !== null) return;
+    try {
+      const raw = sessionStorage.getItem(LAST_ONLINE_SEARCH_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { query?: string; results?: UnifiedSearchResult[] };
+      if (saved && Array.isArray(saved.results)) {
+        setSearchedQuery(saved.query || "");
+        setOnlineResults(saved.results);
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Search online aggregator
   const searchByOnline = async (query: string) => {
     if (!query.trim()) return;
@@ -191,6 +214,24 @@ export default function Home() {
         const adultQuery = res.headers.get("X-Adult-Query") === "true";
         setAdultSearchWarning(hiddenCount > 0 || (adultQuery && !isNsfw) ? { hiddenCount, adultQuery } : null);
         setOnlineResults(data);
+        // Persist so "voltar aos resultados" from a detail page can restore the
+        // list without re-running the search.
+        try {
+          sessionStorage.setItem(LAST_ONLINE_SEARCH_KEY, JSON.stringify({ query, results: data }));
+        } catch {}
+        // Record the online search in the search history so it can be repeated.
+        if (data.length > 0) {
+          addSearchHistoryItem({
+            id: `online-${query.toLowerCase().trim()}`,
+            titulo: query,
+            revista: `${data.length} resultado(s) online`,
+            editora: "Busca online",
+            ano: "",
+            images: data.find(item => item.coverUrl)?.coverUrl ? [data.find(item => item.coverUrl)!.coverUrl!] : [],
+            search_type: "online",
+            created_at: new Date().toISOString()
+          }, user?.id);
+        }
       } else {
         setOnlineResults([]);
       }

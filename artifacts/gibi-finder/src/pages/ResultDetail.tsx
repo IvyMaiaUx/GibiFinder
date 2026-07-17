@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
-import { useRoute } from "wouter";
+import { useRoute, useLocation } from "wouter";
 import { useGetResult } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout/Layout";
 import { ComicCard } from "@/components/results/ComicCard";
 import { FeedbackActions } from "@/components/results/FeedbackActions";
 import { MangaDexReader } from "@/components/results/MangaDexReader";
-import { Link2, AlertCircle, Loader2, Star, BookOpen, ExternalLink, ShoppingCart } from "lucide-react";
+import { Link2, AlertCircle, Loader2, Star, BookOpen, ExternalLink, ShoppingCart, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
@@ -30,10 +30,24 @@ function getGoogleDriveEmbedUrl(driveUrl?: string): string | null {
 
 export default function ResultDetail() {
   const [, params] = useRoute("/gibi/:id");
+  const [, setLocation] = useLocation();
   const id = params?.id || "";
   const { toast } = useToast();
   const { user } = useAuth();
   const [detailTab, setDetailTab] = useState<"read" | "buy">("read");
+
+  // Whether there is a stored online search to return to.
+  const [savedSearchQuery, setSavedSearchQuery] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("gibi-finder:last-online-search");
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { query?: string; results?: unknown[] };
+      if (saved && Array.isArray(saved.results) && saved.results.length > 0) {
+        setSavedSearchQuery(saved.query || "");
+      }
+    } catch {}
+  }, []);
 
   // Search parameters for virtual aggregator view
   const searchParams = new URLSearchParams(window.location.search);
@@ -213,6 +227,15 @@ export default function ResultDetail() {
   return (
     <Layout>
       <div className="max-w-4xl mx-auto pb-16">
+        {isOnlineResult && savedSearchQuery !== null && (
+          <button
+            onClick={() => setLocation("/")}
+            className="mb-6 inline-flex items-center gap-2 bg-white text-black font-display text-sm uppercase px-4 py-2.5 border-4 border-black rounded-lg comic-shadow-sm hover:bg-secondary transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" strokeWidth={3} />
+            {savedSearchQuery ? `Voltar aos resultados de "${savedSearchQuery}"` : "Voltar aos resultados"}
+          </button>
+        )}
         {isLoading ? (
           <div className="py-32 text-center">
             <Loader2 className="w-16 h-16 animate-spin text-primary mx-auto mb-4" />

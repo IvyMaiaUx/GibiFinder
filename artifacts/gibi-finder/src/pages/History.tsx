@@ -215,7 +215,7 @@ export default function History() {
               {filteredSearches.map((item) => (
                 <div key={item.id} className="relative group">
                   <Link
-                    href={`/gibi/${item.id}`}
+                    href={item.search_type === "online" ? `/?q=${encodeURIComponent(item.titulo)}` : `/gibi/${item.id}`}
                     className="block bg-white border-4 border-black rounded-xl overflow-hidden comic-shadow comic-hover h-full flex flex-col"
                   >
                     <div className="h-48 bg-muted relative border-b-4 border-black">
