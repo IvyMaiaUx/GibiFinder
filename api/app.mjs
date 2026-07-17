@@ -52706,6 +52706,107 @@ router2.post("/admin/import-drive-library", async (req, res) => {
     res.status(500).json({ error: "import_error", message: err instanceof Error ? err.message : "Erro na importacao" });
   }
 });
+router2.post("/admin/import-google-sites-drive", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  if (!supabase) {
+    res.status(503).json({ error: "db_unavailable", message: "Banco nao configurado" });
+    return;
+  }
+  const decodeHtml = (value) => value.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+  const cleanTitle = (fileName) => decodeHtml(fileName).replace(/\.(?:pdf|cbr|cbz)$/i, "").replace(/\s+/g, " ").trim();
+  const parseEntry = (fileName) => {
+    const title = cleanTitle(fileName);
+    const year = title.match(/\((20\d{2}|19\d{2})\)/)?.[1] || "";
+    const issue = title.match(/#\s*0*([0-9]+(?:[.,][0-9]+)?)/)?.[1] || "";
+    const series = title.replace(/\s*\((20\d{2}|19\d{2})\)\s*/g, " ").replace(/\s*#\s*0*[0-9]+(?:[.,][0-9]+)?.*$/i, "").replace(/[._-]+/g, " ").replace(/\s+/g, " ").trim() || title;
+    const lower = title.toLowerCase();
+    const editora = /turma da m[oô]nica|monica|menino maluquinho/.test(lower) ? "Nacional" : /batman|superman|liga|justi[cç]a|dc/.test(lower) ? "DC Comics" : /homem aranha|vingadores|hulk|marvel/.test(lower) ? "Marvel" : "";
+    return { title, series, year, issue, editora };
+  };
+  try {
+    const { pageUrl, importStatus = "approved", maxFiles = 200 } = req.body;
+    if (!pageUrl || typeof pageUrl !== "string") {
+      res.status(400).json({ error: "invalid_input", message: "URL da pagina e obrigatoria" });
+      return;
+    }
+    const parsedUrl = new URL(pageUrl);
+    if (parsedUrl.hostname !== "sites.google.com") {
+      res.status(400).json({ error: "invalid_url", message: "Use uma pagina do Google Sites" });
+      return;
+    }
+    const pageRes = await fetch(pageUrl, {
+      headers: {
+        "user-agent": "Mozilla/5.0 GibiFinder/1.0"
+      }
+    });
+    if (!pageRes.ok) {
+      res.status(502).json({ error: "page_fetch_error", message: `Pagina respondeu HTTP ${pageRes.status}` });
+      return;
+    }
+    const html = await pageRes.text();
+    const entries = /* @__PURE__ */ new Map();
+    const embedRegex = /aria-label="Drive,\s*([^"]+\.(?:pdf|cbr|cbz))"[^>]+data-src="https:\/\/drive\.google\.com\/file\/d\/([^/"]+)\/preview"/gi;
+    for (const match of html.matchAll(embedRegex)) {
+      const fileName = decodeHtml(match[1]).trim();
+      const id = match[2].trim();
+      if (fileName && id && !entries.has(id)) entries.set(id, { id, fileName });
+    }
+    if (entries.size === 0) {
+      const idRegex = /https:\/\/drive\.google\.com\/file\/d\/([^/"]+)\/preview/gi;
+      for (const match of html.matchAll(idRegex)) {
+        const id = match[1].trim();
+        if (id && !entries.has(id)) entries.set(id, { id, fileName: `${id}.pdf` });
+      }
+    }
+    const limit = Number.isFinite(maxFiles) ? Math.max(1, Math.min(Number(maxFiles), 200)) : 200;
+    const files = Array.from(entries.values()).slice(0, limit);
+    const results = [];
+    let imported = 0;
+    let skipped = 0;
+    for (const file of files) {
+      const driveViewUrl = `https://drive.google.com/file/d/${file.id}/view`;
+      const thumbnailUrl = `https://drive.google.com/thumbnail?id=${file.id}&sz=w400`;
+      const identified = parseEntry(file.fileName);
+      const existing = await supabase.from("gibis").select("id").eq("drive_url", driveViewUrl).maybeSingle();
+      if (existing.data?.id) {
+        results.push({ file: file.fileName, titulo: identified.title, status: "skipped", id: existing.data.id, error: "Ja importado" });
+        skipped++;
+        continue;
+      }
+      const { data: inserted, error: insertErr } = await supabase.from("gibis").insert({
+        titulo: identified.title,
+        revista: identified.series || null,
+        editora: identified.editora || null,
+        ano: identified.year || null,
+        numero: identified.issue || null,
+        personagens: [],
+        descricao: `Importado da Biblioteca Virtual de Quintana: ${pageUrl}`,
+        imagem_url: thumbnailUrl,
+        drive_url: driveViewUrl,
+        status: importStatus === "pending" ? "pending" : "approved",
+        notas: `Arquivo ${file.fileName}`
+      }).select().single();
+      if (insertErr) {
+        results.push({ file: file.fileName, titulo: identified.title, status: "error", error: insertErr.message });
+        skipped++;
+      } else {
+        results.push({ file: file.fileName, titulo: identified.title, status: "ok", id: inserted.id });
+        imported++;
+      }
+    }
+    res.json({
+      imported,
+      skipped,
+      totalFound: entries.size,
+      processed: files.length,
+      results,
+      message: entries.size > files.length ? `Processados ${files.length} de ${entries.size} arquivos.` : void 0
+    });
+  } catch (err) {
+    console.error("Import Google Sites Drive error:", err);
+    res.status(500).json({ error: "import_error", message: err instanceof Error ? err.message : "Erro na importacao" });
+  }
+});
 router2.post("/admin/import-drive", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   if (!supabase) {
