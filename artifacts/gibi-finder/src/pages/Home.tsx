@@ -456,7 +456,7 @@ export default function Home() {
                             {item.title}
                           </h4>
                           <p className="font-sans text-2xs text-gray-500 font-extrabold uppercase mt-1">
-                            Fontes: {item.sources.map(s => s.providerId.toUpperCase()).join(", ")}
+                            Fontes: {Array.from(new Set(item.sources.map(s => s.providerId.toUpperCase()))).join(", ")}
                           </p>
                           {item.releaseDate && (
                             <p className="font-sans text-2xs text-gray-500 font-extrabold uppercase mt-1">

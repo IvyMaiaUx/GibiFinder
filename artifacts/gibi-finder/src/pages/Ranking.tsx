@@ -117,7 +117,7 @@ export default function Ranking() {
           <div className="space-y-6">
             {items.map((item, index) => {
               const rank = index + 1;
-              const providersString = item.sources.map(s => s.providerId.toUpperCase()).join(", ");
+              const providersString = Array.from(new Set(item.sources.map(s => s.providerId.toUpperCase()))).join(", ");
               
               // Colors for the rank badges
               const rankColor = rank === 1 ? '#F4D03F' : rank === 2 ? '#C0C0C0' : rank === 3 ? '#CD7F32' : '#F25C54';
