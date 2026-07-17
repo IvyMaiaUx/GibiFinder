@@ -52265,6 +52265,47 @@ function requireAdmin(req, res) {
   }
   return true;
 }
+var driveLibraryItems = [
+  ["DC All In Especial #01 (2024)", "DC All In Especial", "2024", "01", "1OGaL4MLX0gqbK8q70AvgklV232G5Cdsy"],
+  ["Batman Absoluto #1 (2024)", "Batman Absoluto", "2024", "1", "1OOxWMYv8sovWuOsC-hljvVaI4PZGiBmH"],
+  ["Batman Absoluto #2 (2024)", "Batman Absoluto", "2024", "2", "1jaAd2TB8QMUUpjhiQkskuWxc6m6UJm3S"],
+  ["Batman Absoluto #3 (2024)", "Batman Absoluto", "2024", "3", "1x5nEoVnh0hon-wtwH4Bbi-qV5DmEJdQr"],
+  ["Batman Absoluto #4 (2024)", "Batman Absoluto", "2024", "4", "14YJ5S5cNH8JebMDeZmUuLj1YXwGgsOtj"],
+  ["Batman Absoluto #5 (2025)", "Batman Absoluto", "2025", "5", "1EO7gxw3_fmvwQH4sj0ca-_oSdtvQuFJi"],
+  ["Batman Absoluto #6 (2025)", "Batman Absoluto", "2025", "6", "1VzU1DBBkuYBSa6bcjIEuySCRgk94lU_e"],
+  ["Mulher Maravilha Absoluta #1 (2024)", "Mulher Maravilha Absoluta", "2024", "1", "1anvKEV_7wDCUftzzAXOoclKtiTr0wl6J"],
+  ["Mulher Maravilha Absoluta #2 (2024)", "Mulher Maravilha Absoluta", "2024", "2", "1pIAtrJAz-1hHXjZIsMhR-6v3zLrP4yt7"],
+  ["Mulher Maravilha Absoluta #3 (2024)", "Mulher Maravilha Absoluta", "2024", "3", "1zI_D19uQXfw1qraY4tpPbXsGXFvckH25"],
+  ["Mulher Maravilha Absoluta #4 (2024)", "Mulher Maravilha Absoluta", "2024", "4", "17GgZEkmRjotSnjloFRxqNgKnb7yTw4A9"],
+  ["Mulher Maravilha Absoluta #5 (2024)", "Mulher Maravilha Absoluta", "2024", "5", "1LYWG7v3EgNE22FqQ_wuu2bT5JDus0Bxu"],
+  ["Mulher Maravilha Absoluta #6 (2024)", "Mulher Maravilha Absoluta", "2024", "6", "1Z51TDTJPEbfVQiayqsBRpItaAKxwkfQv"],
+  ["Superman Absoluto #1 (2024)", "Superman Absoluto", "2024", "1", "1eiwTpb70Y1Wc_uaKuoakUbF2qptUiXnx"],
+  ["Superman Absoluto #2 (2024)", "Superman Absoluto", "2024", "2", "1st34J89isVR-yPIGBR90hFht_Psegfas"],
+  ["Superman Absoluto #3 (2024)", "Superman Absoluto", "2024", "3", "12ExMeF7J6C6fbDW1xGPb46Tk0VSsWiKL"],
+  ["Superman Absoluto #4 (2024)", "Superman Absoluto", "2024", "4", "1EdWIwKEir_RZhwpNQpXhLBFzG5ziQu4o"],
+  ["Flash Absoluto #1 (2025)", "Flash Absoluto", "2025", "1", "1W22MUOphauFEbhFyM5VWvQDd-luGZa3J"]
+].map(([titulo, revista, ano, numero, fileId]) => ({
+  id: `drive-${fileId}`,
+  encontrado: true,
+  titulo,
+  revista,
+  editora: "DC Comics",
+  ano,
+  numero,
+  personagens: [],
+  descricao: "Importado da biblioteca Google Drive informada.",
+  imagem_url: `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`,
+  drive_url: `https://drive.google.com/file/d/${fileId}/view`,
+  status: "approved"
+}));
+function searchDriveLibrary(terms) {
+  const normalizedTerms = terms.map((term) => term.toLowerCase()).filter(Boolean);
+  if (normalizedTerms.length === 0) return driveLibraryItems;
+  return driveLibraryItems.filter((item) => {
+    const haystack = [item.titulo, item.revista, item.editora, item.ano, item.numero, item.descricao].filter(Boolean).join(" ").toLowerCase();
+    return normalizedTerms.every((term) => haystack.includes(term));
+  });
+}
 function buildResult(data, id, searchType, images = []) {
   const coverImages = images.length > 0 ? images : data.imagem_url ? [data.imagem_url] : [];
   return {
@@ -52311,7 +52352,8 @@ async function saveToSupabase(result, query, resultJson) {
   }
 }
 async function searchCollection(terms) {
-  if (!supabase) return [];
+  const driveMatches = searchDriveLibrary(terms);
+  if (!supabase) return driveMatches;
   try {
     const { data, error } = await supabase.from("gibis").select("*").eq("status", "approved").or(
       terms.map(
@@ -52320,11 +52362,13 @@ async function searchCollection(terms) {
     ).limit(10);
     if (error) {
       console.error("Collection search error:", JSON.stringify(error));
-      return [];
+      return driveMatches;
     }
-    return data || [];
+    const dbResults = data || [];
+    const driveOnly = driveMatches.filter((item) => !dbResults.some((db) => db.drive_url && db.drive_url === item.drive_url));
+    return [...dbResults, ...driveOnly].slice(0, 20);
   } catch {
-    return [];
+    return driveMatches;
   }
 }
 async function searchCollectionByCharacter(character) {
@@ -52342,25 +52386,30 @@ async function searchCollectionByCharacter(character) {
   }
 }
 router2.get("/colecao", async (req, res) => {
+  const { q, editora, limit = "100", offset = "0" } = req.query;
+  const staticItems = searchDriveLibrary(q ? q.split(/\s+/).filter(Boolean) : []).filter((item) => !editora || item.editora?.toLowerCase().includes(editora.toLowerCase()));
   if (!supabase) {
-    res.json({ items: [], total: 0 });
+    const start = parseInt(offset);
+    const end = start + parseInt(limit);
+    res.json({ items: staticItems.slice(start, end), total: staticItems.length });
     return;
   }
   try {
-    const { q, editora, limit = "100", offset = "0" } = req.query;
     let query = supabase.from("gibis").select("*", { count: "exact" }).eq("status", "approved").order("revista", { ascending: true }).order("titulo", { ascending: true }).limit(parseInt(limit)).range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
     if (q) query = query.or(`titulo.ilike.%${q}%,revista.ilike.%${q}%,editora.ilike.%${q}%`);
     if (editora) query = query.ilike("editora", `%${editora}%`);
     const { data, count, error } = await query;
     if (error) {
       console.error("Colecao list error:", JSON.stringify(error));
-      res.json({ items: [], total: 0 });
+      res.json({ items: staticItems, total: staticItems.length });
       return;
     }
-    res.json({ items: data || [], total: count || 0 });
+    const dbItems = data || [];
+    const driveOnly = staticItems.filter((item) => !dbItems.some((db) => db.drive_url && db.drive_url === item.drive_url));
+    res.json({ items: [...dbItems, ...driveOnly], total: (count || 0) + driveOnly.length });
   } catch (err) {
     console.error("Colecao list exception:", err);
-    res.json({ items: [], total: 0 });
+    res.json({ items: staticItems, total: staticItems.length });
   }
 });
 router2.post("/colecao", async (req, res) => {

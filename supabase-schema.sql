@@ -14,8 +14,10 @@ CREATE TABLE IF NOT EXISTS gibis (
   personagens TEXT[] DEFAULT '{}',
   descricao TEXT,
   imagem_url TEXT,
+  drive_url TEXT,
   tags TEXT[] DEFAULT '{}',
   notas TEXT,
+  status TEXT NOT NULL DEFAULT 'approved',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -24,6 +26,8 @@ CREATE TABLE IF NOT EXISTS gibis (
 CREATE INDEX IF NOT EXISTS idx_gibis_titulo ON gibis(titulo);
 CREATE INDEX IF NOT EXISTS idx_gibis_revista ON gibis(revista);
 CREATE INDEX IF NOT EXISTS idx_gibis_editora ON gibis(editora);
+CREATE INDEX IF NOT EXISTS idx_gibis_status ON gibis(status);
+CREATE INDEX IF NOT EXISTS idx_gibis_drive_url ON gibis(drive_url);
 CREATE INDEX IF NOT EXISTS idx_gibis_personagens ON gibis USING GIN(personagens);
 CREATE INDEX IF NOT EXISTS idx_gibis_tags ON gibis USING GIN(tags);
 
