@@ -55851,7 +55851,6 @@ var STATIC_ITEMS = [
 ];
 var GOOGLE_SITES_URL = "https://sites.google.com/educacao.quintana.sp.gov.br/biblioteca-virtual/hist%C3%B3rias-em-quadrinhos";
 var DRIVE_FOLDER_ID = "1Etdsik4rGHDhNv5g4_8J_DDTuuvvlunN";
-var SHAREPOINT_URL = "https://liveuel-my.sharepoint.com/:f:/g/personal/desireebt_1310_live_uel_br/Eg-xTek0aHVGmknAwok3WNsBn5MY46O7QX862ZwlntLPJg?e=NTwbC6";
 function normalizeText(value) {
   return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 }
@@ -56028,51 +56027,7 @@ var CuratedComicsProvider = class {
       this.fetchGoogleSitesItems(),
       this.fetchDriveFolderItems()
     ]);
-    const catalogLinkItems = [
-      {
-        id: "catalog-quintana",
-        title: "Biblioteca Virtual de Quintana",
-        description: "Cat\xE1logo completo de HQs no Google Sites da educa\xE7\xE3o de Quintana/SP.",
-        genres: ["Biblioteca", "Cat\xE1logo"],
-        sourceLabel: "Google Sites",
-        chapters: [{
-          id: "open",
-          chapterNum: "1",
-          title: "Abrir cat\xE1logo",
-          readerUrl: GOOGLE_SITES_URL,
-          readerKind: "external"
-        }]
-      },
-      {
-        id: "catalog-drive-biblioteca",
-        title: "Biblioteca Google Drive (UEL)",
-        description: "Pasta compartilhada com quadrinhos em PDF no Google Drive.",
-        genres: ["Biblioteca", "Drive"],
-        sourceLabel: "Google Drive",
-        chapters: [{
-          id: "open",
-          chapterNum: "1",
-          title: "Abrir pasta",
-          readerUrl: `https://drive.google.com/drive/folders/${DRIVE_FOLDER_ID}`,
-          readerKind: "external"
-        }]
-      },
-      {
-        id: "catalog-sharepoint-uel",
-        title: "Biblioteca SharePoint UEL",
-        description: "Acervo compartilhado no SharePoint da UEL.",
-        genres: ["Biblioteca", "SharePoint"],
-        sourceLabel: "SharePoint",
-        chapters: [{
-          id: "open",
-          chapterNum: "1",
-          title: "Abrir pasta",
-          readerUrl: SHAREPOINT_URL,
-          readerKind: "external"
-        }]
-      }
-    ];
-    const items = [...sitesItems, ...driveItems, ...catalogLinkItems];
+    const items = [...sitesItems, ...driveItems];
     this.catalogCache = { fetchedAt: now, items };
     return items;
   }

@@ -1118,29 +1118,32 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                 </div>
 
                 <div className="flex items-center gap-1.5 sm:gap-3">
-                  {/* Layout Switcher */}
-                  <div className="flex border-2 border-white/20 rounded overflow-hidden">
-                    <button
-                      onClick={() => setReaderMode("scroll")}
-                      className={cn(
-                        "px-2 sm:px-3 py-1 font-sans font-bold text-2xs sm:text-xs flex items-center gap-1",
-                        readerMode === "scroll" ? "bg-white text-black" : "bg-black text-white"
-                      )}
-                      title="Modo Cascata"
-                    >
-                      <Layers className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden xs:inline">Cascata</span>
-                    </button>
-                    <button
-                      onClick={() => setReaderMode("page")}
-                      className={cn(
-                        "px-2 sm:px-3 py-1 font-sans font-bold text-2xs sm:text-xs flex items-center gap-1",
-                        readerMode === "page" ? "bg-white text-black" : "bg-black text-white"
-                      )}
-                      title="Modo Página"
-                    >
-                      <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden xs:inline">Página</span>
-                    </button>
-                  </div>
+                  {/* Layout Switcher — only meaningful for image chapters, not
+                      single-document PDF/embeds where both modes look identical. */}
+                  {!getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && (
+                    <div className="flex border-2 border-white/20 rounded overflow-hidden">
+                      <button
+                        onClick={() => setReaderMode("scroll")}
+                        className={cn(
+                          "px-2 sm:px-3 py-1 font-sans font-bold text-2xs sm:text-xs flex items-center gap-1",
+                          readerMode === "scroll" ? "bg-white text-black" : "bg-black text-white"
+                        )}
+                        title="Modo Cascata"
+                      >
+                        <Layers className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden xs:inline">Cascata</span>
+                      </button>
+                      <button
+                        onClick={() => setReaderMode("page")}
+                        className={cn(
+                          "px-2 sm:px-3 py-1 font-sans font-bold text-2xs sm:text-xs flex items-center gap-1",
+                          readerMode === "page" ? "bg-white text-black" : "bg-black text-white"
+                        )}
+                        title="Modo Página"
+                      >
+                        <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden xs:inline">Página</span>
+                      </button>
+                    </div>
+                  )}
 
                   {/* Synopsis Info Button */}
                   {(description || selectedResult?.description) && (

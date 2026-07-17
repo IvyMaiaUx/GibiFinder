@@ -174,24 +174,30 @@ export default function Home() {
     return () => window.removeEventListener("nsfw-change", handleNsfwChange);
   }, []);
 
-  // On mount: re-run a search coming from history (?q=...), otherwise restore
-  // the last online search so returning from a result page keeps the list.
+  // On mount: re-run a search coming from history (?q=...), or restore the last
+  // online search ONLY when returning via "Voltar aos resultados" (?restore=1).
+  // A plain visit to "/" (e.g. clicking the logo) starts clean.
   useEffect(() => {
-    const q = new URLSearchParams(window.location.search).get("q");
+    const sp = new URLSearchParams(window.location.search);
+    const q = sp.get("q");
     if (q && q.trim()) {
       searchByOnline(q.trim());
       return;
     }
-    if (onlineResults !== null) return;
-    try {
-      const raw = sessionStorage.getItem(LAST_ONLINE_SEARCH_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw) as { query?: string; results?: UnifiedSearchResult[] };
-      if (saved && Array.isArray(saved.results)) {
-        setSearchedQuery(saved.query || "");
-        setOnlineResults(saved.results);
-      }
-    } catch {}
+    if (sp.get("restore") === "1") {
+      try {
+        const raw = sessionStorage.getItem(LAST_ONLINE_SEARCH_KEY);
+        if (raw) {
+          const saved = JSON.parse(raw) as { query?: string; results?: UnifiedSearchResult[] };
+          if (saved && Array.isArray(saved.results)) {
+            setSearchedQuery(saved.query || "");
+            setOnlineResults(saved.results);
+          }
+        }
+      } catch {}
+      // Drop the query flag so a later logo click / refresh stays clean.
+      try { window.history.replaceState({}, "", window.location.pathname); } catch {}
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

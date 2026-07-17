@@ -229,7 +229,7 @@ export default function ResultDetail() {
       <div className="max-w-4xl mx-auto pb-16">
         {isOnlineResult && savedSearchQuery !== null && (
           <button
-            onClick={() => setLocation("/")}
+            onClick={() => setLocation("/?restore=1")}
             className="mb-6 inline-flex items-center gap-2 bg-white text-black font-display text-sm uppercase px-4 py-2.5 border-4 border-black rounded-lg comic-shadow-sm hover:bg-secondary transition-colors"
           >
             <ArrowLeft className="w-4 h-4" strokeWidth={3} />

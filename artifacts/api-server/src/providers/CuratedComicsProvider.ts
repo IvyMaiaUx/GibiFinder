@@ -279,52 +279,10 @@ export class CuratedComicsProvider implements Provider {
       this.fetchDriveFolderItems()
     ]);
 
-    const catalogLinkItems: CuratedItem[] = [
-      {
-        id: "catalog-quintana",
-        title: "Biblioteca Virtual de Quintana",
-        description: "Catálogo completo de HQs no Google Sites da educação de Quintana/SP.",
-        genres: ["Biblioteca", "Catálogo"],
-        sourceLabel: "Google Sites",
-        chapters: [{
-          id: "open",
-          chapterNum: "1",
-          title: "Abrir catálogo",
-          readerUrl: GOOGLE_SITES_URL,
-          readerKind: "external"
-        }]
-      },
-      {
-        id: "catalog-drive-biblioteca",
-        title: "Biblioteca Google Drive (UEL)",
-        description: "Pasta compartilhada com quadrinhos em PDF no Google Drive.",
-        genres: ["Biblioteca", "Drive"],
-        sourceLabel: "Google Drive",
-        chapters: [{
-          id: "open",
-          chapterNum: "1",
-          title: "Abrir pasta",
-          readerUrl: `https://drive.google.com/drive/folders/${DRIVE_FOLDER_ID}`,
-          readerKind: "external"
-        }]
-      },
-      {
-        id: "catalog-sharepoint-uel",
-        title: "Biblioteca SharePoint UEL",
-        description: "Acervo compartilhado no SharePoint da UEL.",
-        genres: ["Biblioteca", "SharePoint"],
-        sourceLabel: "SharePoint",
-        chapters: [{
-          id: "open",
-          chapterNum: "1",
-          title: "Abrir pasta",
-          readerUrl: SHAREPOINT_URL,
-          readerKind: "external"
-        }]
-      }
-    ];
-
-    const items = [...sitesItems, ...driveItems, ...catalogLinkItems];
+    // Note: the "open folder" catalog-link cards (Quintana / Drive / SharePoint)
+    // were removed from the catalog — they are not readable comics and only
+    // confused users. Those links still live in the reader's "Links externos" tab.
+    const items = [...sitesItems, ...driveItems];
     this.catalogCache = { fetchedAt: now, items };
     return items;
   }
