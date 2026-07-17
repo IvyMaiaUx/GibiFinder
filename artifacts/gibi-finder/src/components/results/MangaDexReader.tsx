@@ -16,8 +16,9 @@ import {
   Minimize,
   Info
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, proxyPdfUrl } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
+import { PdfReader } from "@/components/results/PdfReader";
 import { useAuth } from "@/hooks/use-auth";
 import { getLocalProgress, saveReadingState, markChapterCompleted } from "@/lib/user-history";
 
@@ -260,9 +261,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
       setPages(data);
       setShowReader(true);
 
-      // Hand the resume-scroll to the dedicated effect below, which waits for
-      // images to load and the layout to settle before landing on the page.
-      if (startPage > 0) {
+      // PDF chapters are handled by <PdfReader>, which manages its own resume;
+      // skip the image-reader scroll machinery for them.
+      const isPdf = data[0]?.url?.startsWith("pdf:");
+      if (!isPdf && startPage > 0) {
         resumingRef.current = true;
         setResumeTargetPage(startPage);
       } else {
@@ -445,7 +447,8 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   }, [selectedResult, mangaTitle]);
 
   useEffect(() => {
-    if (showReader && selectedChapter && pages.length > 0) {
+    // PDF chapters persist their own progress inside <PdfReader>.
+    if (showReader && selectedChapter && pages.length > 0 && !pages[0]?.url?.startsWith("pdf:")) {
       try {
         const progressKey = selectedResult?.id || mangaTitle;
         const progress = {
@@ -572,6 +575,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // fixed threshold.
   useEffect(() => {
     if (readerMode !== "scroll" || !showReader || pages.length === 0) return;
+    if (pages[0]?.url?.startsWith("pdf:")) return; // PDF chapters track their own page
     const container = scrollContainerRef.current;
     if (!container) return;
 
@@ -1044,8 +1048,27 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
         </div>
       )}
 
-      {/* ==================== COMMON READER MODAL OVERLAY ==================== */}
-      {showReader && pages.length > 0 && selectedChapter && (
+      {/* ==================== PDF READER (pdf.js) ==================== */}
+      {showReader && pages.length > 0 && selectedChapter && pages[0]?.url?.startsWith("pdf:") && (
+        <PdfReader
+          fileUrl={proxyPdfUrl(pages[0].url.slice(4))}
+          rawUrl={pages[0].url.slice(4)}
+          title={selectedResult?.title || mangaTitle}
+          coverUrl={coverUrl || selectedResult?.coverUrl}
+          progressKey={selectedResult?.id || mangaTitle}
+          providerId={selectedSource?.providerId || selectedChapter.providerId}
+          mangaId={selectedSource?.id || selectedResult?.id || mangaTitle}
+          chapterId={selectedChapter.id}
+          chapterNum={selectedChapter.chapterNum}
+          initialPage={currentPage}
+          readerMode={readerMode}
+          userId={user?.id}
+          onClose={() => setShowReader(false)}
+        />
+      )}
+
+      {/* ==================== COMMON READER MODAL OVERLAY (images/iframe) ==================== */}
+      {showReader && pages.length > 0 && selectedChapter && !pages[0]?.url?.startsWith("pdf:") && (
         <div ref={readerRef} className="fixed inset-0 z-[100] bg-black/95 flex flex-col">
           {/* Header controls */}
           {!isFullscreen && (

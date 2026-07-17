@@ -223,6 +223,9 @@ importers:
 
   artifacts/gibi-finder:
     dependencies:
+      pdfjs-dist:
+        specifier: 5.4.296
+        version: 5.4.296
       react-dropzone:
         specifier: ^15.0.0
         version: 15.0.0(react@19.1.0)

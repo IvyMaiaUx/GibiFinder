@@ -1,6 +1,6 @@
 import { Provider, SearchResult, MangaDetails, Chapter, Page } from "./types";
 
-type ReaderKind = "embed" | "external";
+type ReaderKind = "embed" | "external" | "pdf";
 
 interface CuratedChapter {
   id: string;
@@ -49,7 +49,7 @@ const STATIC_ITEMS: CuratedItem[] = [
       chapterNum: "107",
       title: "Edição 107",
       readerUrl: "https://verboaria.com.br/wp-content/uploads/2020/04/Cebolinha-107.pdf",
-      readerKind: "embed"
+      readerKind: "pdf"
     }]
   }
 ];
@@ -175,7 +175,7 @@ export class CuratedComicsProvider implements Provider {
             chapterNum: "1",
             title,
             readerUrl: `https://drive.google.com/file/d/${entry.id}/preview`,
-            readerKind: "embed" as const
+            readerKind: "pdf" as const
           }]
         };
       });
@@ -239,7 +239,7 @@ export class CuratedComicsProvider implements Provider {
               chapterNum: "1",
               title,
               readerUrl: `https://drive.google.com/file/d/${file.id}/preview`,
-              readerKind: "embed"
+              readerKind: "pdf"
             }]
           });
         }
@@ -325,6 +325,10 @@ export class CuratedComicsProvider implements Provider {
       if (!chapter) continue;
       if (chapter.readerKind === "external") {
         return [{ url: chapter.readerUrl, pageNumber: 1 }];
+      }
+      if (chapter.readerKind === "pdf") {
+        // Rendered client-side with pdf.js (page-by-page, resumable).
+        return [{ url: `pdf:${chapter.readerUrl}`, pageNumber: 1 }];
       }
       return [{ url: `${EMBED_PREFIX}${chapter.readerUrl}`, pageNumber: 1 }];
     }

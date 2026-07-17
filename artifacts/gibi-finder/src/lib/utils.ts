@@ -60,6 +60,27 @@ export function proxyCoverUrl(url: string | undefined | null): string | undefine
   return url;
 }
 
+/**
+ * Routes a PDF (Google Drive file or direct .pdf URL) through our PDF proxy so
+ * pdf.js can fetch the bytes client-side despite CORS.
+ */
+export function proxyPdfUrl(rawUrl: string): string {
+  const driveMatch = rawUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || rawUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (driveMatch && driveMatch[1]) {
+    return `${BASE}/api/pdf-proxy?driveId=${encodeURIComponent(driveMatch[1])}`;
+  }
+  return `${BASE}/api/pdf-proxy?url=${encodeURIComponent(rawUrl)}`;
+}
+
+/** Builds a Google Drive inline-preview URL for the iframe fallback. */
+export function drivePreviewUrl(rawUrl: string): string | null {
+  const driveMatch = rawUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || rawUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (driveMatch && driveMatch[1]) {
+    return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
+  }
+  return null;
+}
+
 export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const MAX_PX = 1280;

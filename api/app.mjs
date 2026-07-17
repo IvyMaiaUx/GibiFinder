@@ -20490,27 +20490,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router6;
+    module.exports = Router7;
     module.exports.Route = Route;
-    function Router6(options) {
-      if (!(this instanceof Router6)) {
-        return new Router6(options);
+    function Router7(options) {
+      if (!(this instanceof Router7)) {
+        return new Router7(options);
       }
       const opts = options || {};
-      function router6(req, res, next) {
-        router6.handle(req, res, next);
+      function router7(req, res, next) {
+        router7.handle(req, res, next);
       }
-      Object.setPrototypeOf(router6, this);
-      router6.caseSensitive = opts.caseSensitive;
-      router6.mergeParams = opts.mergeParams;
-      router6.params = {};
-      router6.strict = opts.strict;
-      router6.stack = [];
-      return router6;
+      Object.setPrototypeOf(router7, this);
+      router7.caseSensitive = opts.caseSensitive;
+      router7.mergeParams = opts.mergeParams;
+      router7.params = {};
+      router7.strict = opts.strict;
+      router7.stack = [];
+      return router7;
     }
-    Router6.prototype = function() {
+    Router7.prototype = function() {
     };
-    Router6.prototype.param = function param(name, fn) {
+    Router7.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20530,7 +20530,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router6.prototype.handle = function handle(req, res, callback) {
+    Router7.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20657,7 +20657,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router6.prototype.use = function use(handler) {
+    Router7.prototype.use = function use(handler) {
       let offset = 0;
       let path2 = "/";
       if (typeof handler !== "function") {
@@ -20690,7 +20690,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router6.prototype.route = function route(path2) {
+    Router7.prototype.route = function route(path2) {
       const route2 = new Route(path2);
       const layer = new Layer(path2, {
         sensitive: this.caseSensitive,
@@ -20705,7 +20705,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router6.prototype[method] = function(path2) {
+      Router7.prototype[method] = function(path2) {
         const route = this.route(path2);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -20881,20 +20881,20 @@ var require_application = __commonJS({
     var finalhandler = require_finalhandler();
     var debug = require_src()("express:application");
     var View = require_view();
-    var http2 = __require("node:http");
+    var http3 = __require("node:http");
     var methods = require_utils3().methods;
     var compileETag = require_utils3().compileETag;
     var compileQueryParser = require_utils3().compileQueryParser;
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router6 = require_router();
+    var Router7 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router6 = null;
+      var router7 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -20903,13 +20903,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router6 === null) {
-            router6 = new Router6({
+          if (router7 === null) {
+            router7 = new Router7({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router6;
+          return router7;
         }
       });
     };
@@ -20980,15 +20980,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router6 = this.router;
+      var router7 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router6.use(path2, fn2);
+          return router7.use(path2, fn2);
         }
         debug(".use app under %s", path2);
         fn2.mountpath = path2;
         fn2.parent = this;
-        router6.use(path2, function mounted_app(req, res, next) {
+        router7.use(path2, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -21114,7 +21114,7 @@ var require_application = __commonJS({
       tryRender(view, renderOptions, done);
     };
     app2.listen = function listen() {
-      var server = http2.createServer(this);
+      var server = http3.createServer(this);
       var args = slice.call(arguments);
       if (typeof args[args.length - 1] === "function") {
         var done = args[args.length - 1] = once(args[args.length - 1]);
@@ -21889,12 +21889,12 @@ var require_request = __commonJS({
     var accepts = require_accepts();
     var isIP = __require("node:net").isIP;
     var typeis = require_type_is();
-    var http2 = __require("node:http");
+    var http3 = __require("node:http");
     var fresh = require_fresh();
     var parseRange = require_range_parser();
     var parse = require_parseurl();
     var proxyaddr = require_proxy_addr();
-    var req = Object.create(http2.IncomingMessage.prototype);
+    var req = Object.create(http3.IncomingMessage.prototype);
     module.exports = req;
     req.get = req.header = function header(name) {
       if (!name) {
@@ -22942,7 +22942,7 @@ var require_response = __commonJS({
     var deprecate = require_depd()("express");
     var encodeUrl = require_encodeurl();
     var escapeHtml = require_escape_html();
-    var http2 = __require("node:http");
+    var http3 = __require("node:http");
     var onFinished = require_on_finished();
     var mime = require_mime_types();
     var path2 = __require("node:path");
@@ -22958,7 +22958,7 @@ var require_response = __commonJS({
     var resolve = path2.resolve;
     var vary = require_vary();
     var { Buffer: Buffer2 } = __require("node:buffer");
-    var res = Object.create(http2.ServerResponse.prototype);
+    var res = Object.create(http3.ServerResponse.prototype);
     module.exports = res;
     res.status = function status(code) {
       if (!Number.isInteger(code)) {
@@ -23515,7 +23515,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router6 = require_router();
+    var Router7 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23537,8 +23537,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router6.Route;
-    exports.Router = Router6;
+    exports.Route = Router7.Route;
+    exports.Router = Router7;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -39716,12 +39716,12 @@ var require_main3 = __commonJS({
 });
 
 // src/app.ts
-var import_express6 = __toESM(require_express2(), 1);
+var import_express7 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 
 // src/routes/index.ts
-var import_express5 = __toESM(require_express2(), 1);
+var import_express6 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -55845,7 +55845,7 @@ var STATIC_ITEMS = [
       chapterNum: "107",
       title: "Edi\xE7\xE3o 107",
       readerUrl: "https://verboaria.com.br/wp-content/uploads/2020/04/Cebolinha-107.pdf",
-      readerKind: "embed"
+      readerKind: "pdf"
     }]
   }
 ];
@@ -55939,7 +55939,7 @@ var CuratedComicsProvider = class {
             chapterNum: "1",
             title,
             readerUrl: `https://drive.google.com/file/d/${entry.id}/preview`,
-            readerKind: "embed"
+            readerKind: "pdf"
           }]
         };
       });
@@ -55995,7 +55995,7 @@ var CuratedComicsProvider = class {
               chapterNum: "1",
               title,
               readerUrl: `https://drive.google.com/file/d/${file.id}/preview`,
-              readerKind: "embed"
+              readerKind: "pdf"
             }]
           });
         }
@@ -56064,6 +56064,9 @@ var CuratedComicsProvider = class {
       if (!chapter) continue;
       if (chapter.readerKind === "external") {
         return [{ url: chapter.readerUrl, pageNumber: 1 }];
+      }
+      if (chapter.readerKind === "pdf") {
+        return [{ url: `pdf:${chapter.readerUrl}`, pageNumber: 1 }];
       }
       return [{ url: `${EMBED_PREFIX}${chapter.readerUrl}`, pageNumber: 1 }];
     }
@@ -57196,17 +57199,90 @@ router4.get("/image-proxy", async (req, res) => {
 });
 var imageProxy_default = router4;
 
-// src/routes/index.ts
+// src/routes/pdfProxy.ts
+var import_express5 = __toESM(require_express2(), 1);
+import https2 from "https";
+import http2 from "http";
 var router5 = (0, import_express5.Router)();
-router5.use(health_default);
-router5.use(gibi_default);
-router5.use(providers_default);
-router5.use(imageProxy_default);
-var routes_default = router5;
+function fetchBuffer(url, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    if (redirects > 5) {
+      reject(new Error("too_many_redirects"));
+      return;
+    }
+    const client = url.startsWith("https") ? https2 : http2;
+    const headers = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "application/pdf,*/*;q=0.8"
+    };
+    const req = client.get(url, { headers }, (res) => {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        fetchBuffer(res.headers.location, redirects + 1).then(resolve).catch(reject);
+        return;
+      }
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => {
+        resolve({ status: res.statusCode || 200, headers: res.headers, buffer: Buffer.concat(chunks) });
+      });
+    });
+    req.on("error", reject);
+  });
+}
+router5.get("/pdf-proxy", async (req, res) => {
+  const driveId = req.query.driveId || "";
+  const rawUrl = req.query.url || "";
+  let targetUrl = "";
+  if (driveId) {
+    const apiKey = process.env["GOOGLE_DRIVE_API_KEY"];
+    targetUrl = apiKey ? `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(driveId)}?alt=media&key=${apiKey}` : `https://drive.google.com/uc?export=download&id=${encodeURIComponent(driveId)}`;
+  } else if (rawUrl) {
+    try {
+      const parsed = new URL(rawUrl);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        res.status(400).json({ error: "invalid_protocol" });
+        return;
+      }
+      targetUrl = rawUrl;
+    } catch {
+      res.status(400).json({ error: "invalid_url" });
+      return;
+    }
+  } else {
+    res.status(400).json({ error: "missing_target", message: "Informe 'driveId' ou 'url'." });
+    return;
+  }
+  try {
+    const result = await fetchBuffer(targetUrl);
+    if (result.status >= 400) {
+      res.status(result.status).json({ error: "upstream_error", message: `Upstream retornou ${result.status}` });
+      return;
+    }
+    res.set({
+      "Content-Type": "application/pdf",
+      "Cache-Control": "public, max-age=86400, s-maxage=86400",
+      "Access-Control-Allow-Origin": "*"
+    });
+    res.send(result.buffer);
+  } catch (err) {
+    console.error("PDF proxy error:", err);
+    res.status(502).json({ error: "proxy_failed", message: "Falha ao buscar o PDF." });
+  }
+});
+var pdfProxy_default = router5;
+
+// src/routes/index.ts
+var router6 = (0, import_express6.Router)();
+router6.use(health_default);
+router6.use(gibi_default);
+router6.use(providers_default);
+router6.use(imageProxy_default);
+router6.use(pdfProxy_default);
+var routes_default = router6;
 
 // src/app.ts
 init_logger();
-var app = (0, import_express6.default)();
+var app = (0, import_express7.default)();
 app.use(
   (0, import_pino_http.default)({
     logger,
@@ -57227,8 +57303,8 @@ app.use(
   })
 );
 app.use((0, import_cors.default)());
-app.use(import_express6.default.json({ limit: "20mb" }));
-app.use(import_express6.default.urlencoded({ extended: true, limit: "20mb" }));
+app.use(import_express7.default.json({ limit: "20mb" }));
+app.use(import_express7.default.urlencoded({ extended: true, limit: "20mb" }));
 app.use("/api", routes_default);
 var app_default = app;
 export {
