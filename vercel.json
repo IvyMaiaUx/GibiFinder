@@ -4,6 +4,9 @@
   "outputDirectory": "artifacts/gibi-finder/dist/public",
   "installCommand": "pnpm install --frozen-lockfile=false",
   "framework": null,
+  "functions": {
+    "api/index.mjs": { "maxDuration": 30 }
+  },
   "rewrites": [
     {
       "source": "/api/:path*",
