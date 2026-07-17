@@ -385,7 +385,7 @@ export class ProviderManager {
     if (compactPhrase && compactTitle.includes(compactPhrase)) return true;
 
     if (terms.length <= 1) {
-      return rawTerms.length <= 1;
+      return terms.length === 1 ? this.titleMatchesTerm(title, terms[0]) : rawTerms.length <= 1;
     }
 
     if (terms.includes("familia") && terms.includes("sacana")) {
