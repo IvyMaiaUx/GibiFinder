@@ -445,15 +445,18 @@ function detectHtmlEngine(origin: string, html: string): string | null {
   return null;
 }
 
-router.get("/providers/inspect", async (req: Request, res: Response) => {
-  const host = req.hostname;
-  const forwardedHost = String(req.headers["x-forwarded-host"] || "");
-  const isLocalhost = ["localhost", "127.0.0.1", "::1"].includes(host) || forwardedHost.startsWith("localhost:");
-  if (!isLocalhost) {
-    res.status(404).json({ error: "local_only", message: "Provider Inspector is only available on localhost." });
-    return;
-  }
+function isPrivateInspectionTarget(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (["localhost", "127.0.0.1", "::1", "0.0.0.0"].includes(host)) return true;
+  if (/^127\./.test(host)) return true;
+  if (/^10\./.test(host)) return true;
+  if (/^192\.168\./.test(host)) return true;
+  if (/^169\.254\./.test(host)) return true;
+  const private172 = host.match(/^172\.(\d+)\./);
+  return Boolean(private172 && Number(private172[1]) >= 16 && Number(private172[1]) <= 31);
+}
 
+router.get("/providers/inspect", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   const target = req.query.url as string;
   if (!target) {
@@ -467,6 +470,10 @@ router.get("/providers/inspect", async (req: Request, res: Response) => {
     if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("invalid protocol");
   } catch {
     res.status(400).json({ error: "invalid_url", message: "Informe uma URL http/https valida." });
+    return;
+  }
+  if (isPrivateInspectionTarget(parsed.hostname)) {
+    res.status(400).json({ error: "blocked_private_url", message: "URLs locais ou privadas nao podem ser inspecionadas pelo admin online." });
     return;
   }
 
