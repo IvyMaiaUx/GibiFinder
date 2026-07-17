@@ -55041,6 +55041,21 @@ var WordPressComicProvider = class {
     if (/\([^)]*\)/.test(clean)) return clean;
     return /#\s*\d+/.test(clean) ? `${clean} (2024)` : clean;
   }
+  getIssueNumber(title) {
+    return this.stripHtml(title).match(/#\s*([0-9]+)/)?.[1] || null;
+  }
+  readPageMatchesPost(page, post2) {
+    const postTitle = this.stripHtml(post2.title?.rendered || "");
+    const pageTitle = this.cleanReadPageTitle(page.title?.rendered || page.slug);
+    const postIssue = this.getIssueNumber(postTitle);
+    const pageIssue = this.getIssueNumber(pageTitle);
+    if (postIssue && pageIssue && postIssue !== pageIssue) return false;
+    const postTerms = this.getSearchTerms(postTitle.replace(/#\s*[0-9]+.*/i, ""));
+    if (postTerms.length === 0) return true;
+    const pageText = this.normalizeText(pageTitle);
+    const matched = postTerms.filter((term) => pageText.includes(term)).length;
+    return matched / postTerms.length >= 0.67;
+  }
   async getPost(id) {
     const clean = id.replace(/^post:/, "");
     if (/^\d+$/.test(clean)) {
@@ -55069,7 +55084,9 @@ var WordPressComicProvider = class {
     if (direct) {
       const slug = new URL(direct.url).pathname.replace(/^\/+|\/+$/g, "");
       const pages = await this.fetchJson(this.api(`pages?slug=${encodeURIComponent(slug)}&per_page=1`));
-      if (pages[0]) return { id: `page:${pages[0].id}`, title: direct.title, url: pages[0].link };
+      if (pages[0] && this.readPageMatchesPost(pages[0], post2)) {
+        return { id: `page:${pages[0].id}`, title: direct.title, url: pages[0].link };
+      }
     }
     const title = this.stripHtml(post2.title?.rendered || "");
     const number = title.match(/#\s*([0-9]+)/)?.[1];

@@ -127,6 +127,24 @@ export class WordPressComicProvider implements Provider {
     return /#\s*\d+/.test(clean) ? `${clean} (2024)` : clean;
   }
 
+  private getIssueNumber(title: string): string | null {
+    return this.stripHtml(title).match(/#\s*([0-9]+)/)?.[1] || null;
+  }
+
+  private readPageMatchesPost(page: WpPost, post: WpPost): boolean {
+    const postTitle = this.stripHtml(post.title?.rendered || "");
+    const pageTitle = this.cleanReadPageTitle(page.title?.rendered || page.slug);
+    const postIssue = this.getIssueNumber(postTitle);
+    const pageIssue = this.getIssueNumber(pageTitle);
+    if (postIssue && pageIssue && postIssue !== pageIssue) return false;
+
+    const postTerms = this.getSearchTerms(postTitle.replace(/#\s*[0-9]+.*/i, ""));
+    if (postTerms.length === 0) return true;
+    const pageText = this.normalizeText(pageTitle);
+    const matched = postTerms.filter(term => pageText.includes(term)).length;
+    return matched / postTerms.length >= 0.67;
+  }
+
   private async getPost(id: string): Promise<WpPost | null> {
     const clean = id.replace(/^post:/, "");
     if (/^\d+$/.test(clean)) {
@@ -158,7 +176,9 @@ export class WordPressComicProvider implements Provider {
     if (direct) {
       const slug = new URL(direct.url).pathname.replace(/^\/+|\/+$/g, "");
       const pages = await this.fetchJson<WpPost[]>(this.api(`pages?slug=${encodeURIComponent(slug)}&per_page=1`));
-      if (pages[0]) return { id: `page:${pages[0].id}`, title: direct.title, url: pages[0].link };
+      if (pages[0] && this.readPageMatchesPost(pages[0], post)) {
+        return { id: `page:${pages[0].id}`, title: direct.title, url: pages[0].link };
+      }
     }
 
     const title = this.stripHtml(post.title?.rendered || "");
