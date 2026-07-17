@@ -2,6 +2,9 @@
   "name": "workspace",
   "version": "0.0.0",
   "license": "MIT",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "build": "pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/gibi-finder run build",
     "typecheck:libs": "tsc --build",
