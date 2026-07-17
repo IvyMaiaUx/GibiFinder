@@ -297,6 +297,157 @@ router.get("/admin/test-drive", async (req: Request, res: Response) => {
 });
 
 // POST /api/admin/import-drive — bulk import from Google Drive folder
+// POST /api/admin/import-drive-library - recursive Drive import for PDF/CBR/CBZ libraries
+router.post("/admin/import-drive-library", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  if (!supabase) { res.status(503).json({ error: "db_unavailable", message: "Banco nao configurado" }); return; }
+
+  const driveApiKey = process.env["GOOGLE_DRIVE_API_KEY"];
+  if (!driveApiKey) {
+    res.status(503).json({ error: "no_drive_key", message: "GOOGLE_DRIVE_API_KEY nao configurada no servidor" });
+    return;
+  }
+
+  type DriveFile = { id: string; name: string; mimeType: string; path: string };
+  const folderMime = "application/vnd.google-apps.folder";
+  const supportedFile = (file: Pick<DriveFile, "name" | "mimeType">) =>
+    /\.(?:pdf|cbr|cbz)$/i.test(file.name) ||
+    ["application/pdf", "application/x-rar", "application/rar", "application/vnd.rar", "application/zip", "application/x-cbz"].includes(file.mimeType);
+  const parseFileName = (file: DriveFile): ComicResultData & { numero?: string } => {
+    const withoutExt = file.name.replace(/\.(?:pdf|cbr|cbz)$/i, "").trim();
+    const withoutCredits = withoutExt.replace(/\s*\((?!\d{4}\))[^)]*\)\s*$/g, "").trim();
+    const issue = withoutCredits.match(/#\s*([0-9]+(?:[.,][0-9]+)?)/)?.[1] || "";
+    const year = withoutCredits.match(/\((20\d{2}|19\d{2})\)/)?.[1] || "";
+    const series = withoutCredits.replace(/#\s*[0-9]+(?:[.,][0-9]+)?.*$/i, "").trim() || withoutCredits;
+    const lowerPath = file.path.toLowerCase();
+    return {
+      titulo: withoutCredits,
+      revista: series,
+      editora: /dc|batman|superman|mulher maravilha|flash|absolute|absolut/.test(lowerPath) ? "DC Comics" : "",
+      ano: year,
+      personagens: [],
+      descricao: `Importado do Google Drive: ${file.path}`,
+      nota: `Arquivo ${file.name}`,
+      numero: issue
+    };
+  };
+
+  try {
+    const { folderUrl, importStatus = "approved", maxFiles = 200 } = req.body as {
+      folderUrl?: string;
+      importStatus?: string;
+      maxFiles?: number;
+    };
+    if (!folderUrl || typeof folderUrl !== "string") {
+      res.status(400).json({ error: "invalid_input", message: "URL da pasta e obrigatoria" });
+      return;
+    }
+
+    const folderIdMatch = folderUrl.match(/folders\/([a-zA-Z0-9_-]+)/);
+    if (!folderIdMatch) {
+      res.status(400).json({ error: "invalid_url", message: "URL de pasta do Drive invalida" });
+      return;
+    }
+
+    const driveList = async (parentId: string, parentPath: string): Promise<DriveFile[]> => {
+      const found: DriveFile[] = [];
+      let pageToken = "";
+      do {
+        const params = new URLSearchParams({
+          q: `'${parentId}' in parents and trashed=false`,
+          key: driveApiKey,
+          fields: "nextPageToken,files(id,name,mimeType)",
+          pageSize: "100",
+          supportsAllDrives: "true",
+          includeItemsFromAllDrives: "true"
+        });
+        if (pageToken) params.set("pageToken", pageToken);
+        const listRes = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`);
+        if (!listRes.ok) {
+          const errText = await listRes.text();
+          let detail = "";
+          try { detail = JSON.parse(errText)?.error?.message || errText; } catch { detail = errText; }
+          throw new Error(`Drive API (${listRes.status}): ${detail}`);
+        }
+        const listData = await listRes.json() as { nextPageToken?: string; files?: { id: string; name: string; mimeType: string }[] };
+        for (const file of listData.files || []) {
+          const path = parentPath ? `${parentPath} / ${file.name}` : file.name;
+          if (file.mimeType === folderMime) {
+            found.push(...await driveList(file.id, path));
+          } else if (supportedFile(file)) {
+            found.push({ ...file, path });
+          }
+        }
+        pageToken = listData.nextPageToken || "";
+      } while (pageToken);
+      return found;
+    };
+
+    const allFiles = await driveList(folderIdMatch[1], "");
+    const limit = Number.isFinite(maxFiles) ? Math.max(1, Math.min(Number(maxFiles), 200)) : 200;
+    const files = allFiles.slice(0, limit);
+    const results: { file: string; titulo: string; status: string; id?: string; error?: string }[] = [];
+    let imported = 0;
+    let skipped = 0;
+
+    for (const file of files) {
+      const driveViewUrl = `https://drive.google.com/file/d/${file.id}/view`;
+      const thumbnailUrl = `https://drive.google.com/thumbnail?id=${file.id}&sz=w400`;
+      const identified = parseFileName(file);
+      const titulo = identified.titulo || file.name.replace(/\.(?:pdf|cbr|cbz)$/i, "");
+
+      const existing = await supabase
+        .from("gibis")
+        .select("id")
+        .eq("drive_url", driveViewUrl)
+        .maybeSingle();
+      if (existing.data?.id) {
+        results.push({ file: file.path, titulo, status: "skipped", id: existing.data.id, error: "Ja importado" });
+        skipped++;
+        continue;
+      }
+
+      const { data: inserted, error: insertErr } = await supabase
+        .from("gibis")
+        .insert({
+          titulo,
+          revista: identified.revista || null,
+          editora: identified.editora || null,
+          ano: identified.ano || null,
+          numero: identified.numero || null,
+          personagens: identified.personagens || [],
+          descricao: identified.descricao || null,
+          imagem_url: thumbnailUrl,
+          drive_url: driveViewUrl,
+          status: importStatus === "pending" ? "pending" : "approved",
+          notas: identified.nota || null
+        })
+        .select()
+        .single();
+
+      if (insertErr) {
+        results.push({ file: file.path, titulo, status: "error", error: insertErr.message });
+        skipped++;
+      } else {
+        results.push({ file: file.path, titulo, status: "ok", id: (inserted as { id: string }).id });
+        imported++;
+      }
+    }
+
+    res.json({
+      imported,
+      skipped,
+      totalFound: allFiles.length,
+      processed: files.length,
+      results,
+      message: allFiles.length > files.length ? `Processados ${files.length} de ${allFiles.length} arquivos.` : undefined
+    });
+  } catch (err) {
+    console.error("Import drive library error:", err);
+    res.status(500).json({ error: "import_error", message: err instanceof Error ? err.message : "Erro na importacao" });
+  }
+});
+
 router.post("/admin/import-drive", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   if (!supabase) { res.status(503).json({ error: "db_unavailable", message: "Banco não configurado" }); return; }
