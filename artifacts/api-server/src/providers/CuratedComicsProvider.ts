@@ -75,6 +75,9 @@ const DRIVE_FOLDER_IDS = [
   "19BZpP9yvT8ZEtfVURLW9RLQc1u2FCOFH",
   "1wXs64lZ0nOBAAWwGutDHfjO-TnfYO6Ee",
   "1HpftuZaWFK7rr83e5m1N1QdgXxUZ_XzB",
+  "1-7xvifxdj0tER_-q_f5F4oMk6mJ-64QD",
+  "1-dhsSLfvPnVGwlMFjHQC2d5BF8EDeXl-",
+  "17EfGewQ9GWazH_LjtrsPVV5IgIFvz2ik",
 ];
 
 // Curator index pages: Google Sites pages that link out to many Drive folders.

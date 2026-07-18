@@ -56269,7 +56269,10 @@ var DRIVE_FOLDER_IDS = [
   "183xnIWeL_kecTZLtBlNhUgAcPVy-nZwp",
   "19BZpP9yvT8ZEtfVURLW9RLQc1u2FCOFH",
   "1wXs64lZ0nOBAAWwGutDHfjO-TnfYO6Ee",
-  "1HpftuZaWFK7rr83e5m1N1QdgXxUZ_XzB"
+  "1HpftuZaWFK7rr83e5m1N1QdgXxUZ_XzB",
+  "1-7xvifxdj0tER_-q_f5F4oMk6mJ-64QD",
+  "1-dhsSLfvPnVGwlMFjHQC2d5BF8EDeXl-",
+  "17EfGewQ9GWazH_LjtrsPVV5IgIFvz2ik"
 ];
 var DRIVE_INDEX_PAGES = [
   "https://sites.google.com/view/hqsmdc/marvel",
