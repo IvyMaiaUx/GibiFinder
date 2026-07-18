@@ -375,7 +375,9 @@ export class WordPressComicProvider implements Provider {
   async getPages(chapterId: string): Promise<Page[]> {
     try {
       let html = "";
-      if (chapterId.startsWith("page:")) {
+      if (chapterId.startsWith("url:")) {
+        html = await this.fetchHtml(chapterId.replace(/^url:/, ""));
+      } else if (chapterId.startsWith("page:")) {
         const page = await this.getPageById(chapterId.replace(/^page:/, ""));
         html = page?.content?.rendered || "";
       } else {
