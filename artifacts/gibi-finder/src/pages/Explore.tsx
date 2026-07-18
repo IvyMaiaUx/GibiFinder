@@ -212,8 +212,14 @@ export default function Explore() {
   useEffect(() => {
     try {
       const progress = getLocalProgress();
+      // Titles whose current chapter is already finished belong in "Já Lidos",
+      // not "Continue lendo".
+      const completedKeys = new Set(
+        getLocalCompleted().map(c => `${c.providerId}|${c.mangaId}|${c.chapterId}`)
+      );
       const items = Object.values(progress)
         .filter((p): p is NonNullable<typeof p> => !!p && !!p.mangaId && !!p.providerId)
+        .filter(p => !completedKeys.has(`${p.providerId}|${p.mangaId}|${p.chapterId}`))
         .map(p => ({
           providerId: p.providerId!,
           mangaId: p.mangaId!,

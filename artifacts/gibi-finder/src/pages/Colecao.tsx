@@ -211,8 +211,19 @@ export default function Colecao() {
     });
   };
 
+  // A title only counts as "Lendo" while its current chapter is unfinished.
+  // Once that chapter is marked completed it lives in "Já Lidos" instead, so we
+  // drop it from the reading shelf to avoid showing it in both places.
+  const completedChapterKeys = new Set(
+    completedItems.map(c => `${c.providerId}|${c.mangaId}|${c.chapterId}`)
+  );
+
   // +18 items stay hidden unless the +18 mode is active (and vice-versa).
-  const visibleShelf = shelfItems.filter(i => isAdultProviderId(i.providerId) === isNsfw);
+  const visibleShelf = shelfItems.filter(
+    i =>
+      isAdultProviderId(i.providerId) === isNsfw &&
+      !completedChapterKeys.has(`${i.providerId}|${i.gibiId}|${i.chapterId}`)
+  );
   const visibleCompleted = completedItems.filter(i => isAdultProviderId(i.providerId) === isNsfw);
   const visibleFavorites = favoriteItems.filter(i => isAdultProviderId(i.providerId) === isNsfw);
 
