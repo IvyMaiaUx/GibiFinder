@@ -1,9 +1,18 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Layout } from "@/components/layout/Layout";
-import { Loader2, AlertCircle, Compass, Flame, Clock, Languages, Star } from "lucide-react";
+import { Loader2, AlertCircle, Compass, Star, ChevronLeft, ChevronRight, Play, BookOpen } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
+import { isFavorite, toggleFavorite } from "@/lib/favorites";
+import { getLocalProgress } from "@/lib/user-history";
+import { useAuth } from "@/hooks/use-auth";
+
+interface CatalogSource {
+  providerId: string;
+  id: string;
+  title: string;
+}
 
 interface UnifiedCatalogItem {
   id: string;
@@ -13,18 +22,22 @@ interface UnifiedCatalogItem {
   rating?: number;
   genres?: string[];
   isAdult?: boolean;
-  sources: {
-    providerId: string;
-    id: string;
-    title: string;
-  }[];
+  sources: CatalogSource[];
+}
+
+interface RowData {
+  key: string;
+  title: string;
+  items: UnifiedCatalogItem[];
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-const ITEMS_PER_PAGE = 20;
 const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
-
 const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
+
+// Preferred genre rows, in display order (only shown if there are enough items).
+const FEATURED_GENRES = ["Ação", "Aventura", "Comédia", "Romance", "Terror", "Nacional", "Super-Herói", "Shounen", "Seinen", "Fantasia", "Infantil"];
+const MIN_ROW_ITEMS = 4;
 
 const isAdultItem = (item: UnifiedCatalogItem) => {
   if (item.isAdult) return true;
@@ -33,333 +46,286 @@ const isAdultItem = (item: UnifiedCatalogItem) => {
   return false;
 };
 
+const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+
+function ContinueCard({ item, onClick }: { item: { title: string; coverUrl?: string; chapterNum?: string }; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="group relative w-32 sm:w-40 shrink-0 bg-white border-4 border-black rounded-xl overflow-hidden text-left comic-shadow-sm hover:translate-y-[-4px] hover:shadow-[6px_6px_0_rgba(0,0,0,1)] transition-all"
+    >
+      <div className="relative aspect-[3/4] bg-zinc-950 border-b-4 border-black overflow-hidden">
+        <SafeImage src={item.coverUrl} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" />
+        <span className="absolute bottom-1 left-1 bg-primary text-white text-3xs font-display px-1.5 py-0.5 border border-black rounded flex items-center gap-1">
+          <BookOpen className="w-3 h-3" /> Cap. {item.chapterNum ?? "?"}
+        </span>
+      </div>
+      <div className="p-2">
+        <h4 className="font-display text-xs sm:text-sm text-black leading-tight line-clamp-2 group-hover:text-primary">{item.title}</h4>
+      </div>
+    </button>
+  );
+}
+
+function CatalogCard({ item, onOpen, onToggleFav, favorited }: {
+  item: UnifiedCatalogItem;
+  onOpen: () => void;
+  onToggleFav: (e: React.MouseEvent) => void;
+  favorited: boolean;
+}) {
+  return (
+    <div
+      onClick={onOpen}
+      className="group relative w-32 sm:w-40 shrink-0 cursor-pointer bg-white border-4 border-black rounded-xl overflow-hidden comic-shadow-sm hover:translate-y-[-4px] hover:shadow-[6px_6px_0_rgba(0,0,0,1)] hover:bg-yellow-50 transition-all"
+    >
+      <div className="relative aspect-[3/4] bg-zinc-950 border-b-4 border-black overflow-hidden">
+        <SafeImage src={item.coverUrl} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" />
+        <button
+          type="button"
+          onClick={onToggleFav}
+          className={cn(
+            "absolute top-1.5 right-1.5 p-1.5 border-2 border-black rounded-full transition-colors shadow-[2px_2px_0_rgba(0,0,0,1)]",
+            favorited ? "bg-secondary text-black" : "bg-white/90 text-gray-500 hover:bg-secondary hover:text-black"
+          )}
+          title={favorited ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+        >
+          <Star className={cn("w-3.5 h-3.5", favorited && "fill-black")} strokeWidth={3} />
+        </button>
+        {item.rating !== undefined && (
+          <span className="absolute bottom-1 left-1 flex items-center gap-0.5 bg-[#FFD166] text-black px-1.5 py-0.5 border border-black rounded font-display text-2xs font-black">
+            <Star className="w-2.5 h-2.5 fill-black" strokeWidth={2.5} /> {(item.rating / 2).toFixed(1)}
+          </span>
+        )}
+      </div>
+      <div className="p-2">
+        <h4 className="font-display text-xs sm:text-sm text-black leading-tight line-clamp-2 group-hover:text-primary">{item.title}</h4>
+      </div>
+    </div>
+  );
+}
+
+function Row({ title, children }: { title: string; children: React.ReactNode }) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const scrollBy = (dir: 1 | -1) => {
+    const el = scrollerRef.current;
+    if (el) el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: "smooth" });
+  };
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h3 className="font-display text-xl sm:text-2xl text-black uppercase">{title}</h3>
+        <div className="hidden sm:flex gap-1">
+          <button onClick={() => scrollBy(-1)} className="p-1.5 border-2 border-black rounded bg-white hover:bg-secondary transition-colors" aria-label="Anterior">
+            <ChevronLeft className="w-4 h-4" strokeWidth={3} />
+          </button>
+          <button onClick={() => scrollBy(1)} className="p-1.5 border-2 border-black rounded bg-white hover:bg-secondary transition-colors" aria-label="Próximo">
+            <ChevronRight className="w-4 h-4" strokeWidth={3} />
+          </button>
+        </div>
+      </div>
+      <div ref={scrollerRef} className="flex gap-3 sm:gap-4 overflow-x-auto pb-3 -mx-1 px-1 scroll-smooth [scrollbar-width:thin]">
+        {children}
+      </div>
+    </section>
+  );
+}
+
 export default function Explore() {
   const [, setLocation] = useLocation();
-  const [listType, setListType] = useState<"popular" | "latest">("popular");
-  const [langFilter, setLangFilter] = useState<"all" | "pt" | "en">("all");
-  const [selectedGenre, setSelectedGenre] = useState<string>("all");
-  const [currentPage, setCurrentPage] = useState(1);
-  
-  const [items, setItems] = useState<UnifiedCatalogItem[]>([]);
+  const { user } = useAuth();
+  const [popular, setPopular] = useState<UnifiedCatalogItem[]>([]);
+  const [latest, setLatest] = useState<UnifiedCatalogItem[]>([]);
+  const [continueItems, setContinueItems] = useState<{ providerId: string; mangaId: string; title: string; coverUrl?: string; chapterNum?: string; updatedAt: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
+  const [favVersion, setFavVersion] = useState(0);
   const [isNsfw, setIsNsfw] = useState(() => document.documentElement.classList.contains("nsfw"));
 
   useEffect(() => {
-    const handleNsfwChange = () => {
-      setIsNsfw(document.documentElement.classList.contains("nsfw"));
-      setCurrentPage(1);
-    };
-    window.addEventListener("nsfw-change", handleNsfwChange);
-    return () => window.removeEventListener("nsfw-change", handleNsfwChange);
+    const onNsfw = () => setIsNsfw(document.documentElement.classList.contains("nsfw"));
+    window.addEventListener("nsfw-change", onNsfw);
+    return () => window.removeEventListener("nsfw-change", onNsfw);
   }, []);
 
-  // Fetch unified catalog list from provider
-  const loadCatalog = async (type: "popular" | "latest", forceNsfw: boolean) => {
+  // Load "continue reading" from local progress.
+  useEffect(() => {
+    try {
+      const progress = getLocalProgress();
+      const items = Object.values(progress)
+        .filter((p): p is NonNullable<typeof p> => !!p && !!p.mangaId && !!p.providerId)
+        .map(p => ({
+          providerId: p.providerId!,
+          mangaId: p.mangaId!,
+          title: p.title,
+          coverUrl: p.coverUrl,
+          chapterNum: p.chapterNum,
+          updatedAt: p.updatedAt ? new Date(p.updatedAt).getTime() : 0,
+        }))
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, 20);
+      setContinueItems(items);
+    } catch { /* ignore */ }
+  }, []);
+
+  const loadCatalog = useCallback(async (nsfw: boolean) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${BASE}/api/providers/catalog?listType=${type}&nsfw=${forceNsfw}`);
-      if (!res.ok) throw new Error();
-      const data = await res.json() as UnifiedCatalogItem[];
-      setItems(data);
-    } catch (err) {
-      console.error(err);
-      setError("Não foi possível carregar o catálogo neste momento. Tente novamente mais tarde.");
-      setItems([]);
+      const [pRes, lRes] = await Promise.all([
+        fetch(`${BASE}/api/providers/catalog?listType=popular&nsfw=${nsfw}`),
+        fetch(`${BASE}/api/providers/catalog?listType=latest&nsfw=${nsfw}`),
+      ]);
+      if (!pRes.ok || !lRes.ok) throw new Error();
+      setPopular(await pRes.json() as UnifiedCatalogItem[]);
+      setLatest(await lRes.json() as UnifiedCatalogItem[]);
+    } catch {
+      setError("Não foi possível carregar o catálogo agora. Tente novamente mais tarde.");
+      setPopular([]);
+      setLatest([]);
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => { loadCatalog(isNsfw); }, [isNsfw, loadCatalog]);
+
+  const openItem = (item: UnifiedCatalogItem) => {
+    const src = item.sources?.[0];
+    if (!src) return;
+    setLocation(`/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}`);
   };
 
-  useEffect(() => {
-    setCurrentPage(1);
-    setSelectedGenre("all");
-    loadCatalog(listType, isNsfw);
-  }, [listType, isNsfw]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [langFilter, selectedGenre]);
-
-  const handleOpenItem = (item: UnifiedCatalogItem) => {
-    if (!item.sources || item.sources.length === 0) return;
-    // Open the detail page using the first available source
-    const src = item.sources[0];
-    const url = `/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}`;
-    setLocation(url);
+  const handleToggleFav = (item: UnifiedCatalogItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const src = item.sources?.[0];
+    if (!src) return;
+    toggleFavorite({ providerId: src.providerId, mangaId: src.id, title: item.title, coverUrl: item.coverUrl, description: item.description }, user?.id);
+    setFavVersion(v => v + 1);
   };
 
-  // Dynamically extract unique genres from the current loaded catalog items
-  const availableGenres = Array.from(
-    new Set(
-      items
-        .flatMap(item => item.genres || [])
-        .filter(Boolean)
-    )
-  ).sort() as string[];
+  const matchesNsfw = (item: UnifiedCatalogItem) => (isNsfw ? isAdultItem(item) : !isAdultItem(item));
 
-  // Filter items by language, genre, and NSFW mode
-  const filteredItems = items.filter(item => {
-    // 0. NSFW Filter
-    const adult = isAdultItem(item);
-    if (isNsfw) {
-      // If +18 mode is active, ONLY show +18 items
-      if (!adult) return false;
-    } else {
-      // If +18 mode is inactive, HIDE all +18 items
-      if (adult) return false;
-    }
+  const filteredPopular = popular.filter(matchesNsfw);
+  const filteredLatest = latest.filter(matchesNsfw);
 
-    // 1. Language Filter
-    if (langFilter === "pt") {
-      const isPt = item.sources.some(s => s.providerId !== "comicextra" && s.providerId !== "eightmuses");
-      if (!isPt) return false;
-    }
-    
-    // 2. Genre Filter
-    if (selectedGenre !== "all") {
-      const hasGenre = item.genres && item.genres.some(g => g.toLowerCase() === selectedGenre.toLowerCase());
-      if (!hasGenre) return false;
-    }
-    
-    return true;
-  });
+  // Featured/hero: the highest-rated popular item that has a cover + description.
+  const hero = filteredPopular.find(i => i.coverUrl && i.description) || filteredPopular[0];
 
-  // Calculate pagination
-  const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE);
-  const paginatedItems = filteredItems.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
-  );
+  // Build genre rows from the union of popular + latest.
+  const allItems = [...filteredPopular, ...filteredLatest];
+  const byId = new Map<string, UnifiedCatalogItem>();
+  for (const it of allItems) if (!byId.has(it.id)) byId.set(it.id, it);
+  const uniqueItems = Array.from(byId.values());
+
+  const genreRows: RowData[] = [];
+  for (const genre of FEATURED_GENRES) {
+    const items = uniqueItems.filter(i => i.genres?.some(g => norm(g) === norm(genre)));
+    if (items.length >= MIN_ROW_ITEMS) genreRows.push({ key: `g-${genre}`, title: genre, items: items.slice(0, 20) });
+  }
+
+  void favVersion; // re-render favorites on toggle
 
   return (
     <Layout>
       <div className="max-w-6xl mx-auto space-y-8 pb-16 select-none">
-        
-        {/* Banner header */}
-        <div className={cn(
-          "border-4 border-black p-6 rounded-xl comic-shadow relative overflow-hidden transform -rotate-1",
-          isNsfw 
-            ? "bg-primary text-primary-foreground border-white shadow-[0_0_20px_rgba(244,63,94,0.2)]" 
-            : "bg-primary text-white"
-        )}>
-          <div className="absolute top-0 right-0 w-24 h-24 opacity-10 bg-[radial-gradient(white_1px,transparent_1px)] [background-size:6px_6px] pointer-events-none" />
-          <h2 className="font-display text-4xl tracking-wider uppercase drop-shadow-[2px_2px_0_black] flex items-center gap-2">
-            <Compass className={cn("w-9 h-9 drop-shadow-[1px_1px_0_black]", isNsfw ? "text-cyan-300" : "text-secondary")} strokeWidth={3} />
-            {isNsfw ? "🔞 Lounge Adulto +18" : "Explorar Catálogo Online"}
-          </h2>
-          <p className="font-sans font-extrabold text-sm uppercase mt-2 text-white/90">
-            {isNsfw 
-              ? "Bem-vindo ao espaço adulto. Exibindo apenas conteúdos classificados como +18 / Hentai." 
-              : "Navegue pelos mangás e HQs unificados de todas as nossas fontes ativas em tempo real."}
-          </p>
-        </div>
-
-        <div className="space-y-6">
-          
-          <div className="flex flex-col lg:flex-row gap-4 justify-between items-stretch lg:items-center bg-white p-4 border-4 border-black rounded-xl comic-shadow-sm">
-            <span className="font-display text-lg text-black uppercase">
-              Descobrir Quadrinhos/Mangás:
-            </span>
-
-            {/* Filters layout */}
-            <div className="flex flex-col sm:flex-row gap-3">
-              
-              {/* Language Filter */}
-              <div className="flex border-2 border-black rounded overflow-hidden text-xs font-sans font-bold">
-                <span className="bg-muted px-2.5 py-1.5 border-r border-black text-gray-500 flex items-center gap-1">
-                  <Languages className="w-3.5 h-3.5" /> IDIOMA
+        {/* Hero */}
+        {hero && !loading && (
+          <div className={cn(
+            "relative overflow-hidden border-4 border-black rounded-2xl comic-shadow",
+            isNsfw ? "bg-zinc-950" : "bg-primary"
+          )}>
+            <div className="absolute inset-0 opacity-10 bg-[radial-gradient(white_1px,transparent_1px)] [background-size:8px_8px] pointer-events-none" />
+            <div className="relative flex flex-col sm:flex-row items-center gap-5 p-5 sm:p-8">
+              <SafeImage src={hero.coverUrl} alt={hero.title} className="w-32 h-48 sm:w-40 sm:h-60 object-cover border-4 border-black rounded-lg shrink-0 comic-shadow-sm" />
+              <div className="min-w-0 text-white">
+                <span className="inline-flex items-center gap-1 font-display text-xs uppercase bg-secondary text-black px-2 py-0.5 border-2 border-black rounded mb-2">
+                  <Compass className="w-3.5 h-3.5" strokeWidth={3} /> Destaque
                 </span>
-                <button
-                  onClick={() => setLangFilter("all")}
-                  className={cn("px-3 py-1.5 border-r border-black", langFilter === "all" ? "bg-secondary text-black" : "bg-white text-gray-400")}
-                >
-                  TODOS
-                </button>
-                <button
-                  onClick={() => setLangFilter("pt")}
-                  className={cn("px-3 py-1.5 border-r border-black", langFilter === "pt" ? "bg-secondary text-black" : "bg-white text-gray-400")}
-                >
-                  PT-BR 🇧🇷
-                </button>
-                <button
-                  onClick={() => setLangFilter("en")}
-                  className={cn("px-3 py-1.5", langFilter === "en" ? "bg-secondary text-black" : "bg-white text-gray-400")}
-                >
-                  EN 🇺🇸
-                </button>
-              </div>
-
-              {/* Genre Filter */}
-              {availableGenres.length > 0 && (
-                <div className="flex border-2 border-black rounded overflow-hidden text-xs font-sans font-bold bg-white">
-                  <span className="bg-muted px-2.5 py-1.5 border-r border-black text-gray-500 flex items-center gap-1 select-none">
-                    GÊNERO
-                  </span>
-                  <select
-                    value={selectedGenre}
-                    onChange={(e) => setSelectedGenre(e.target.value)}
-                    className="px-2 py-1 bg-white text-black outline-none cursor-pointer text-xs uppercase font-extrabold pr-4"
-                  >
-                    <option value="all">TODOS</option>
-                    {availableGenres.map((g) => (
-                      <option key={g} value={g}>
-                        {g}
-                      </option>
-                    ))}
-                  </select>
+                <h2 className="font-display text-3xl sm:text-5xl tracking-wide uppercase drop-shadow-[2px_2px_0_black] leading-tight line-clamp-2">{hero.title}</h2>
+                <p className="font-sans font-bold text-sm text-white/90 mt-2 line-clamp-3 max-w-xl">{hero.description || "Um dos títulos mais buscados do momento."}</p>
+                <div className="flex gap-3 mt-4">
+                  <button onClick={() => openItem(hero)} className="inline-flex items-center gap-2 bg-white text-black font-display text-sm uppercase px-5 py-2.5 border-4 border-black rounded-lg comic-shadow-sm hover:bg-secondary transition-colors">
+                    <Play className="w-4 h-4 fill-current" strokeWidth={3} /> Ler agora
+                  </button>
+                  <button onClick={(e) => handleToggleFav(hero, e)} className={cn(
+                    "inline-flex items-center gap-2 font-display text-sm uppercase px-4 py-2.5 border-4 border-black rounded-lg comic-shadow-sm transition-colors",
+                    hero.sources[0] && isFavorite(hero.sources[0].providerId, hero.sources[0].id) ? "bg-secondary text-black" : "bg-white/10 text-white hover:bg-white/20"
+                  )}>
+                    <Star className={cn("w-4 h-4", hero.sources[0] && isFavorite(hero.sources[0].providerId, hero.sources[0].id) && "fill-black")} strokeWidth={3} />
+                  </button>
                 </div>
-              )}
-
-              {/* List Type Tabs */}
-              <div className="flex border-2 border-black rounded overflow-hidden">
-                <button
-                  onClick={() => setListType("popular")}
-                  className={cn(
-                    "px-4 py-1.5 font-display text-sm flex items-center gap-1.5 border-r border-black transition-colors",
-                    listType === "popular" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"
-                  )}
-                >
-                  <Flame className="w-4 h-4 text-primary fill-current" /> MAIS POPULARES
-                </button>
-                <button
-                  onClick={() => setListType("latest")}
-                  className={cn(
-                    "px-4 py-1.5 font-display text-sm flex items-center gap-1.5 transition-colors",
-                    listType === "latest" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"
-                  )}
-                >
-                  <Clock className="w-4 h-4" /> RECENTES
-                </button>
               </div>
-
             </div>
           </div>
+        )}
 
-          {/* Error state */}
-          {error && (
-            <div className="bg-red-50 border-4 border-black text-black font-bold p-4 flex items-center gap-2">
-              <AlertCircle className="w-6 h-6 text-primary shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
+        {error && (
+          <div className="bg-red-50 border-4 border-black text-black font-bold p-4 flex items-center gap-2">
+            <AlertCircle className="w-6 h-6 text-primary shrink-0" /> <span>{error}</span>
+          </div>
+        )}
 
-          {/* Loading Grid spinner */}
-          {loading ? (
-            <div className="py-24 text-center">
-              <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
-              <h3 className="font-display text-2xl">SOLICITANDO FONTES EM TEMPO REAL...</h3>
-            </div>
-          ) : paginatedItems.length === 0 ? (
-            <div className="py-20 text-center border-4 border-dashed border-black bg-white rounded-xl">
-              <p className="font-display text-2xl text-gray-400">NENHUM QUADRINHO ENCONTRADO</p>
-              <p className="font-sans font-bold text-gray-500 mt-1">Nenhum provedor retornou dados para os filtros selecionados. Verifique se as fontes estão ativas no painel admin.</p>
-            </div>
-          ) : (
-            <>
-              {/* Grid catalog list */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
-                {paginatedItems.map((item) => {
-                  const hasPt = item.sources.some(s => s.providerId !== "comicextra");
-                  const hasEn = true; // all active sources support English
+        {loading ? (
+          <div className="py-24 text-center">
+            <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
+            <h3 className="font-display text-2xl">CARREGANDO O CATÁLOGO...</h3>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {/* Continue reading */}
+            {continueItems.length > 0 && (
+              <Row title="▶ Continue lendo">
+                {continueItems.map(item => (
+                  <ContinueCard
+                    key={`${item.providerId}-${item.mangaId}`}
+                    item={item}
+                    onClick={() => setLocation(`/gibi/online?providerId=${item.providerId}&id=${encodeURIComponent(item.mangaId)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&resume=true`)}
+                  />
+                ))}
+              </Row>
+            )}
+
+            {filteredPopular.length > 0 && (
+              <Row title="🔥 Mais populares">
+                {filteredPopular.slice(0, 20).map(item => {
+                  const src = item.sources?.[0];
                   return (
-                    <button
-                      key={item.id}
-                      onClick={() => handleOpenItem(item)}
-                      className="group bg-white border-4 border-black rounded-xl overflow-hidden text-left flex flex-col justify-between hover:translate-y-[-6px] transition-all duration-200 comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:bg-yellow-50"
-                    >
-                      <div className="relative aspect-[3/4] border-b-4 border-black bg-zinc-950 overflow-hidden shrink-0">
-                        <SafeImage
-                          src={item.coverUrl}
-                          alt={item.title}
-                          className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                          loading="lazy"
-                        />
-                        
-
-                      </div>
-
-                      <div className="p-4 flex-1 flex flex-col justify-between min-w-0">
-                        <div>
-                          <h4 className="font-display text-lg text-black leading-tight group-hover:text-primary transition-colors line-clamp-2">
-                            {item.title}
-                          </h4>
-                          <p className="font-sans text-2xs text-gray-500 font-extrabold uppercase mt-1">
-                            Fontes: {Array.from(new Set(item.sources.map(s => s.providerId.toUpperCase()))).join(", ")}
-                          </p>
-                        </div>
-                        
-                        <div className="mt-4 pt-3 border-t border-dashed border-black/20 flex items-center justify-between">
-                          {item.rating !== undefined && (
-                            <span className="flex items-center gap-1 bg-[#FFD166] text-black px-2 py-0.5 border-2 border-black rounded-lg font-display text-xs font-black shadow-[2px_2px_0_rgba(0,0,0,1)]">
-                              <Star className="w-3 h-3 fill-black text-black" strokeWidth={2.5} />
-                              {(item.rating / 2).toFixed(1)}
-                            </span>
-                          )}
-                          <span className="font-display text-xs text-primary group-hover:translate-x-1 transition-transform">
-                            LER AGORA →
-                          </span>
-                        </div>
-                      </div>
-                    </button>
+                    <CatalogCard key={item.id} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} />
                   );
                 })}
+              </Row>
+            )}
+
+            {filteredLatest.length > 0 && (
+              <Row title="🆕 Novidades">
+                {filteredLatest.slice(0, 20).map(item => {
+                  const src = item.sources?.[0];
+                  return (
+                    <CatalogCard key={`new-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} />
+                  );
+                })}
+              </Row>
+            )}
+
+            {genreRows.map(row => (
+              <Row key={row.key} title={row.title}>
+                {row.items.map(item => {
+                  const src = item.sources?.[0];
+                  return (
+                    <CatalogCard key={`${row.key}-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} />
+                  );
+                })}
+              </Row>
+            ))}
+
+            {!error && filteredPopular.length === 0 && filteredLatest.length === 0 && (
+              <div className="py-20 text-center border-4 border-dashed border-black bg-white rounded-xl">
+                <p className="font-display text-2xl text-gray-400">NENHUM QUADRINHO ENCONTRADO</p>
+                <p className="font-sans font-bold text-gray-500 mt-1">Nenhum provedor retornou dados no momento.</p>
               </div>
-
-              {/* Pagination Controls */}
-              {totalPages > 1 && (
-                <div className="flex flex-wrap justify-center items-center gap-2 mt-12 pt-6 border-t-4 border-dashed border-black/20 font-sans">
-                  <button
-                    disabled={currentPage === 1}
-                    onClick={() => {
-                      setCurrentPage(prev => Math.max(prev - 1, 1));
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    className="px-3 py-1.5 border-2 border-black rounded font-bold hover:bg-secondary disabled:opacity-50 disabled:hover:bg-transparent transition-colors bg-white text-black"
-                  >
-                    &lt;
-                  </button>
-                  
-                  {Array.from({ length: totalPages }).map((_, idx) => {
-                    const pageNum = idx + 1;
-                    return (
-                      <button
-                        key={pageNum}
-                        onClick={() => {
-                          setCurrentPage(pageNum);
-                          window.scrollTo({ top: 0, behavior: 'smooth' });
-                        }}
-                        className={cn(
-                          "w-9 h-9 border-2 border-black rounded font-bold transition-all",
-                          currentPage === pageNum 
-                            ? "bg-secondary text-black scale-110 comic-shadow-sm font-black" 
-                            : "bg-white text-gray-700 hover:bg-muted"
-                        )}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  })}
-
-                  <button
-                    disabled={currentPage === totalPages}
-                    onClick={() => {
-                      setCurrentPage(prev => Math.min(prev + 1, totalPages));
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    className="px-3 py-1.5 border-2 border-black rounded font-bold hover:bg-secondary disabled:opacity-50 disabled:hover:bg-transparent transition-colors bg-white text-black"
-                  >
-                    &gt;
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-
-        </div>
-
+            )}
+          </div>
+        )}
       </div>
     </Layout>
   );
