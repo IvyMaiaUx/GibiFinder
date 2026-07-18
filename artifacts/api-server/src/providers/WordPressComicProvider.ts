@@ -378,7 +378,7 @@ export class WordPressComicProvider implements Provider {
       let postContent = "";
       let postLink = "";
       if (chapterId.startsWith("url:")) {
-        html = await this.fetchHtml(chapterId.replace(/^url:/, ""));
+        html = await this.fetchHtml(chapterId.replace(/^url:/, "")).catch(() => "");
       } else if (chapterId.startsWith("page:")) {
         const page = await this.getPageById(chapterId.replace(/^page:/, ""));
         html = page?.content?.rendered || "";
@@ -391,7 +391,8 @@ export class WordPressComicProvider implements Provider {
           const page = await this.getPageById(readPage.id.replace(/^page:/, ""));
           html = page?.content?.rendered || "";
         } else if (readPage?.url) {
-          html = await this.fetchHtml(readPage.url);
+          // Don't let a failed reader-page fetch abort before the download fallback.
+          html = await this.fetchHtml(readPage.url).catch(() => "");
         } else {
           html = postContent;
         }

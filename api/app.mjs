@@ -55955,7 +55955,7 @@ var WordPressComicProvider = class {
       let postContent = "";
       let postLink = "";
       if (chapterId.startsWith("url:")) {
-        html = await this.fetchHtml(chapterId.replace(/^url:/, ""));
+        html = await this.fetchHtml(chapterId.replace(/^url:/, "")).catch(() => "");
       } else if (chapterId.startsWith("page:")) {
         const page = await this.getPageById(chapterId.replace(/^page:/, ""));
         html = page?.content?.rendered || "";
@@ -55968,7 +55968,7 @@ var WordPressComicProvider = class {
           const page = await this.getPageById(readPage.id.replace(/^page:/, ""));
           html = page?.content?.rendered || "";
         } else if (readPage?.url) {
-          html = await this.fetchHtml(readPage.url);
+          html = await this.fetchHtml(readPage.url).catch(() => "");
         } else {
           html = postContent;
         }
