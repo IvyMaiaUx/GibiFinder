@@ -81,6 +81,46 @@ export function drivePreviewUrl(rawUrl: string): string | null {
   return null;
 }
 
+// Rough check to skip translating text that already looks Portuguese.
+export function looksPortuguese(text: string): boolean {
+  if (/[ãõçáâàéêíóôú] /.test(text) || /[ãõç]/.test(text)) return true;
+  return /\b(que|não|uma|com|para|dos|das|também|é|são|história|editora|edição)\b/i.test(text);
+}
+
+const hashStr = (s: string): string => {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+};
+
+/**
+ * Translate a synopsis to Portuguese via the backend (Gemini), cached in
+ * localStorage. Returns the original text on failure or if it already looks PT.
+ */
+export async function translateToPt(text: string | undefined | null): Promise<string> {
+  const clean = (text || "").trim();
+  if (clean.length < 20 || looksPortuguese(clean)) return clean;
+  const cacheKey = `gibi-finder:tr:${hashStr(clean)}`;
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) return cached;
+  } catch { /* ignore */ }
+  try {
+    const res = await fetch(`${BASE}/api/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: clean }),
+    });
+    if (!res.ok) return clean;
+    const data = await res.json() as { text?: string };
+    const out = data.text || clean;
+    try { localStorage.setItem(cacheKey, out); } catch { /* ignore */ }
+    return out;
+  } catch {
+    return clean;
+  }
+}
+
 export const ADULT_PROVIDER_IDS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
 
 /** Whether a provider id belongs to the +18 catalog. */

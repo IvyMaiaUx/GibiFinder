@@ -7,7 +7,7 @@ import { FeedbackActions } from "@/components/results/FeedbackActions";
 import { MangaDexReader } from "@/components/results/MangaDexReader";
 import { Link2, AlertCircle, Loader2, Star, BookOpen, ExternalLink, ShoppingCart, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
+import { cn, translateToPt } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -102,6 +102,7 @@ export default function ResultDetail() {
   const itemMangaId = isOnlineResult ? mangaId : id;
   const itemProviderId = isOnlineResult ? providerId : "local";
   const [isFavorited, setIsFavorited] = useState(false);
+  const [ptSinopse, setPtSinopse] = useState<string | null>(null);
 
   useEffect(() => {
     if (!itemMangaId) return;
@@ -224,6 +225,20 @@ export default function ResultDetail() {
         }
       : undefined;
 
+  // Translate the synopsis to Portuguese (cached; skips text already in PT).
+  const rawSinopse = (resultData as any)?.sinopse as string | undefined;
+  useEffect(() => {
+    setPtSinopse(null);
+    if (!rawSinopse) return;
+    let active = true;
+    translateToPt(rawSinopse).then(t => { if (active && t && t !== rawSinopse) setPtSinopse(t); });
+    return () => { active = false; };
+  }, [rawSinopse]);
+
+  const displayResult = resultData && ptSinopse
+    ? { ...(resultData as any), sinopse: ptSinopse }
+    : resultData;
+
   return (
     <Layout>
       <div className="max-w-4xl mx-auto pb-16">
@@ -338,7 +353,7 @@ export default function ResultDetail() {
               const driveEmbedUrl = (resultData as any)?.drive_url ? getGoogleDriveEmbedUrl((resultData as any).drive_url) : null;
               return (
                 <div className="space-y-12 animate-in fade-in duration-200">
-                  <ComicCard result={resultData as any} isMain />
+                  <ComicCard result={displayResult as any} isMain />
                   
                   {driveEmbedUrl ? (
                     <div className="space-y-6">
@@ -364,7 +379,7 @@ export default function ResultDetail() {
                     <MangaDexReader 
                       mangaTitle={(resultData as any).revista || (resultData as any).titulo || ""} 
                       coverUrl={(resultData as any).coverUrl || (resultData as any).images?.[0]} 
-                      description={(resultData as any).sinopse || (resultData as any).description}
+                      description={(displayResult as any).sinopse || (displayResult as any).description}
                       initialProviderId={isOnlineResult ? providerId : undefined}
                       initialMangaId={isOnlineResult ? mangaId : undefined}
                     />
