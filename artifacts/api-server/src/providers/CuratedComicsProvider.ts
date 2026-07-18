@@ -64,6 +64,8 @@ const DRIVE_FOLDER_IDS = [
   "1Etdsik4rGHDhNv5g4_8J_DDTuuvvlunN",
   "1JPCtkMZrAoN1XujYbPrO1PjEhR43VgwM",
   "1-0-G5WCbZH5WG7Iz2ZVLlw2mlaSUp0cP",
+  "1zjVQ0K6mWgXcZSTV8gNi-jxY0x2KWjGN",
+  "1e0nUE7b-V3rVUpUsla4UYJJjSXfk5R7O",
 ];
 
 const SHAREPOINT_URL =

@@ -56258,7 +56258,9 @@ var GOOGLE_SITES_URL = "https://sites.google.com/educacao.quintana.sp.gov.br/bib
 var DRIVE_FOLDER_IDS = [
   "1Etdsik4rGHDhNv5g4_8J_DDTuuvvlunN",
   "1JPCtkMZrAoN1XujYbPrO1PjEhR43VgwM",
-  "1-0-G5WCbZH5WG7Iz2ZVLlw2mlaSUp0cP"
+  "1-0-G5WCbZH5WG7Iz2ZVLlw2mlaSUp0cP",
+  "1zjVQ0K6mWgXcZSTV8gNi-jxY0x2KWjGN",
+  "1e0nUE7b-V3rVUpUsla4UYJJjSXfk5R7O"
 ];
 function normalizeText(value) {
   return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
