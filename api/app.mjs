@@ -56268,7 +56268,12 @@ var DRIVE_FOLDER_IDS = [
   "17kZd7LFzzNsjJ1zEU2sB0YuRhpyhBV1A",
   "183xnIWeL_kecTZLtBlNhUgAcPVy-nZwp",
   "19BZpP9yvT8ZEtfVURLW9RLQc1u2FCOFH",
-  "1wXs64lZ0nOBAAWwGutDHfjO-TnfYO6Ee"
+  "1wXs64lZ0nOBAAWwGutDHfjO-TnfYO6Ee",
+  "1HpftuZaWFK7rr83e5m1N1QdgXxUZ_XzB"
+];
+var DRIVE_INDEX_PAGES = [
+  "https://sites.google.com/view/hqsmdc/marvel",
+  "https://sites.google.com/view/hqsmdc/dc"
 ];
 function normalizeText(value) {
   return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
@@ -56428,11 +56433,29 @@ var CuratedComicsProvider = class {
       return [];
     }
   }
+  // Scrape the curator index pages for Drive folder ids (multiple link formats:
+  // /folders/<id>, embeddedfolderview?id=<id>, open?id=<id>, /file/d/<id>).
+  async discoverIndexFolderIds() {
+    const htmls = await Promise.all(
+      DRIVE_INDEX_PAGES.map(
+        (url) => fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } }).then((r) => r.ok ? r.text() : "").catch(() => "")
+      )
+    );
+    const ids = /* @__PURE__ */ new Set();
+    const re = /(?:drive\.google\.com\/(?:drive\/)?folders\/|embeddedfolderview\?id=|open\?id=|\/file\/d\/)([A-Za-z0-9_-]{25,})/gi;
+    for (const html of htmls) {
+      if (!html) continue;
+      for (const m of html.matchAll(re)) ids.add(m[1]);
+    }
+    return Array.from(ids);
+  }
   async fetchDriveFolderItems() {
     if (!hasDriveKey()) return [];
+    const discovered = await this.discoverIndexFolderIds().catch(() => []);
+    const roots = Array.from(/* @__PURE__ */ new Set([...DRIVE_FOLDER_IDS, ...discovered]));
     const items = [];
     const seenFiles = /* @__PURE__ */ new Set();
-    const seenFolders = new Set(DRIVE_FOLDER_IDS);
+    const seenFolders = new Set(roots);
     const CONCURRENCY = 8;
     const MAX_ITEMS = 5e3;
     const MAX_FOLDERS = 900;
@@ -56483,7 +56506,7 @@ var CuratedComicsProvider = class {
       return childFolders;
     };
     try {
-      let frontier = [...DRIVE_FOLDER_IDS];
+      let frontier = [...roots];
       while (frontier.length > 0 && foldersVisited < MAX_FOLDERS && items.length < MAX_ITEMS) {
         const batch = frontier.slice(0, CONCURRENCY);
         frontier = frontier.slice(CONCURRENCY);

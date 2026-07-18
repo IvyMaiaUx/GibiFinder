@@ -74,6 +74,15 @@ const DRIVE_FOLDER_IDS = [
   "183xnIWeL_kecTZLtBlNhUgAcPVy-nZwp",
   "19BZpP9yvT8ZEtfVURLW9RLQc1u2FCOFH",
   "1wXs64lZ0nOBAAWwGutDHfjO-TnfYO6Ee",
+  "1HpftuZaWFK7rr83e5m1N1QdgXxUZ_XzB",
+];
+
+// Curator index pages: Google Sites pages that link out to many Drive folders.
+// We scrape them each refresh and crawl whatever folders they point to, so new
+// libraries appear automatically without editing this file.
+const DRIVE_INDEX_PAGES = [
+  "https://sites.google.com/view/hqsmdc/marvel",
+  "https://sites.google.com/view/hqsmdc/dc",
 ];
 
 const SHAREPOINT_URL =
@@ -253,12 +262,34 @@ export class CuratedComicsProvider implements Provider {
     }
   }
 
+  // Scrape the curator index pages for Drive folder ids (multiple link formats:
+  // /folders/<id>, embeddedfolderview?id=<id>, open?id=<id>, /file/d/<id>).
+  private async discoverIndexFolderIds(): Promise<string[]> {
+    const htmls = await Promise.all(
+      DRIVE_INDEX_PAGES.map(url =>
+        fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } })
+          .then(r => (r.ok ? r.text() : ""))
+          .catch(() => "")
+      )
+    );
+    const ids = new Set<string>();
+    const re = /(?:drive\.google\.com\/(?:drive\/)?folders\/|embeddedfolderview\?id=|open\?id=|\/file\/d\/)([A-Za-z0-9_-]{25,})/gi;
+    for (const html of htmls) {
+      if (!html) continue;
+      for (const m of html.matchAll(re)) ids.add(m[1]);
+    }
+    return Array.from(ids);
+  }
+
   private async fetchDriveFolderItems(): Promise<CuratedItem[]> {
     if (!hasDriveKey()) return [];
 
+    const discovered = await this.discoverIndexFolderIds().catch(() => [] as string[]);
+    const roots = Array.from(new Set([...DRIVE_FOLDER_IDS, ...discovered]));
+
     const items: CuratedItem[] = [];
     const seenFiles = new Set<string>();
-    const seenFolders = new Set<string>(DRIVE_FOLDER_IDS);
+    const seenFolders = new Set<string>(roots);
     const CONCURRENCY = 8;
     // We only read file metadata (id/name), never download PDFs, so a large
     // library is cheap to crawl — the caps just bound worst-case fan-out. Raised
@@ -321,7 +352,7 @@ export class CuratedComicsProvider implements Provider {
       // Breadth-first walk with bounded concurrency so the ~dozens of subfolders
       // are crawled in parallel and the whole thing finishes within the request
       // timeout instead of one slow sequential chain.
-      let frontier: string[] = [...DRIVE_FOLDER_IDS];
+      let frontier: string[] = [...roots];
       while (frontier.length > 0 && foldersVisited < MAX_FOLDERS && items.length < MAX_ITEMS) {
         const batch = frontier.slice(0, CONCURRENCY);
         frontier = frontier.slice(CONCURRENCY);
