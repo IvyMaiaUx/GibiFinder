@@ -238,6 +238,24 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
   // Fetch chapter pages from provider
   const readChapter = async (chapter: Chapter, resumePage?: number) => {
+    // Advancing to a later chapter means the previous one was finished — mark it
+    // as read so "Já Lidos" reflects sequential reading even without hitting the
+    // very last page.
+    if (showReader && selectedChapter && selectedChapter.id !== chapter.id) {
+      const prevNum = parseFloat(selectedChapter.chapterNum);
+      const nextNum = parseFloat(chapter.chapterNum);
+      if (!isNaN(prevNum) && !isNaN(nextNum) && nextNum > prevNum) {
+        markChapterCompleted({
+          providerId: selectedSource?.providerId || selectedChapter.providerId,
+          mangaId: selectedSource?.id || selectedResult?.id || mangaTitle,
+          title: selectedResult?.title || mangaTitle,
+          coverUrl: coverUrl || selectedResult?.coverUrl,
+          chapterId: selectedChapter.id,
+          chapterNum: selectedChapter.chapterNum,
+          completedAt: new Date().toISOString()
+        }, user?.id);
+      }
+    }
     setSelectedChapter(chapter);
     setLoadingPages(true);
     // Note: keep the previous pages mounted while the next chapter loads — clearing
