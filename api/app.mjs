@@ -56222,6 +56222,9 @@ var SlimeReadProvider = class {
 
 // src/providers/CuratedComicsProvider.ts
 init_logger();
+var CACHE_ROW_ID = "catalog";
+var MEM_TTL_MS = 1e3 * 60 * 30;
+var REMOTE_TTL_MS = 1e3 * 60 * 60 * 6;
 var EMBED_PREFIX = "embed:";
 var STATIC_ITEMS = [
   {
@@ -56272,7 +56275,8 @@ var DRIVE_FOLDER_IDS = [
   "1HpftuZaWFK7rr83e5m1N1QdgXxUZ_XzB",
   "1-7xvifxdj0tER_-q_f5F4oMk6mJ-64QD",
   "1-dhsSLfvPnVGwlMFjHQC2d5BF8EDeXl-",
-  "17EfGewQ9GWazH_LjtrsPVV5IgIFvz2ik"
+  "17EfGewQ9GWazH_LjtrsPVV5IgIFvz2ik",
+  "1O04VepyPqNEC3MNpbF8EgzEN-zi04_qo"
 ];
 var DRIVE_INDEX_PAGES = [
   "https://sites.google.com/view/hqsmdc/marvel",
@@ -56524,6 +56528,28 @@ var CuratedComicsProvider = class {
     }
   }
   refreshing = null;
+  // Read the shared catalog from Supabase (fast, single row). Returns null when
+  // unavailable so callers fall back to crawling.
+  async loadRemoteCache() {
+    if (!supabase) return null;
+    try {
+      const { data, error } = await supabase.from("curated_cache").select("data, updated_at").eq("id", CACHE_ROW_ID).maybeSingle();
+      if (error || !data?.data) return null;
+      const items = data.data;
+      if (!Array.isArray(items) || items.length === 0) return null;
+      return { items, updatedAt: new Date(data.updated_at).getTime() };
+    } catch {
+      return null;
+    }
+  }
+  async saveRemoteCache(items) {
+    if (!supabase || items.length === 0) return;
+    try {
+      await supabase.from("curated_cache").upsert({ id: CACHE_ROW_ID, data: items, updated_at: (/* @__PURE__ */ new Date()).toISOString() });
+    } catch (err) {
+      logger.warn({ err }, `Curated provider [${this.id}] failed to persist cache`);
+    }
+  }
   async refreshCatalog() {
     if (this.refreshing) return this.refreshing;
     this.refreshing = (async () => {
@@ -56534,16 +56560,32 @@ var CuratedComicsProvider = class {
       const items = [...sitesItems, ...driveItems];
       this.catalogCache = { fetchedAt: Date.now(), items };
       this.refreshing = null;
+      void this.saveRemoteCache(items);
       return items;
     })();
     return this.refreshing;
   }
-  async getDynamicCatalog(force = false) {
+  // Resolve the catalog, preferring cheap caches over the expensive crawl:
+  //   in-memory (30 min) -> Supabase shared row -> live crawl.
+  // When allowCrawl is false (search path) we never pay the crawl in-request; we
+  // serve the shared cache and let a catalog request refresh it.
+  async getDynamicCatalog(allowCrawl = true) {
     const now = Date.now();
-    if (!force && this.catalogCache && now - this.catalogCache.fetchedAt < 1e3 * 60 * 30) {
+    if (this.catalogCache && now - this.catalogCache.fetchedAt < MEM_TTL_MS) {
       return this.catalogCache.items;
     }
-    return this.refreshCatalog();
+    const remote = await this.loadRemoteCache();
+    if (remote) {
+      this.catalogCache = { fetchedAt: remote.updatedAt, items: remote.items };
+      const stale = now - remote.updatedAt > REMOTE_TTL_MS;
+      if (stale && allowCrawl) return this.refreshCatalog();
+      return remote.items;
+    }
+    if (allowCrawl) return this.refreshCatalog();
+    void this.refreshCatalog().catch(() => {
+      this.refreshing = null;
+    });
+    return this.catalogCache?.items || [];
   }
   // Non-blocking: return whatever is cached now (serving stale is fine) and warm
   // in the background. Avoids the whole catalog timing out on the Drive crawl.
@@ -56562,7 +56604,7 @@ var CuratedComicsProvider = class {
     return this.catalogCache.items;
   }
   async search(query) {
-    const dynamicItems = this.cachedOrWarm();
+    const dynamicItems = await this.getDynamicCatalog(false);
     const allItems = [...STATIC_ITEMS, ...dynamicItems];
     return allItems.filter((item) => matchesQuery(query, item)).map((item) => this.toSearchResult(item));
   }
@@ -56610,7 +56652,7 @@ var CuratedComicsProvider = class {
     return [];
   }
   async getCatalog(listType) {
-    const dynamicItems = this.cachedOrWarm();
+    const dynamicItems = await this.getDynamicCatalog();
     const allItems = [...STATIC_ITEMS, ...dynamicItems];
     const sorted = listType === "latest" ? [...allItems].reverse() : allItems;
     return sorted.slice(0, 400).map((item) => this.toSearchResult(item));

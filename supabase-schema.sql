@@ -222,3 +222,16 @@ CREATE TABLE IF NOT EXISTS user_completed (
 
 CREATE INDEX IF NOT EXISTS idx_user_completed_user_id ON user_completed(user_id);
 ALTER TABLE user_completed DISABLE ROW LEVEL SECURITY;
+
+-- ============================================================
+-- Table: curated_cache (shared Drive/Sites catalog snapshot)
+-- Lets the expensive Drive crawl run once and every serverless
+-- instance read the result fast (fixes empty search on cold starts).
+-- ============================================================
+CREATE TABLE IF NOT EXISTS curated_cache (
+  id TEXT PRIMARY KEY,
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE curated_cache DISABLE ROW LEVEL SECURITY;
