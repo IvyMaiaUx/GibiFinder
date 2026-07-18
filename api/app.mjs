@@ -53852,6 +53852,22 @@ router2.post("/auth/history/reading/sync", async (req, res) => {
     res.status(500).json({ error: "server_error" });
   }
 });
+router2.delete("/auth/history/reading/by-manga", async (req, res) => {
+  if (!supabase) {
+    res.status(503).json({ error: "db_unavailable" });
+    return;
+  }
+  const userId = req.query.userId;
+  const providerId = req.query.providerId;
+  const mangaId = req.query.mangaId;
+  if (!userId || !providerId || !mangaId) {
+    res.status(400).json({ error: "missing_params" });
+    return;
+  }
+  await supabase.from("user_reading_history").delete().eq("user_id", userId).eq("provider_id", providerId).eq("manga_id", mangaId);
+  await supabase.from("user_reading_progress").delete().eq("user_id", userId).eq("provider_id", providerId).eq("manga_id", mangaId);
+  res.json({ success: true });
+});
 router2.delete("/auth/history/reading/:itemId", async (req, res) => {
   if (!supabase) {
     res.status(503).json({ error: "db_unavailable" });

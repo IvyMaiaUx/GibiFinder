@@ -263,6 +263,15 @@ export const removeReadingHistoryItem = async (id: string, userId?: string) => {
   return updated;
 };
 
+// Remove all reading progress/history for one manga from the account, so a
+// deleted shelf item doesn't reappear after the next sync.
+export const removeReadingByManga = async (providerId: string, mangaId: string, userId?: string) => {
+  if (!userId) return;
+  const params = new URLSearchParams({ userId, providerId, mangaId });
+  await fetch(`${BASE}/api/auth/history/reading/by-manga?${params.toString()}`, { method: "DELETE" })
+    .catch(err => console.error("Failed to delete reading by manga:", err));
+};
+
 export const clearReadingHistory = async (userId?: string) => {
   localStorage.removeItem(READING_HISTORY_KEY);
   if (userId) {

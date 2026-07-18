@@ -5,7 +5,7 @@ import { useLocation } from "wouter";
 import { cn, isAdultProviderId } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { useAuth } from "@/hooks/use-auth";
-import { getLocalCompleted, saveLocalCompleted, getSyncedReadingHistory, getSyncedCompleted, removeCompletedRemote, type CompletedReadingItem } from "@/lib/user-history";
+import { getLocalCompleted, saveLocalCompleted, getSyncedReadingHistory, getSyncedCompleted, removeCompletedRemote, removeReadingByManga, type CompletedReadingItem } from "@/lib/user-history";
 import { getSyncedFavorites } from "@/lib/favorites";
 
 interface ReadingProgress {
@@ -66,7 +66,16 @@ export default function Colecao() {
         }
       }
       items.sort((a, b) => b.timestamp - a.timestamp);
-      setShelfItems(items);
+      // Dedupe by title (local save and account sync can key the same manga
+      // differently), keeping the most recent entry.
+      const seen = new Set<string>();
+      const deduped = items.filter(it => {
+        const k = (it.title || `${it.providerId}-${it.gibiId}`).toLowerCase().trim();
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      setShelfItems(deduped);
     } catch (err) {
       console.error("Error reading progress shelf:", err);
     }
@@ -131,15 +140,19 @@ export default function Colecao() {
     try {
       const progressKey = "gibi-finder:progress";
       const allProgress = JSON.parse(localStorage.getItem(progressKey) || "{}");
-      
-      const keyToDelete = Object.keys(allProgress).find(
-        k => k === item.gibiId || allProgress[k].mangaId === item.gibiId || allProgress[k].title === item.title
-      );
-      
-      if (keyToDelete) {
-        delete allProgress[keyToDelete];
-        localStorage.setItem(progressKey, JSON.stringify(allProgress));
+
+      // Remove EVERY local key for this manga (local save and account sync can
+      // store it under different keys).
+      for (const k of Object.keys(allProgress)) {
+        const p = allProgress[k] || {};
+        if (k === item.gibiId || p.mangaId === item.gibiId || (p.title && p.title === item.title)) {
+          delete allProgress[k];
+        }
       }
+      localStorage.setItem(progressKey, JSON.stringify(allProgress));
+
+      // Remove from the account too, so the next sync doesn't bring it back.
+      removeReadingByManga(item.providerId, item.gibiId, user?.id);
       loadShelf();
     } catch (err) {
       console.error("Error removing from shelf:", err);

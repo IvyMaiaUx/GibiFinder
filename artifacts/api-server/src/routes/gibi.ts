@@ -1557,6 +1557,19 @@ router.post("/auth/history/reading/sync", async (req: Request, res: Response) =>
   } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
 });
 
+// DELETE /api/auth/history/reading/by-manga - remove all progress+history rows
+// for one manga (so a deleted shelf item doesn't come back after sync).
+router.delete("/auth/history/reading/by-manga", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const userId = req.query.userId as string;
+  const providerId = req.query.providerId as string;
+  const mangaId = req.query.mangaId as string;
+  if (!userId || !providerId || !mangaId) { res.status(400).json({ error: "missing_params" }); return; }
+  await supabase.from("user_reading_history").delete().eq("user_id", userId).eq("provider_id", providerId).eq("manga_id", mangaId);
+  await supabase.from("user_reading_progress").delete().eq("user_id", userId).eq("provider_id", providerId).eq("manga_id", mangaId);
+  res.json({ success: true });
+});
+
 router.delete("/auth/history/reading/:itemId", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
   const userId = req.query.userId as string;
