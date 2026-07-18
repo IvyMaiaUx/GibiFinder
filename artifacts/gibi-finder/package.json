@@ -75,6 +75,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "@sentry/react": "^10.66.0",
     "pdfjs-dist": "5.4.296",
     "react-dropzone": "^15.0.0",
     "react-pdf": "^10.4.1"
