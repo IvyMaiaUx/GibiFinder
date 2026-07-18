@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import { cn, proxyPdfUrl } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
-import { PdfReader } from "@/components/results/PdfReader";
 import { useAuth } from "@/hooks/use-auth";
 import { getLocalProgress, saveReadingState, markChapterCompleted } from "@/lib/user-history";
 
@@ -57,6 +56,9 @@ interface Page {
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+// Lazy-loaded so pdf.js (~1MB) is only fetched when a PDF chapter is opened.
+const PdfReader = lazy(() => import("@/components/results/PdfReader").then(m => ({ default: m.PdfReader })));
 
 export function MangaDexReader({ mangaTitle, coverUrl, description, initialProviderId, initialMangaId }: MangaDexReaderProps) {
   const { user } = useAuth();
@@ -1058,21 +1060,27 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
       {/* ==================== PDF READER (pdf.js) ==================== */}
       {showReader && pages.length > 0 && selectedChapter && pages[0]?.url?.startsWith("pdf:") && (
-        <PdfReader
-          fileUrl={proxyPdfUrl(pages[0].url.slice(4))}
-          rawUrl={pages[0].url.slice(4)}
-          title={selectedResult?.title || mangaTitle}
-          coverUrl={coverUrl || selectedResult?.coverUrl}
-          progressKey={selectedResult?.id || mangaTitle}
-          providerId={selectedSource?.providerId || selectedChapter.providerId}
-          mangaId={selectedSource?.id || selectedResult?.id || mangaTitle}
-          chapterId={selectedChapter.id}
-          chapterNum={selectedChapter.chapterNum}
-          initialPage={currentPage}
-          readerMode={readerMode}
-          userId={user?.id}
-          onClose={() => setShowReader(false)}
-        />
+        <Suspense fallback={
+          <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center text-white">
+            <Loader2 className="w-12 h-12 animate-spin text-primary" />
+          </div>
+        }>
+          <PdfReader
+            fileUrl={proxyPdfUrl(pages[0].url.slice(4))}
+            rawUrl={pages[0].url.slice(4)}
+            title={selectedResult?.title || mangaTitle}
+            coverUrl={coverUrl || selectedResult?.coverUrl}
+            progressKey={selectedResult?.id || mangaTitle}
+            providerId={selectedSource?.providerId || selectedChapter.providerId}
+            mangaId={selectedSource?.id || selectedResult?.id || mangaTitle}
+            chapterId={selectedChapter.id}
+            chapterNum={selectedChapter.chapterNum}
+            initialPage={currentPage}
+            readerMode={readerMode}
+            userId={user?.id}
+            onClose={() => setShowReader(false)}
+          />
+        </Suspense>
       )}
 
       {/* ==================== COMMON READER MODAL OVERLAY (images/iframe) ==================== */}

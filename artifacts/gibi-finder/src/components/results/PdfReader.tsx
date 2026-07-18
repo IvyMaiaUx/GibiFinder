@@ -297,12 +297,29 @@ export function PdfReader({
             {numPages > 0 && (
               readerMode === "scroll" ? (
                 <div className="w-full flex flex-col items-center gap-4" style={{ maxWidth: pageWidth }}>
-                  {Array.from({ length: numPages }).map((_, idx) => (
-                    <div key={idx} ref={(el) => { pageRefs.current[idx] = el; }} className="relative border-4 border-white/10 bg-white">
-                      <Page pageNumber={idx + 1} width={pageWidth} renderTextLayer={false} renderAnnotationLayer={false} />
-                      <div className="absolute bottom-2 right-2 bg-black/60 text-white font-sans text-xs px-2 py-1">Pág. {idx + 1}</div>
-                    </div>
-                  ))}
+                  {Array.from({ length: numPages }).map((_, idx) => {
+                    // Only render a window of pages around the current one so large
+                    // PDFs don't render hundreds of canvases at once and freeze.
+                    const active = Math.abs(idx - currentPage) <= 4;
+                    return (
+                      <div key={idx} ref={(el) => { pageRefs.current[idx] = el; }} className="relative border-4 border-white/10 bg-white w-full">
+                        {active ? (
+                          <>
+                            <Page
+                              pageNumber={idx + 1}
+                              width={pageWidth}
+                              renderTextLayer={false}
+                              renderAnnotationLayer={false}
+                              loading={<div style={{ height: pageWidth * 1.4 }} className="flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>}
+                            />
+                            <div className="absolute bottom-2 right-2 bg-black/60 text-white font-sans text-xs px-2 py-1">Pág. {idx + 1}</div>
+                          </>
+                        ) : (
+                          <div style={{ height: pageWidth * 1.4 }} className="flex items-center justify-center text-white/20 font-display text-2xl">{idx + 1}</div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-4">
