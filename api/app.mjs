@@ -56260,7 +56260,15 @@ var DRIVE_FOLDER_IDS = [
   "1JPCtkMZrAoN1XujYbPrO1PjEhR43VgwM",
   "1-0-G5WCbZH5WG7Iz2ZVLlw2mlaSUp0cP",
   "1zjVQ0K6mWgXcZSTV8gNi-jxY0x2KWjGN",
-  "1e0nUE7b-V3rVUpUsla4UYJJjSXfk5R7O"
+  "1e0nUE7b-V3rVUpUsla4UYJJjSXfk5R7O",
+  "15cfooGkb83MqXkV34aQmaxd5O0bBG6wb",
+  "173Hgmk82n1_TaabrzIbPtiIqlwI39B1m",
+  "1p3wvutz3QU0BRUXPk1-aQNVqrRhpbEj5",
+  "17ir4fii96BEWp8SY20FmUDIZhc1CooRK",
+  "17kZd7LFzzNsjJ1zEU2sB0YuRhpyhBV1A",
+  "183xnIWeL_kecTZLtBlNhUgAcPVy-nZwp",
+  "19BZpP9yvT8ZEtfVURLW9RLQc1u2FCOFH",
+  "1wXs64lZ0nOBAAWwGutDHfjO-TnfYO6Ee"
 ];
 function normalizeText(value) {
   return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
@@ -56274,8 +56282,66 @@ function matchesQuery(query, item) {
 function decodeHtml(value) {
   return value.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
+var TITLE_STOPWORDS = /* @__PURE__ */ new Set([
+  "de",
+  "da",
+  "do",
+  "das",
+  "dos",
+  "e",
+  "o",
+  "a",
+  "os",
+  "as",
+  "em",
+  "no",
+  "na",
+  "ao",
+  "\xE0"
+]);
+var JUNK_TOKENS = /* @__PURE__ */ new Set([
+  "sq",
+  "hq",
+  "hqs",
+  "cbr",
+  "cbz",
+  "pdf",
+  "digital",
+  "scan",
+  "scaneado",
+  "scanned",
+  "oficial",
+  "completo",
+  "completa",
+  "gibi",
+  "revista",
+  "ptbr",
+  "pt",
+  "br",
+  "por"
+]);
+function toTitleCase(value) {
+  return value.split(" ").map((word, i) => {
+    if (!word) return word;
+    if (word.startsWith("#")) return word;
+    const lower = word.toLowerCase();
+    if (i > 0 && TITLE_STOPWORDS.has(lower)) return lower;
+    return lower.charAt(0).toUpperCase() + lower.slice(1);
+  }).join(" ");
+}
 function cleanTitle(fileName) {
-  return decodeHtml(fileName).replace(/\.(?:pdf|cbr|cbz)$/i, "").replace(/\s+/g, " ").trim();
+  let s = decodeHtml(fileName).replace(/\.(?:pdf|cbr|cbz)$/i, "");
+  s = s.replace(/[\[(][^\])]*[\])]/g, " ");
+  s = s.replace(/[._\-]+/g, " ");
+  s = s.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Za-z])(\d)/g, "$1 $2").replace(/(\d)([A-Za-z])/g, "$1 $2");
+  s = s.replace(/\b0*(\d{1,4})\s*de\s*0*\d{1,4}\b/gi, "#$1");
+  s = s.split(/\s+/).filter((tok) => tok && !JUNK_TOKENS.has(tok.toLowerCase())).join(" ");
+  s = s.replace(/\s+/g, " ").trim();
+  if (!s) return decodeHtml(fileName).replace(/\.(?:pdf|cbr|cbz)$/i, "").trim();
+  const hasLower = /[a-z]/.test(s);
+  const hasUpper = /[A-Z]/.test(s);
+  if (!hasLower || !hasUpper) s = toTitleCase(s);
+  return s;
 }
 var CuratedComicsProvider = class {
   id;
@@ -56368,8 +56434,8 @@ var CuratedComicsProvider = class {
     const seenFiles = /* @__PURE__ */ new Set();
     const seenFolders = new Set(DRIVE_FOLDER_IDS);
     const CONCURRENCY = 8;
-    const MAX_ITEMS = 2500;
-    const MAX_FOLDERS = 400;
+    const MAX_ITEMS = 5e3;
+    const MAX_FOLDERS = 900;
     let foldersVisited = 0;
     const listFolder = async (folderId) => {
       const childFolders = [];
@@ -56402,7 +56468,7 @@ var CuratedComicsProvider = class {
             description: "Gibi importado da biblioteca Google Drive compartilhada.",
             genres: ["Biblioteca", "Drive"],
             sourceLabel: "Google Drive",
-            coverUrl: `https://drive.google.com/thumbnail?id=${file.id}&sz=w400`,
+            coverUrl: `https://drive.google.com/thumbnail?id=${file.id}&sz=w600`,
             chapters: [{
               id: `ch-${file.id}`,
               chapterNum: "1",

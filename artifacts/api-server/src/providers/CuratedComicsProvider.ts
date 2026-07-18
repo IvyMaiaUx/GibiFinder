@@ -66,6 +66,14 @@ const DRIVE_FOLDER_IDS = [
   "1-0-G5WCbZH5WG7Iz2ZVLlw2mlaSUp0cP",
   "1zjVQ0K6mWgXcZSTV8gNi-jxY0x2KWjGN",
   "1e0nUE7b-V3rVUpUsla4UYJJjSXfk5R7O",
+  "15cfooGkb83MqXkV34aQmaxd5O0bBG6wb",
+  "173Hgmk82n1_TaabrzIbPtiIqlwI39B1m",
+  "1p3wvutz3QU0BRUXPk1-aQNVqrRhpbEj5",
+  "17ir4fii96BEWp8SY20FmUDIZhc1CooRK",
+  "17kZd7LFzzNsjJ1zEU2sB0YuRhpyhBV1A",
+  "183xnIWeL_kecTZLtBlNhUgAcPVy-nZwp",
+  "19BZpP9yvT8ZEtfVURLW9RLQc1u2FCOFH",
+  "1wXs64lZ0nOBAAWwGutDHfjO-TnfYO6Ee",
 ];
 
 const SHAREPOINT_URL =
@@ -96,11 +104,59 @@ function decodeHtml(value: string): string {
     .replace(/&gt;/g, ">");
 }
 
+// Lowercased connector words kept lowercase inside a title (unless first word).
+const TITLE_STOPWORDS = new Set([
+  "de", "da", "do", "das", "dos", "e", "o", "a", "os", "as", "em", "no", "na", "ao", "à"
+]);
+// Scan-group / quality tags to drop when they appear as standalone tokens.
+const JUNK_TOKENS = new Set([
+  "sq", "hq", "hqs", "cbr", "cbz", "pdf", "digital", "scan", "scaneado", "scanned",
+  "oficial", "completo", "completa", "gibi", "revista", "ptbr", "pt", "br", "por"
+]);
+
+function toTitleCase(value: string): string {
+  return value
+    .split(" ")
+    .map((word, i) => {
+      if (!word) return word;
+      if (word.startsWith("#")) return word;
+      const lower = word.toLowerCase();
+      if (i > 0 && TITLE_STOPWORDS.has(lower)) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
+
+// Drive file names are messy: no spaces, hyphen/underscore separators, "01de05"
+// issue markers and trailing scan tags. Best-effort tidy into a readable title.
 function cleanTitle(fileName: string): string {
-  return decodeHtml(fileName)
-    .replace(/\.(?:pdf|cbr|cbz)$/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  let s = decodeHtml(fileName).replace(/\.(?:pdf|cbr|cbz)$/i, "");
+
+  // Drop bracketed/parenthesized annotations: [Grupo], (2024), (Digital)...
+  s = s.replace(/[\[(][^\])]*[\])]/g, " ");
+  // Separators -> spaces.
+  s = s.replace(/[._\-]+/g, " ");
+  // Split gluedCamelCase and letter<->number boundaries so "Skrulls05" -> "Skrulls 05".
+  s = s
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/([A-Za-z])(\d)/g, "$1 $2")
+    .replace(/(\d)([A-Za-z])/g, "$1 $2");
+  // "01 de 05" / "01de05" issue-of-total -> "#1".
+  s = s.replace(/\b0*(\d{1,4})\s*de\s*0*\d{1,4}\b/gi, "#$1");
+  // Drop standalone junk/scan tags.
+  s = s
+    .split(/\s+/)
+    .filter(tok => tok && !JUNK_TOKENS.has(tok.toLowerCase()))
+    .join(" ");
+  s = s.replace(/\s+/g, " ").trim();
+  if (!s) return decodeHtml(fileName).replace(/\.(?:pdf|cbr|cbz)$/i, "").trim();
+
+  // Only re-case when the source is basically single-case (ALLCAPS/lowercase or
+  // separator-mangled); leave already mixed-case names alone.
+  const hasLower = /[a-z]/.test(s);
+  const hasUpper = /[A-Z]/.test(s);
+  if (!hasLower || !hasUpper) s = toTitleCase(s);
+  return s;
 }
 
 export class CuratedComicsProvider implements Provider {
@@ -205,9 +261,10 @@ export class CuratedComicsProvider implements Provider {
     const seenFolders = new Set<string>(DRIVE_FOLDER_IDS);
     const CONCURRENCY = 8;
     // We only read file metadata (id/name), never download PDFs, so a large
-    // library is cheap to crawl — the caps just bound worst-case fan-out.
-    const MAX_ITEMS = 2500;
-    const MAX_FOLDERS = 400;
+    // library is cheap to crawl — the caps just bound worst-case fan-out. Raised
+    // for the growing set of shared root folders.
+    const MAX_ITEMS = 5000;
+    const MAX_FOLDERS = 900;
     let foldersVisited = 0;
 
     // List one folder: append its PDFs to `items`, return its child folder ids.
@@ -244,7 +301,7 @@ export class CuratedComicsProvider implements Provider {
             description: "Gibi importado da biblioteca Google Drive compartilhada.",
             genres: ["Biblioteca", "Drive"],
             sourceLabel: "Google Drive",
-            coverUrl: `https://drive.google.com/thumbnail?id=${file.id}&sz=w400`,
+            coverUrl: `https://drive.google.com/thumbnail?id=${file.id}&sz=w600`,
             chapters: [{
               id: `ch-${file.id}`,
               chapterNum: "1",
