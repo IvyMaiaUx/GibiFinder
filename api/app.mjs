@@ -56214,6 +56214,9 @@ var CuratedComicsProvider = class {
     this.id = id;
     this.name = name;
     this.language = language;
+    void this.refreshCatalog().catch(() => {
+      this.refreshing = null;
+    });
   }
   toSearchResult(item) {
     return {

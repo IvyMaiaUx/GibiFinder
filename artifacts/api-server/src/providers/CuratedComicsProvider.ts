@@ -106,6 +106,9 @@ export class CuratedComicsProvider implements Provider {
     this.id = id;
     this.name = name;
     this.language = language;
+    // Warm the Drive/Sites cache as soon as the instance boots, so the very
+    // first catalog request already has the full gibi library (not just statics).
+    void this.refreshCatalog().catch(() => { this.refreshing = null; });
   }
 
   private toSearchResult(item: CuratedItem): SearchResult {
