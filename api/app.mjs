@@ -56559,21 +56559,24 @@ var CuratedComicsProvider = class {
     return this.catalogCache.items;
   }
   async search(query) {
-    const dynamicItems = await this.getDynamicCatalog();
+    const dynamicItems = this.cachedOrWarm();
     const allItems = [...STATIC_ITEMS, ...dynamicItems];
     return allItems.filter((item) => matchesQuery(query, item)).map((item) => this.toSearchResult(item));
   }
   async getDetails(id) {
-    const dynamicItems = await this.getDynamicCatalog();
-    const item = this.findItem(id, dynamicItems);
-    if (!item) {
-      return { id, title: id, providerId: this.id };
+    const item = this.findItem(id, this.cachedOrWarm());
+    if (item) return this.toDetails(item);
+    if (/^drive-[A-Za-z0-9_-]{20,}$/.test(id)) {
+      return { id, title: "", providerId: this.id };
     }
-    return this.toDetails(item);
+    return { id, title: id, providerId: this.id };
   }
   async getChapters(id) {
-    const dynamicItems = await this.getDynamicCatalog();
-    const item = this.findItem(id, dynamicItems);
+    const driveMatch = id.match(/^drive-([A-Za-z0-9_-]{20,})$/);
+    if (driveMatch) {
+      return [{ id: `ch-${driveMatch[1]}`, chapterNum: "1", title: "Cap\xEDtulo \xFAnico", language: "pt", providerId: this.id }];
+    }
+    const item = this.findItem(id, this.cachedOrWarm());
     if (!item) return [];
     return item.chapters.map((ch) => ({
       id: ch.id,
@@ -56584,7 +56587,11 @@ var CuratedComicsProvider = class {
     }));
   }
   async getPages(chapterId) {
-    const dynamicItems = await this.getDynamicCatalog();
+    const driveMatch = chapterId.match(/^ch-([A-Za-z0-9_-]{20,})$/);
+    if (driveMatch) {
+      return [{ url: `pdf:https://drive.google.com/file/d/${driveMatch[1]}/preview`, pageNumber: 1 }];
+    }
+    const dynamicItems = this.cachedOrWarm();
     const allItems = [...STATIC_ITEMS, ...dynamicItems];
     for (const item of allItems) {
       const chapter = item.chapters.find((ch) => ch.id === chapterId);
@@ -56600,7 +56607,7 @@ var CuratedComicsProvider = class {
     return [];
   }
   async getCatalog(listType) {
-    const dynamicItems = await this.getDynamicCatalog();
+    const dynamicItems = this.cachedOrWarm();
     const allItems = [...STATIC_ITEMS, ...dynamicItems];
     const sorted = listType === "latest" ? [...allItems].reverse() : allItems;
     return sorted.slice(0, 400).map((item) => this.toSearchResult(item));

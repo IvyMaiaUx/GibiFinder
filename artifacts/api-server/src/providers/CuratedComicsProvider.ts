@@ -406,7 +406,10 @@ export class CuratedComicsProvider implements Provider {
   }
 
   async search(query: string): Promise<SearchResult[]> {
-    const dynamicItems = await this.getDynamicCatalog();
+    // Non-blocking: use the warm cache (like the catalog) instead of blocking on
+    // a cold full crawl, which with dozens of Drive roots blows the search
+    // timeout and returns nothing.
+    const dynamicItems = this.cachedOrWarm();
     const allItems = [...STATIC_ITEMS, ...dynamicItems];
     return allItems
       .filter(item => matchesQuery(query, item))
@@ -414,17 +417,24 @@ export class CuratedComicsProvider implements Provider {
   }
 
   async getDetails(id: string): Promise<MangaDetails> {
-    const dynamicItems = await this.getDynamicCatalog();
-    const item = this.findItem(id, dynamicItems);
-    if (!item) {
-      return { id, title: id, providerId: this.id };
+    const item = this.findItem(id, this.cachedOrWarm());
+    if (item) return this.toDetails(item);
+    // Cold-instance fallback for a Drive item: return an empty title so the UI
+    // keeps the title it already has from the search result.
+    if (/^drive-[A-Za-z0-9_-]{20,}$/.test(id)) {
+      return { id, title: "", providerId: this.id };
     }
-    return this.toDetails(item);
+    return { id, title: id, providerId: this.id };
   }
 
   async getChapters(id: string): Promise<Chapter[]> {
-    const dynamicItems = await this.getDynamicCatalog();
-    const item = this.findItem(id, dynamicItems);
+    // A Drive item is always a single PDF; synthesize its chapter straight from
+    // the id so it opens even when the catalog cache is cold.
+    const driveMatch = id.match(/^drive-([A-Za-z0-9_-]{20,})$/);
+    if (driveMatch) {
+      return [{ id: `ch-${driveMatch[1]}`, chapterNum: "1", title: "Capítulo único", language: "pt", providerId: this.id }];
+    }
+    const item = this.findItem(id, this.cachedOrWarm());
     if (!item) return [];
     return item.chapters.map(ch => ({
       id: ch.id,
@@ -436,7 +446,12 @@ export class CuratedComicsProvider implements Provider {
   }
 
   async getPages(chapterId: string): Promise<Page[]> {
-    const dynamicItems = await this.getDynamicCatalog();
+    // Drive PDF chapters resolve straight from the id — no catalog needed.
+    const driveMatch = chapterId.match(/^ch-([A-Za-z0-9_-]{20,})$/);
+    if (driveMatch) {
+      return [{ url: `pdf:https://drive.google.com/file/d/${driveMatch[1]}/preview`, pageNumber: 1 }];
+    }
+    const dynamicItems = this.cachedOrWarm();
     const allItems = [...STATIC_ITEMS, ...dynamicItems];
     for (const item of allItems) {
       const chapter = item.chapters.find(ch => ch.id === chapterId);
@@ -454,9 +469,10 @@ export class CuratedComicsProvider implements Provider {
   }
 
   async getCatalog(listType: "popular" | "latest"): Promise<SearchResult[]> {
-    // Block on the crawl (fast, ~5s, and usually already pre-warmed) so the gibi
-    // library reliably shows in the catalog instead of only the static items.
-    const dynamicItems = await this.getDynamicCatalog();
+    // Non-blocking: serve the warm cache and refresh in the background. With many
+    // Drive roots a cold crawl can exceed the catalog timeout and return nothing;
+    // the constructor pre-warm means the cache is populated shortly after boot.
+    const dynamicItems = this.cachedOrWarm();
     const allItems = [...STATIC_ITEMS, ...dynamicItems];
     const sorted = listType === "latest"
       ? [...allItems].reverse()
