@@ -102,12 +102,44 @@ export function geminiAvailable(): boolean {
   return clients.length > 0;
 }
 
-// Translate a synopsis to Brazilian Portuguese (returns the input unchanged if
-// Gemini is unavailable or it's already Portuguese).
+// Translate text to Brazilian Portuguese. Prefers Groq (fast/free) when
+// GROQ_API_KEY is set, falls back to Gemini, and returns the input unchanged if
+// neither is available or on error.
+async function translateWithGroq(clean: string, prompt: string): Promise<string | null> {
+  const key = process.env["GROQ_API_KEY"];
+  if (!key) return null;
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: process.env["GROQ_MODEL"] || "llama-3.3-70b-versatile",
+        temperature: 0.2,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    if (!res.ok) {
+      logger.warn({ msg: "Groq translate failed", status: res.status });
+      return null;
+    }
+    const data = await res.json() as { choices?: { message?: { content?: string } }[] };
+    const out = data.choices?.[0]?.message?.content?.trim();
+    return out || clean;
+  } catch (err) {
+    logger.warn({ msg: "Groq translate error", err: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
+}
+
 export async function translateToPortuguese(text: string): Promise<string> {
   const clean = (text || "").trim();
-  if (!clean || clients.length === 0) return clean;
+  if (!clean) return clean;
   const prompt = `Traduza o texto a seguir para português do Brasil. Se já estiver em português, devolva-o sem mudanças. Responda SOMENTE com o texto traduzido — sem aspas, sem comentários, sem markdown.\n\nTexto:\n${clean}`;
+
+  const viaGroq = await translateWithGroq(clean, prompt);
+  if (viaGroq !== null) return viaGroq;
+
+  if (clients.length === 0) return clean;
   try {
     return await withKeyRotation(async () => {
       const model = getModel();

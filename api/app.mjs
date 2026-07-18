@@ -29514,13 +29514,41 @@ async function withKeyRotation(fn) {
 function geminiAvailable() {
   return clients.length > 0;
 }
+async function translateWithGroq(clean, prompt) {
+  const key = process.env["GROQ_API_KEY"];
+  if (!key) return null;
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: process.env["GROQ_MODEL"] || "llama-3.3-70b-versatile",
+        temperature: 0.2,
+        messages: [{ role: "user", content: prompt }]
+      })
+    });
+    if (!res.ok) {
+      logger.warn({ msg: "Groq translate failed", status: res.status });
+      return null;
+    }
+    const data = await res.json();
+    const out = data.choices?.[0]?.message?.content?.trim();
+    return out || clean;
+  } catch (err) {
+    logger.warn({ msg: "Groq translate error", err: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
+}
 async function translateToPortuguese(text) {
   const clean = (text || "").trim();
-  if (!clean || clients.length === 0) return clean;
+  if (!clean) return clean;
   const prompt = `Traduza o texto a seguir para portugu\xEAs do Brasil. Se j\xE1 estiver em portugu\xEAs, devolva-o sem mudan\xE7as. Responda SOMENTE com o texto traduzido \u2014 sem aspas, sem coment\xE1rios, sem markdown.
 
 Texto:
 ${clean}`;
+  const viaGroq = await translateWithGroq(clean, prompt);
+  if (viaGroq !== null) return viaGroq;
+  if (clients.length === 0) return clean;
   try {
     return await withKeyRotation(async () => {
       const model = getModel();
