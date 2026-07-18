@@ -256,8 +256,10 @@ export default function Explore() {
     if (typeFilter !== "hq" && typeFilter !== "gibi") { setCuratedRows([]); return; }
     const series = typeFilter === "hq" ? HQ_SERIES : GIBI_SERIES;
     let cancelled = false;
+    setCuratedRows([]);
     setCuratedLoading(true);
-    Promise.all(series.map(term =>
+
+    const fetchSeries = (term: string) =>
       fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(term)}&nsfw=${isNsfw}`)
         .then(r => (r.ok ? r.json() : []))
         .then((items: UnifiedCatalogItem[]) => ({
@@ -265,12 +267,19 @@ export default function Explore() {
           title: term,
           items: (Array.isArray(items) ? items : []).filter(i => typeOf(i) === typeFilter).slice(0, 20),
         }))
-        .catch(() => ({ key: `c-${term}`, title: term, items: [] as UnifiedCatalogItem[] }))
-    )).then(rows => {
-      if (cancelled) return;
-      setCuratedRows(rows.filter(r => r.items.length > 0));
-      setCuratedLoading(false);
-    });
+        .catch(() => ({ key: `c-${term}`, title: term, items: [] as UnifiedCatalogItem[] }));
+
+    (async () => {
+      // Batches of 3 so each search gets full provider responses instead of
+      // 14 parallel searches overwhelming the backend (rows appear as they load).
+      const BATCH = 3;
+      for (let i = 0; i < series.length && !cancelled; i += BATCH) {
+        const rows = await Promise.all(series.slice(i, i + BATCH).map(fetchSeries));
+        if (cancelled) return;
+        setCuratedRows(prev => [...prev, ...rows.filter(r => r.items.length > 0)]);
+      }
+      if (!cancelled) setCuratedLoading(false);
+    })();
     return () => { cancelled = true; };
   }, [typeFilter, isNsfw]);
 
