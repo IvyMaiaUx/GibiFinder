@@ -40,7 +40,7 @@ const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "ad
 const FEATURED_GENRES = ["Ação", "Aventura", "Comédia", "Romance", "Drama", "Fantasia", "Terror", "Sobrenatural", "Super-Herói", "Shounen", "Seinen"];
 // Source/type markers — not real genres, kept out of the genre rows (they have
 // their own type tabs: Mangás / HQs / Gibis).
-const EXCLUDED_GENRES = new Set(["biblioteca", "nacional", "drive", "hq", "catalogo", "sharepoint", "infantil"]);
+const EXCLUDED_GENRES = new Set(["biblioteca", "nacional", "gibi nacional", "drive", "hq", "catalogo", "sharepoint", "infantil"]);
 // Franchise/character rows (mostly for HQs, where genre tags are sparse).
 const FRANCHISES = [
   "Batman", "Superman", "Homem-Aranha", "Spider-Man", "X-Men", "Vingadores", "Avengers",
@@ -53,15 +53,20 @@ const MIN_FRANCHISE_ITEMS = 2;
 const ADULT_FEATURED_GENRES = ["Yaoi", "Yuri", "Lolicon", "Shotacon", "Bakunyū", "Futanari", "Incesto", "Netorare", "Hentai", "Ecchi"];
 // Curated rows fetched on demand for the HQ and Gibi tabs (their catalog is
 // sparse, so we search each series/character to populate real rows).
-const HQ_SERIES = ["Batman", "Superman", "Homem-Aranha", "X-Men", "Vingadores", "Liga da Justiça", "The Boys", "Coringa", "Mulher-Maravilha", "Lanterna Verde", "Flash", "Aquaman", "Capitão América", "Homem de Ferro", "Thor", "Hulk", "Wolverine", "Deadpool", "Pantera Negra", "Venom", "Demolidor", "Quarteto Fantástico", "Guardiões da Galáxia", "Justiceiro"];
-const GIBI_SERIES = ["Turma da Mônica", "Mônica", "Cebolinha", "Magali", "Cascão", "Chico Bento", "Almanaque", "Pelezinho", "Ronaldinho Gaúcho"];
+const HQ_SERIES = ["Batman", "Superman", "Homem-Aranha", "X-Men", "Vingadores", "Liga da Justiça", "Star Wars", "The Boys", "Coringa", "Mulher-Maravilha", "Lanterna Verde", "Flash", "Aquaman", "Capitão América", "Homem de Ferro", "Thor", "Hulk", "Wolverine", "Deadpool", "Pantera Negra", "Venom", "Demolidor", "Quarteto Fantástico", "Guardiões da Galáxia", "Justiceiro"];
+const GIBI_SERIES = ["Turma da Mônica", "Turma da Mônica Jovem", "Mônica", "Cebolinha", "Magali", "Cascão", "Chico Bento", "Almanaque", "Pelezinho", "Ronaldinho Gaúcho", "Menino Maluquinho"];
 const MIN_ROW_ITEMS = 4;
 
 const HQ_PROVIDER_IDS = ["comicextra", "jon-domingues", "batcave", "multiverso-hq", "mega-hq", "hq-desejo"];
 const GIBI_PROVIDER_IDS = ["biblioteca-br"];
 const typeOf = (item: UnifiedCatalogItem): "manga" | "hq" | "gibi" => {
   const provs = (item.sources || []).map(s => s.providerId);
-  if (provs.some(p => GIBI_PROVIDER_IDS.includes(p))) return "gibi";
+  const genres = (item.genres || []).map(g => g.toLowerCase());
+  if (provs.some(p => GIBI_PROVIDER_IDS.includes(p))) {
+    // biblioteca-br is a mixed library: HQ-tagged items (Marvel/DC/Star Wars) go
+    // to the HQ tab, the rest (Turma da Mônica etc.) stay in Gibi.
+    return genres.includes("hq") ? "hq" : "gibi";
+  }
   if (provs.some(p => HQ_PROVIDER_IDS.includes(p))) return "hq";
   return "manga";
 };
@@ -271,11 +276,8 @@ export default function Explore() {
         .then((items: UnifiedCatalogItem[]) => ({
           key: `c-${term}`,
           title: term,
-          // HQ rows accept both hq- and gibi-classified items: the curated Drive
-          // library (biblioteca-br) is classified "gibi" but holds the Marvel/DC
-          // issues, and the franchise search term already scopes the row.
           items: (Array.isArray(items) ? items : [])
-            .filter(i => typeFilter === "hq" ? typeOf(i) !== "manga" : typeOf(i) === "gibi")
+            .filter(i => typeOf(i) === typeFilter)
             .slice(0, 20),
         }))
         .catch(() => ({ key: `c-${term}`, title: term, items: [] as UnifiedCatalogItem[] }));

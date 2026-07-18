@@ -56222,7 +56222,7 @@ var SlimeReadProvider = class {
 
 // src/providers/CuratedComicsProvider.ts
 init_logger();
-var CACHE_ROW_ID = "catalog";
+var CACHE_ROW_ID = "catalog-v2";
 var MEM_TTL_MS = 1e3 * 60 * 30;
 var REMOTE_TTL_MS = 1e3 * 60 * 60 * 6;
 var EMBED_PREFIX = "embed:";
@@ -56284,6 +56284,38 @@ var DRIVE_INDEX_PAGES = [
 ];
 function normalizeText(value) {
   return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+}
+var GIBI_TITLE_KEYWORDS = [
+  "monica",
+  "cebolinha",
+  "magali",
+  "cascao",
+  "chico bento",
+  "almanaque",
+  "penadinho",
+  "piteco",
+  "horacio",
+  "pelezinho",
+  "ronaldinho",
+  "tmj",
+  "turma da",
+  "disney",
+  "pato donald",
+  "mickey",
+  "tio patinhas",
+  "ze carioca",
+  "ze carioca",
+  "luluzinha",
+  "recruta zero",
+  "senninha",
+  "menino maluquinho",
+  "sitio do picapau",
+  "bidu"
+];
+function categoryGenre(title, isNational) {
+  if (isNational) return "Gibi Nacional";
+  const t = normalizeText(title);
+  return GIBI_TITLE_KEYWORDS.some((k) => t.includes(k)) ? "Gibi Nacional" : "HQ";
 }
 function matchesQuery(query, item) {
   const terms = normalizeText(query).split(/\s+/).filter(Boolean);
@@ -56496,7 +56528,7 @@ var CuratedComicsProvider = class {
             id: `drive-${file.id}`,
             title,
             description: "Gibi importado da biblioteca Google Drive compartilhada.",
-            genres: ["Biblioteca", "Drive"],
+            genres: ["Biblioteca", "Drive", categoryGenre(title, false)],
             sourceLabel: "Google Drive",
             coverUrl: `https://drive.google.com/thumbnail?id=${file.id}&sz=w600`,
             chapters: [{

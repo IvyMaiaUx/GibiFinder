@@ -6,7 +6,9 @@ import { supabase } from "../lib/supabase";
 // Shared Supabase cache row so the expensive Drive crawl runs once and every
 // (stateless) serverless instance reads the result fast. Requires a table:
 //   create table curated_cache (id text primary key, data jsonb, updated_at timestamptz default now());
-const CACHE_ROW_ID = "catalog";
+// Bump the suffix to invalidate the shared cache after a crawl/format change
+// (e.g. new HQ/Gibi category tags) so items get re-crawled with the new shape.
+const CACHE_ROW_ID = "catalog-v2";
 const MEM_TTL_MS = 1000 * 60 * 30;      // trust in-memory cache for 30 min
 const REMOTE_TTL_MS = 1000 * 60 * 60 * 6; // refresh the shared cache every 6 h
 
@@ -107,6 +109,23 @@ function normalizeText(value: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+// Brazilian "gibi" series \u2014 used to split the mixed Drive library into the Gibi
+// tab (these) vs the HQ tab (everything else: Marvel/DC/Star Wars/...).
+const GIBI_TITLE_KEYWORDS = [
+  "monica", "cebolinha", "magali", "cascao", "chico bento", "almanaque", "penadinho",
+  "piteco", "horacio", "pelezinho", "ronaldinho", "tmj", "turma da", "disney",
+  "pato donald", "mickey", "tio patinhas", "ze carioca", "ze carioca", "luluzinha",
+  "recruta zero", "senninha", "menino maluquinho", "sitio do picapau", "bidu"
+];
+
+// Category tag added to a curated item's genres so the frontend can separate the
+// Gibi tab from the HQ tab even though both come from the same provider.
+function categoryGenre(title: string, isNational: boolean): string {
+  if (isNational) return "Gibi Nacional";
+  const t = normalizeText(title);
+  return GIBI_TITLE_KEYWORDS.some(k => t.includes(k)) ? "Gibi Nacional" : "HQ";
 }
 
 function matchesQuery(query: string, item: CuratedItem): boolean {
@@ -342,7 +361,7 @@ export class CuratedComicsProvider implements Provider {
             id: `drive-${file.id}`,
             title,
             description: "Gibi importado da biblioteca Google Drive compartilhada.",
-            genres: ["Biblioteca", "Drive"],
+            genres: ["Biblioteca", "Drive", categoryGenre(title, false)],
             sourceLabel: "Google Drive",
             coverUrl: `https://drive.google.com/thumbnail?id=${file.id}&sz=w600`,
             chapters: [{
