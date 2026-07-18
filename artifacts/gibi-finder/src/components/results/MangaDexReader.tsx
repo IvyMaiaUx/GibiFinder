@@ -1259,21 +1259,13 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                     </button>
                   )}
 
-                  {/* Close Button */}
-                  <button 
-                    onClick={() => setShowReader(false)}
-                    className="bg-primary hover:bg-red-600 text-white p-1.5 sm:p-2 border-2 border-white rounded transition-colors"
-                    title="Fechar Leitor"
-                  >
-                    <X className="w-4 h-4 sm:w-5 sm:h-5" strokeWidth={3} />
-                  </button>
                 </div>
               </div>
             </div>
           )}
 
           {/* Reader Body */}
-          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto flex justify-center p-4">
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overscroll-contain flex justify-center p-4">
             {getEmbedUrl(pages[currentPage]?.url) ? (
               <div className="w-full max-w-5xl h-full min-h-[70vh] border-4 border-white/20 bg-zinc-900 rounded-lg overflow-hidden">
                 <iframe
@@ -1442,18 +1434,20 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
             >
               {isFullscreen ? <Minimize className="w-5 h-5" strokeWidth={3} /> : <Maximize className="w-5 h-5" strokeWidth={3} />}
             </button>
-            <button
-              onClick={() => {
-                try { if (document.fullscreenElement) document.exitFullscreen?.(); } catch { /* noop */ }
-                setIsFullscreen(false);
-                setShowReader(false);
-              }}
-              className="bg-primary hover:bg-red-600 text-white p-3 border-2 border-white rounded-full transition-all hover:scale-105"
-              title="Fechar Leitor"
-            >
-              <X className="w-5 h-5" strokeWidth={3} />
-            </button>
           </div>
+
+          {/* Single close button — transparent, top-left, always visible (incl. fullscreen) */}
+          <button
+            onClick={() => {
+              try { if (document.fullscreenElement) document.exitFullscreen?.(); } catch { /* noop */ }
+              setIsFullscreen(false);
+              setShowReader(false);
+            }}
+            className="fixed top-4 left-4 z-[110] bg-black/40 hover:bg-black/70 text-white p-2.5 border border-white/20 rounded-full backdrop-blur-sm transition-all hover:scale-105"
+            title="Fechar Leitor"
+          >
+            <X className="w-5 h-5" strokeWidth={3} />
+          </button>
 
           {/* Synopsis Popup Modal */}
           {showInfo && (

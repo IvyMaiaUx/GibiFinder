@@ -252,15 +252,12 @@ export function PdfReader({
                 </button>
               </div>
             )}
-            <button onClick={handleClose} className="bg-primary hover:bg-red-600 text-white p-1.5 sm:p-2 border-2 border-white rounded" title="Fechar">
-              <X className="w-4 h-4 sm:w-5 sm:h-5" strokeWidth={3} />
-            </button>
           </div>
         </div>
       )}
 
       {/* Body */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto flex justify-center p-3 sm:p-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain flex justify-center p-3 sm:p-4">
         {loadError ? (
           <div className="max-w-lg w-full bg-white border-4 border-black p-8 text-center text-black rounded-xl comic-shadow self-center">
             <AlertCircle className="w-12 h-12 text-primary mx-auto mb-3" />
@@ -351,14 +348,16 @@ export function PdfReader({
         >
           {isFullscreen ? <Minimize className="w-5 h-5" strokeWidth={3} /> : <Maximize className="w-5 h-5" strokeWidth={3} />}
         </button>
-        <button
-          onClick={handleClose}
-          className="bg-primary hover:bg-red-600 text-white p-3 border-2 border-white rounded-full"
-          title="Fechar Leitor"
-        >
-          <X className="w-5 h-5" strokeWidth={3} />
-        </button>
       </div>
+
+      {/* Single close button — transparent, top-left, always visible (incl. fullscreen) */}
+      <button
+        onClick={handleClose}
+        className="fixed top-4 left-4 z-[110] bg-black/40 hover:bg-black/70 text-white p-2.5 border border-white/20 rounded-full backdrop-blur-sm transition-all hover:scale-105"
+        title="Fechar Leitor"
+      >
+        <X className="w-5 h-5" strokeWidth={3} />
+      </button>
     </div>
   );
 }
