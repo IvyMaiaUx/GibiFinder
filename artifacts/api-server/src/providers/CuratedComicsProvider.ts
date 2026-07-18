@@ -1,4 +1,5 @@
 import { Provider, SearchResult, MangaDetails, Chapter, Page } from "./types";
+import { hasDriveKey, nextDriveKey } from "../lib/driveKeys";
 
 type ReaderKind = "embed" | "external" | "pdf";
 
@@ -186,8 +187,7 @@ export class CuratedComicsProvider implements Provider {
   }
 
   private async fetchDriveFolderItems(): Promise<CuratedItem[]> {
-    const driveApiKey = process.env["GOOGLE_DRIVE_API_KEY"];
-    if (!driveApiKey) return [];
+    if (!hasDriveKey()) return [];
 
     const items: CuratedItem[] = [];
     const seenFiles = new Set<string>();
@@ -206,7 +206,7 @@ export class CuratedComicsProvider implements Provider {
       do {
         const params = new URLSearchParams({
           q: `'${folderId}' in parents and trashed=false and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`,
-          key: driveApiKey,
+          key: nextDriveKey() || "",
           pageSize: "100",
           fields: "nextPageToken,files(id,name,mimeType)"
         });

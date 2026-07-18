@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import https from "https";
 import http from "http";
+import { nextDriveKey } from "../lib/driveKeys";
 
 const router = Router();
 
@@ -46,7 +47,7 @@ router.get("/pdf-proxy", async (req: Request, res: Response) => {
 
   let targetUrl = "";
   if (driveId) {
-    const apiKey = process.env["GOOGLE_DRIVE_API_KEY"];
+    const apiKey = nextDriveKey();
     // The Drive API media endpoint reliably returns the raw bytes of a public
     // file; fall back to the public download URL when no key is configured.
     targetUrl = apiKey

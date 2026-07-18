@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { identifyFromImages, searchByText, searchByCharacter } from "../lib/gemini";
 import { fetchFandomContext } from "../lib/fandom";
 import { supabase } from "../lib/supabase";
+import { nextDriveKey } from "../lib/driveKeys";
 import { randomUUID, createHash } from "crypto";
 
 const router: IRouter = Router();
@@ -389,7 +390,7 @@ router.get("/admin/verify", (req: Request, res: Response) => {
 // GET /api/admin/test-drive — test Drive API key connectivity
 router.get("/admin/test-drive", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
-  const driveApiKey = process.env["GOOGLE_DRIVE_API_KEY"];
+  const driveApiKey = nextDriveKey();
   if (!driveApiKey) { res.json({ ok: false, error: "GOOGLE_DRIVE_API_KEY não configurada" }); return; }
   try {
     // Use a known public Google sample folder
@@ -410,7 +411,7 @@ router.post("/admin/import-drive-library", async (req: Request, res: Response) =
   if (!requireAdmin(req, res)) return;
   if (!supabase) { res.status(503).json({ error: "db_unavailable", message: "Banco nao configurado" }); return; }
 
-  const driveApiKey = process.env["GOOGLE_DRIVE_API_KEY"];
+  const driveApiKey = nextDriveKey();
   if (!driveApiKey) {
     res.status(503).json({ error: "no_drive_key", message: "GOOGLE_DRIVE_API_KEY nao configurada no servidor" });
     return;
@@ -702,7 +703,7 @@ router.post("/admin/import-drive", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   if (!supabase) { res.status(503).json({ error: "db_unavailable", message: "Banco não configurado" }); return; }
 
-  const driveApiKey = process.env["GOOGLE_DRIVE_API_KEY"];
+  const driveApiKey = nextDriveKey();
   if (!driveApiKey) {
     res.status(503).json({ error: "no_drive_key", message: "GOOGLE_DRIVE_API_KEY não configurada no servidor" });
     return;
@@ -1169,7 +1170,7 @@ router.post("/feedback", async (req: Request, res: Response) => {
 // ── PDF Proxy ─────────────────────────────────────────────────────────────────
 router.get("/pdf/:fileId", async (req: Request, res: Response) => {
   const { fileId } = req.params;
-  const apiKey = process.env["GOOGLE_DRIVE_API_KEY"];
+  const apiKey = nextDriveKey();
   if (!apiKey) { res.status(500).json({ error: "API key não configurada" }); return; }
 
   const driveUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${apiKey}`;

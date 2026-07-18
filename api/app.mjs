@@ -210,18 +210,18 @@ var require_common = __commonJS({
           if (typeof args[0] !== "string") {
             args.unshift("%O");
           }
-          let index = 0;
+          let index2 = 0;
           args[0] = args[0].replace(/%([a-zA-Z%])/g, (match, format) => {
             if (match === "%%") {
               return "%";
             }
-            index++;
+            index2++;
             const formatter = createDebug.formatters[format];
             if (typeof formatter === "function") {
-              const val = args[index];
+              const val = args[index2];
               match = formatter.call(self2, val);
-              args.splice(index, 1);
-              index--;
+              args.splice(index2, 1);
+              index2--;
             }
             return match;
           });
@@ -456,15 +456,15 @@ var require_browser = __commonJS({
       }
       const c = "color: " + this.color;
       args.splice(1, 0, c, "color: inherit");
-      let index = 0;
+      let index2 = 0;
       let lastC = 0;
       args[0].replace(/%[a-zA-Z%]/g, (match) => {
         if (match === "%%") {
           return;
         }
-        index++;
+        index2++;
         if (match === "%c") {
-          lastC = index;
+          lastC = index2;
         }
       });
       args.splice(lastC, 0, c);
@@ -5687,22 +5687,22 @@ var require_content_type = __commonJS({
       if (typeof header !== "string") {
         throw new TypeError("argument string is required to be a string");
       }
-      var index = header.indexOf(";");
-      var type = index !== -1 ? header.slice(0, index).trim() : header.trim();
+      var index2 = header.indexOf(";");
+      var type = index2 !== -1 ? header.slice(0, index2).trim() : header.trim();
       if (!TYPE_REGEXP.test(type)) {
         throw new TypeError("invalid media type");
       }
       var obj = new ContentType(type.toLowerCase());
-      if (index !== -1) {
+      if (index2 !== -1) {
         var key;
         var match;
         var value;
-        PARAM_REGEXP.lastIndex = index;
+        PARAM_REGEXP.lastIndex = index2;
         while (match = PARAM_REGEXP.exec(header)) {
-          if (match.index !== index) {
+          if (match.index !== index2) {
             throw new TypeError("invalid parameter format");
           }
-          index += match[0].length;
+          index2 += match[0].length;
           key = match[1].toLowerCase();
           value = match[2];
           if (value.charCodeAt(0) === 34) {
@@ -5713,7 +5713,7 @@ var require_content_type = __commonJS({
           }
           obj.parameters[key] = value;
         }
-        if (index !== header.length) {
+        if (index2 !== header.length) {
           throw new TypeError("invalid parameter format");
         }
       }
@@ -15308,10 +15308,10 @@ var require_media_typer = __commonJS({
       var type = match[1];
       var subtype = match[2];
       var suffix;
-      var index = subtype.lastIndexOf("+");
-      if (index !== -1) {
-        suffix = subtype.substr(index + 1);
-        subtype = subtype.substr(0, index);
+      var index2 = subtype.lastIndexOf("+");
+      if (index2 !== -1) {
+        suffix = subtype.substr(index2 + 1);
+        subtype = subtype.substr(0, index2);
       }
       return new MediaType(type, subtype, suffix);
     }
@@ -15672,10 +15672,10 @@ var require_json = __commonJS({
       };
     }
     function createStrictSyntaxError(str, char) {
-      var index = str.indexOf(char);
+      var index2 = str.indexOf(char);
       var partial = "";
-      if (index !== -1) {
-        partial = str.substring(0, index) + JSON_SYNTAX_CHAR.repeat(str.length - index);
+      if (index2 !== -1) {
+        partial = str.substring(0, index2) + JSON_SYNTAX_CHAR.repeat(str.length - index2);
       }
       try {
         JSON.parse(partial);
@@ -15683,7 +15683,7 @@ var require_json = __commonJS({
       } catch (e) {
         return normalizeJsonSyntaxError(e, {
           message: e.message.replace(JSON_SYNTAX_REGEXP, function(placeholder) {
-            return str.substring(index, index + placeholder.length);
+            return str.substring(index2, index2 + placeholder.length);
           }),
           stack: e.stack
         });
@@ -18101,18 +18101,18 @@ var require_parse = __commonJS({
           obj = options.plainObjects ? { __proto__: null } : {};
           var cleanRoot = root.charAt(0) === "[" && root.charAt(root.length - 1) === "]" ? root.slice(1, -1) : root;
           var decodedRoot = options.decodeDotInKeys ? cleanRoot.replace(/%2E/g, ".") : cleanRoot;
-          var index = parseInt(decodedRoot, 10);
-          var isValidArrayIndex = !isNaN(index) && root !== decodedRoot && String(index) === decodedRoot && index >= 0 && options.parseArrays;
+          var index2 = parseInt(decodedRoot, 10);
+          var isValidArrayIndex = !isNaN(index2) && root !== decodedRoot && String(index2) === decodedRoot && index2 >= 0 && options.parseArrays;
           if (!options.parseArrays && decodedRoot === "") {
             obj = { 0: leaf };
-          } else if (isValidArrayIndex && index < options.arrayLimit) {
+          } else if (isValidArrayIndex && index2 < options.arrayLimit) {
             obj = [];
-            obj[index] = leaf;
+            obj[index2] = leaf;
           } else if (isValidArrayIndex && options.throwOnLimitExceeded) {
             throw new RangeError("Array limit exceeded. Only " + options.arrayLimit + " element" + (options.arrayLimit === 1 ? "" : "s") + " allowed in an array.");
           } else if (isValidArrayIndex) {
-            obj[index] = leaf;
-            utils.markOverflow(obj, index);
+            obj[index2] = leaf;
+            utils.markOverflow(obj, index2);
           } else if (decodedRoot !== "__proto__") {
             obj[decodedRoot] = leaf;
           }
@@ -18337,12 +18337,12 @@ var require_urlencoded = __commonJS({
     }
     function parameterCount(body, limit) {
       let count = 0;
-      let index = -1;
+      let index2 = -1;
       do {
         count++;
         if (count > limit) return void 0;
-        index = body.indexOf("&", index + 1);
-      } while (index !== -1);
+        index2 = body.indexOf("&", index2 + 1);
+      } while (index2 !== -1);
       return count;
     }
   }
@@ -18431,10 +18431,10 @@ var require_escape_html = __commonJS({
       }
       var escape2;
       var html = "";
-      var index = 0;
+      var index2 = 0;
       var lastIndex = 0;
-      for (index = match.index; index < str.length; index++) {
-        switch (str.charCodeAt(index)) {
+      for (index2 = match.index; index2 < str.length; index2++) {
+        switch (str.charCodeAt(index2)) {
           case 34:
             escape2 = "&quot;";
             break;
@@ -18453,13 +18453,13 @@ var require_escape_html = __commonJS({
           default:
             continue;
         }
-        if (lastIndex !== index) {
-          html += str.substring(lastIndex, index);
+        if (lastIndex !== index2) {
+          html += str.substring(lastIndex, index2);
         }
-        lastIndex = index + 1;
+        lastIndex = index2 + 1;
         html += escape2;
       }
-      return lastIndex !== index ? html + str.substring(lastIndex, index) : html;
+      return lastIndex !== index2 ? html + str.substring(lastIndex, index2) : html;
     }
   }
 });
@@ -19663,25 +19663,25 @@ var require_utils3 = __commonJS({
     function acceptParams(str) {
       var length = str.length;
       var colonIndex = str.indexOf(";");
-      var index = colonIndex === -1 ? length : colonIndex;
-      var ret = { value: str.slice(0, index).trim(), quality: 1, params: {} };
-      while (index < length) {
-        var splitIndex = str.indexOf("=", index);
+      var index2 = colonIndex === -1 ? length : colonIndex;
+      var ret = { value: str.slice(0, index2).trim(), quality: 1, params: {} };
+      while (index2 < length) {
+        var splitIndex = str.indexOf("=", index2);
         if (splitIndex === -1) break;
-        var colonIndex = str.indexOf(";", index);
+        var colonIndex = str.indexOf(";", index2);
         var endIndex = colonIndex === -1 ? length : colonIndex;
         if (splitIndex > endIndex) {
-          index = str.lastIndexOf(";", splitIndex - 1) + 1;
+          index2 = str.lastIndexOf(";", splitIndex - 1) + 1;
           continue;
         }
-        var key = str.slice(index, splitIndex).trim();
+        var key = str.slice(index2, splitIndex).trim();
         var value = str.slice(splitIndex + 1, endIndex).trim();
         if (key === "q") {
           ret.quality = parseFloat(value);
         } else {
           ret.params[key] = value;
         }
-        index = endIndex + 1;
+        index2 = endIndex + 1;
       }
       return ret;
     }
@@ -19907,51 +19907,51 @@ var require_dist = __commonJS({
       const { encodePath = NOOP_VALUE } = options;
       const chars = [...str];
       const tokens = [];
-      let index = 0;
+      let index2 = 0;
       let pos = 0;
       function name() {
         let value = "";
-        if (ID_START.test(chars[index])) {
+        if (ID_START.test(chars[index2])) {
           do {
-            value += chars[index++];
-          } while (ID_CONTINUE.test(chars[index]));
-        } else if (chars[index] === '"') {
-          let quoteStart = index;
-          while (index++ < chars.length) {
-            if (chars[index] === '"') {
-              index++;
+            value += chars[index2++];
+          } while (ID_CONTINUE.test(chars[index2]));
+        } else if (chars[index2] === '"') {
+          let quoteStart = index2;
+          while (index2++ < chars.length) {
+            if (chars[index2] === '"') {
+              index2++;
               quoteStart = 0;
               break;
             }
-            if (chars[index] === "\\")
-              index++;
-            value += chars[index];
+            if (chars[index2] === "\\")
+              index2++;
+            value += chars[index2];
           }
           if (quoteStart) {
             throw new PathError(`Unterminated quote at index ${quoteStart}`, str);
           }
         }
         if (!value) {
-          throw new PathError(`Missing parameter name at index ${index}`, str);
+          throw new PathError(`Missing parameter name at index ${index2}`, str);
         }
         return value;
       }
-      while (index < chars.length) {
-        const value = chars[index];
+      while (index2 < chars.length) {
+        const value = chars[index2];
         const type = SIMPLE_TOKENS[value];
         if (type) {
-          tokens.push({ type, index: index++, value });
+          tokens.push({ type, index: index2++, value });
         } else if (value === "\\") {
-          tokens.push({ type: "escape", index: index++, value: chars[index++] });
+          tokens.push({ type: "escape", index: index2++, value: chars[index2++] });
         } else if (value === ":") {
-          tokens.push({ type: "param", index: index++, value: name() });
+          tokens.push({ type: "param", index: index2++, value: name() });
         } else if (value === "*") {
-          tokens.push({ type: "wildcard", index: index++, value: name() });
+          tokens.push({ type: "wildcard", index: index2++, value: name() });
         } else {
-          tokens.push({ type: "char", index: index++, value });
+          tokens.push({ type: "char", index: index2++, value });
         }
       }
-      tokens.push({ type: "end", index, value: "" });
+      tokens.push({ type: "end", index: index2, value: "" });
       function consumeUntil(endType) {
         const output = [];
         while (true) {
@@ -20037,9 +20037,9 @@ var require_dist = __commonJS({
             throw new TypeError(`Expected "${token.name}" to be a non-empty array`);
           }
           return [
-            value.map((value2, index) => {
+            value.map((value2, index2) => {
               if (typeof value2 !== "string") {
-                throw new TypeError(`Expected "${token.name}/${index}" to be a string`);
+                throw new TypeError(`Expected "${token.name}/${index2}" to be a string`);
               }
               return encodeValue(value2);
             }).join(delimiter)
@@ -20109,19 +20109,19 @@ var require_dist = __commonJS({
       }
       return init;
     }
-    function* flatten(tokens, index, init) {
-      if (index === tokens.length) {
+    function* flatten(tokens, index2, init) {
+      if (index2 === tokens.length) {
         return yield init;
       }
-      const token = tokens[index];
+      const token = tokens[index2];
       if (token.type === "group") {
         for (const seq of flatten(token.tokens, 0, init.slice())) {
-          yield* flatten(tokens, index + 1, seq);
+          yield* flatten(tokens, index2 + 1, seq);
         }
       } else {
         init.push(token);
       }
-      yield* flatten(tokens, index + 1, init);
+      yield* flatten(tokens, index2 + 1, init);
     }
     function toRegExpSource(tokens, delimiter, keys, originalPath) {
       let result = "";
@@ -21174,17 +21174,17 @@ var require_charset = __commonJS({
         i
       };
     }
-    function getCharsetPriority(charset, accepted, index) {
+    function getCharsetPriority(charset, accepted, index2) {
       var priority = { o: -1, q: 0, s: 0 };
       for (var i = 0; i < accepted.length; i++) {
-        var spec = specify(charset, accepted[i], index);
+        var spec = specify(charset, accepted[i], index2);
         if (spec && (priority.s - spec.s || priority.q - spec.q || priority.o - spec.o) < 0) {
           priority = spec;
         }
       }
       return priority;
     }
-    function specify(charset, spec, index) {
+    function specify(charset, spec, index2) {
       var s = 0;
       if (spec.charset.toLowerCase() === charset.toLowerCase()) {
         s |= 1;
@@ -21192,7 +21192,7 @@ var require_charset = __commonJS({
         return null;
       }
       return {
-        i: index,
+        i: index2,
         o: spec.i,
         q: spec.q,
         s
@@ -21203,8 +21203,8 @@ var require_charset = __commonJS({
       if (!provided) {
         return accepts.filter(isQuality).sort(compareSpecs).map(getFullCharset);
       }
-      var priorities = provided.map(function getPriority(type, index) {
-        return getCharsetPriority(type, accepts, index);
+      var priorities = provided.map(function getPriority(type, index2) {
+        return getCharsetPriority(type, accepts, index2);
       });
       return priorities.filter(isQuality).sort(compareSpecs).map(function getCharset(priority) {
         return provided[priorities.indexOf(priority)];
@@ -21272,17 +21272,17 @@ var require_encoding = __commonJS({
         i
       };
     }
-    function getEncodingPriority(encoding, accepted, index) {
+    function getEncodingPriority(encoding, accepted, index2) {
       var priority = { encoding, o: -1, q: 0, s: 0 };
       for (var i = 0; i < accepted.length; i++) {
-        var spec = specify(encoding, accepted[i], index);
+        var spec = specify(encoding, accepted[i], index2);
         if (spec && (priority.s - spec.s || priority.q - spec.q || priority.o - spec.o) < 0) {
           priority = spec;
         }
       }
       return priority;
     }
-    function specify(encoding, spec, index) {
+    function specify(encoding, spec, index2) {
       var s = 0;
       if (spec.encoding.toLowerCase() === encoding.toLowerCase()) {
         s |= 1;
@@ -21291,7 +21291,7 @@ var require_encoding = __commonJS({
       }
       return {
         encoding,
-        i: index,
+        i: index2,
         o: spec.i,
         q: spec.q,
         s
@@ -21316,8 +21316,8 @@ var require_encoding = __commonJS({
       if (!provided) {
         return accepts.filter(isQuality).sort(comparator).map(getFullEncoding);
       }
-      var priorities = provided.map(function getPriority(type, index) {
-        return getEncodingPriority(type, accepts, index);
+      var priorities = provided.map(function getPriority(type, index2) {
+        return getEncodingPriority(type, accepts, index2);
       });
       return priorities.filter(isQuality).sort(comparator).map(function getEncoding(priority) {
         return provided[priorities.indexOf(priority)];
@@ -21376,17 +21376,17 @@ var require_language = __commonJS({
         full
       };
     }
-    function getLanguagePriority(language, accepted, index) {
+    function getLanguagePriority(language, accepted, index2) {
       var priority = { o: -1, q: 0, s: 0 };
       for (var i = 0; i < accepted.length; i++) {
-        var spec = specify(language, accepted[i], index);
+        var spec = specify(language, accepted[i], index2);
         if (spec && (priority.s - spec.s || priority.q - spec.q || priority.o - spec.o) < 0) {
           priority = spec;
         }
       }
       return priority;
     }
-    function specify(language, spec, index) {
+    function specify(language, spec, index2) {
       var p = parseLanguage(language);
       if (!p) return null;
       var s = 0;
@@ -21400,7 +21400,7 @@ var require_language = __commonJS({
         return null;
       }
       return {
-        i: index,
+        i: index2,
         o: spec.i,
         q: spec.q,
         s
@@ -21411,8 +21411,8 @@ var require_language = __commonJS({
       if (!provided) {
         return accepts.filter(isQuality).sort(compareSpecs).map(getFullLanguage);
       }
-      var priorities = provided.map(function getPriority(type, index) {
-        return getLanguagePriority(type, accepts, index);
+      var priorities = provided.map(function getPriority(type, index2) {
+        return getLanguagePriority(type, accepts, index2);
       });
       return priorities.filter(isQuality).sort(compareSpecs).map(function getLanguage(priority) {
         return provided[priorities.indexOf(priority)];
@@ -21477,17 +21477,17 @@ var require_mediaType = __commonJS({
         i
       };
     }
-    function getMediaTypePriority(type, accepted, index) {
+    function getMediaTypePriority(type, accepted, index2) {
       var priority = { o: -1, q: 0, s: 0 };
       for (var i = 0; i < accepted.length; i++) {
-        var spec = specify(type, accepted[i], index);
+        var spec = specify(type, accepted[i], index2);
         if (spec && (priority.s - spec.s || priority.q - spec.q || priority.o - spec.o) < 0) {
           priority = spec;
         }
       }
       return priority;
     }
-    function specify(type, spec, index) {
+    function specify(type, spec, index2) {
       var p = parseMediaType(type);
       var s = 0;
       if (!p) {
@@ -21514,7 +21514,7 @@ var require_mediaType = __commonJS({
         }
       }
       return {
-        i: index,
+        i: index2,
         o: spec.i,
         q: spec.q,
         s
@@ -21525,8 +21525,8 @@ var require_mediaType = __commonJS({
       if (!provided) {
         return accepts.filter(isQuality).sort(compareSpecs).map(getFullType);
       }
-      var priorities = provided.map(function getPriority(type, index) {
-        return getMediaTypePriority(type, accepts, index);
+      var priorities = provided.map(function getPriority(type, index2) {
+        return getMediaTypePriority(type, accepts, index2);
       });
       return priorities.filter(isQuality).sort(compareSpecs).map(function getType(priority) {
         return provided[priorities.indexOf(priority)];
@@ -21543,22 +21543,22 @@ var require_mediaType = __commonJS({
     }
     function quoteCount(string) {
       var count = 0;
-      var index = 0;
-      while ((index = string.indexOf('"', index)) !== -1) {
+      var index2 = 0;
+      while ((index2 = string.indexOf('"', index2)) !== -1) {
         count++;
-        index++;
+        index2++;
       }
       return count;
     }
     function splitKeyValuePair(str) {
-      var index = str.indexOf("=");
+      var index2 = str.indexOf("=");
       var key;
       var val;
-      if (index === -1) {
+      if (index2 === -1) {
         key = str;
       } else {
-        key = str.slice(0, index);
-        val = str.slice(index + 1);
+        key = str.slice(0, index2);
+        val = str.slice(index2 + 1);
       }
       return [key, val];
     }
@@ -21810,13 +21810,13 @@ var require_range_parser = __commonJS({
       if (typeof str !== "string") {
         throw new TypeError("argument str must be a string");
       }
-      var index = str.indexOf("=");
-      if (index === -1) {
+      var index2 = str.indexOf("=");
+      if (index2 === -1) {
         return -2;
       }
-      var arr = str.slice(index + 1).split(",");
+      var arr = str.slice(index2 + 1).split(",");
       var ranges = [];
-      ranges.type = str.slice(0, index);
+      ranges.type = str.slice(0, index2);
       for (var i = 0; i < arr.length; i++) {
         var range = arr[i].split("-");
         var start = parseInt(range[0], 10);
@@ -21860,11 +21860,11 @@ var require_range_parser = __commonJS({
       combined.type = ranges.type;
       return combined;
     }
-    function mapWithIndex(range, index) {
+    function mapWithIndex(range, index2) {
       return {
         start: range.start,
         end: range.end,
-        index
+        index: index2
       };
     }
     function mapWithoutIndex(range) {
@@ -21957,8 +21957,8 @@ var require_request = __commonJS({
         return proto;
       }
       var header = this.get("X-Forwarded-Proto") || proto;
-      var index = header.indexOf(",");
-      return index !== -1 ? header.substring(0, index).trim() : header.trim();
+      var index2 = header.indexOf(",");
+      return index2 !== -1 ? header.substring(0, index2).trim() : header.trim();
     });
     defineGetter(req, "secure", function secure() {
       return this.protocol === "https";
@@ -21997,8 +21997,8 @@ var require_request = __commonJS({
       var host = this.host;
       if (!host) return;
       var offset = host[0] === "[" ? host.indexOf("]") + 1 : 0;
-      var index = host.indexOf(":", offset);
-      return index !== -1 ? host.substring(0, index) : host;
+      var index2 = host.indexOf(":", offset);
+      return index2 !== -1 ? host.substring(0, index2) : host;
     });
     defineGetter(req, "fresh", function() {
       var method = this.method;
@@ -22134,18 +22134,18 @@ var require_content_disposition = __commonJS({
       if (!match) {
         throw new TypeError("invalid type format");
       }
-      var index = match[0].length;
+      var index2 = match[0].length;
       var type = match[1].toLowerCase();
       var key;
       var names = [];
       var params = {};
       var value;
-      index = PARAM_REGEXP.lastIndex = match[0].slice(-1) === ";" ? index - 1 : index;
+      index2 = PARAM_REGEXP.lastIndex = match[0].slice(-1) === ";" ? index2 - 1 : index2;
       while (match = PARAM_REGEXP.exec(string)) {
-        if (match.index !== index) {
+        if (match.index !== index2) {
           throw new TypeError("invalid parameter format");
         }
-        index += match[0].length;
+        index2 += match[0].length;
         key = match[1].toLowerCase();
         value = match[2];
         if (names.indexOf(key) !== -1) {
@@ -22166,7 +22166,7 @@ var require_content_disposition = __commonJS({
         }
         params[key] = value;
       }
-      if (index !== -1 && index !== string.length) {
+      if (index2 !== -1 && index2 !== string.length) {
         throw new TypeError("invalid parameter format");
       }
       return new ContentDisposition(type, params);
@@ -22231,20 +22231,20 @@ var require_cookie = __commonJS({
       var len = str.length;
       if (len < 2) return obj;
       var dec = opt && opt.decode || decode;
-      var index = 0;
+      var index2 = 0;
       var eqIdx = 0;
       var endIdx = 0;
       do {
-        eqIdx = str.indexOf("=", index);
+        eqIdx = str.indexOf("=", index2);
         if (eqIdx === -1) break;
-        endIdx = str.indexOf(";", index);
+        endIdx = str.indexOf(";", index2);
         if (endIdx === -1) {
           endIdx = len;
         } else if (eqIdx > endIdx) {
-          index = str.lastIndexOf(";", eqIdx - 1) + 1;
+          index2 = str.lastIndexOf(";", eqIdx - 1) + 1;
           continue;
         }
-        var keyStartIdx = startIndex(str, index, eqIdx);
+        var keyStartIdx = startIndex(str, index2, eqIdx);
         var keyEndIdx = endIndex(str, eqIdx, keyStartIdx);
         var key = str.slice(keyStartIdx, keyEndIdx);
         if (!__hasOwnProperty.call(obj, key)) {
@@ -22257,21 +22257,21 @@ var require_cookie = __commonJS({
           var val = str.slice(valStartIdx, valEndIdx);
           obj[key] = tryDecode(val, dec);
         }
-        index = endIdx + 1;
-      } while (index < len);
+        index2 = endIdx + 1;
+      } while (index2 < len);
       return obj;
     }
-    function startIndex(str, index, max) {
+    function startIndex(str, index2, max) {
       do {
-        var code = str.charCodeAt(index);
-        if (code !== 32 && code !== 9) return index;
-      } while (++index < max);
+        var code = str.charCodeAt(index2);
+        if (code !== 32 && code !== 9) return index2;
+      } while (++index2 < max);
       return max;
     }
-    function endIndex(str, index, min) {
-      while (index > min) {
-        var code = str.charCodeAt(--index);
-        if (code !== 32 && code !== 9) return index + 1;
+    function endIndex(str, index2, min) {
+      while (index2 > min) {
+        var code = str.charCodeAt(--index2);
+        if (code !== 32 && code !== 9) return index2 + 1;
       }
       return min;
     }
@@ -24763,8 +24763,8 @@ var require_redaction = __commonJS({
         if (o[ns] === null) {
           return o;
         }
-        const { index } = next;
-        const nextPath = `${str.substr(index, str.length - 1)}`;
+        const { index: index2 } = next;
+        const nextPath = `${str.substr(index2, str.length - 1)}`;
         o[ns] = o[ns] || [];
         if (ns !== wildcardFirstSym && o[ns].length === 0) {
           o[ns].push(...o[wildcardFirstSym] || []);
@@ -24870,8 +24870,8 @@ var require_quick_format_unescaped = __commonJS({
         if (len === 1) return f;
         var objects = new Array(len);
         objects[0] = ss(f);
-        for (var index = 1; index < len; index++) {
-          objects[index] = ss(args[index]);
+        for (var index2 = 1; index2 < len; index2++) {
+          objects[index2] = ss(args[index2]);
         }
         return objects.join(" ");
       }
@@ -25642,8 +25642,8 @@ var require_on_exit_leak_free = __commonJS({
     }
     function clear(ref) {
       for (const event of ["exit", "beforeExit"]) {
-        const index = refs[event].indexOf(ref);
-        refs[event].splice(index, index + 1);
+        const index2 = refs[event].indexOf(ref);
+        refs[event].splice(index2, index2 + 1);
         uninstall(event);
       }
     }
@@ -25753,9 +25753,9 @@ var require_wait = __commonJS({
   "../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/lib/wait.js"(exports, module) {
     "use strict";
     var MAX_TIMEOUT = 1e3;
-    function wait(state, index, expected, timeout, done) {
+    function wait(state, index2, expected, timeout, done) {
       const max = Date.now() + timeout;
-      let current = Atomics.load(state, index);
+      let current = Atomics.load(state, index2);
       if (current === expected) {
         done(null, "ok");
         return;
@@ -25767,7 +25767,7 @@ var require_wait = __commonJS({
         } else {
           setTimeout(() => {
             prior = current;
-            current = Atomics.load(state, index);
+            current = Atomics.load(state, index2);
             if (current === prior) {
               check(backoff >= MAX_TIMEOUT ? MAX_TIMEOUT : backoff * 2);
             } else {
@@ -25779,9 +25779,9 @@ var require_wait = __commonJS({
       };
       check(1);
     }
-    function waitDiff(state, index, expected, timeout, done) {
+    function waitDiff(state, index2, expected, timeout, done) {
       const max = Date.now() + timeout;
-      let current = Atomics.load(state, index);
+      let current = Atomics.load(state, index2);
       if (current !== expected) {
         done(null, "ok");
         return;
@@ -25791,7 +25791,7 @@ var require_wait = __commonJS({
           done(null, "timed-out");
         } else {
           setTimeout(() => {
-            current = Atomics.load(state, index);
+            current = Atomics.load(state, index2);
             if (current !== expected) {
               done(null, "ok");
             } else {
@@ -27875,9 +27875,9 @@ var require_multistream = __commonJS({
       }
       function remove2(id) {
         const { streams } = this;
-        const index = streams.findIndex((s) => s.id === id);
-        if (index >= 0) {
-          streams.splice(index, 1);
+        const index2 = streams.findIndex((s) => s.id === id);
+        if (index2 >= 0) {
+          streams.splice(index2, 1);
           streams.sort(compareByLevel);
           this.minLevel = streams.length > 0 ? streams[0].level : -1;
         }
@@ -42211,10 +42211,10 @@ var ZodObject = class _ZodObject extends ZodType {
   //   }) as any;
   //   return merged;
   // }
-  catchall(index) {
+  catchall(index2) {
     return new _ZodObject({
       ...this._def,
-      catchall: index
+      catchall: index2
     });
   }
   pick(mask) {
@@ -42532,9 +42532,9 @@ function mergeValues(a, b) {
       return { valid: false };
     }
     const newArray = [];
-    for (let index = 0; index < a.length; index++) {
-      const itemA = a[index];
-      const itemB = b[index];
+    for (let index2 = 0; index2 < a.length; index2++) {
+      const itemA = a[index2];
+      const itemB = b[index2];
       const sharedValue = mergeValues(itemA, itemB);
       if (!sharedValue.valid) {
         return { valid: false };
@@ -42740,10 +42740,10 @@ var ZodMap = class extends ZodType {
     }
     const keyType = this._def.keyType;
     const valueType = this._def.valueType;
-    const pairs = [...ctx.data.entries()].map(([key, value], index) => {
+    const pairs = [...ctx.data.entries()].map(([key, value], index2) => {
       return {
-        key: keyType._parse(new ParseInputLazyPath(ctx, key, ctx.path, [index, "key"])),
-        value: valueType._parse(new ParseInputLazyPath(ctx, value, ctx.path, [index, "value"]))
+        key: keyType._parse(new ParseInputLazyPath(ctx, key, ctx.path, [index2, "key"])),
+        value: valueType._parse(new ParseInputLazyPath(ctx, value, ctx.path, [index2, "value"]))
       };
     });
     if (ctx.common.async) {
@@ -52251,6 +52251,21 @@ var isUrlValid = (url) => {
 };
 var supabase = isUrlValid(supabaseUrl) && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
+// src/lib/driveKeys.ts
+var index = -1;
+function driveKeyList() {
+  return (process.env["GOOGLE_DRIVE_API_KEY"] || "").split(",").map((k) => k.trim()).filter(Boolean);
+}
+function hasDriveKey() {
+  return driveKeyList().length > 0;
+}
+function nextDriveKey() {
+  const keys = driveKeyList();
+  if (keys.length === 0) return void 0;
+  index = (index + 1) % keys.length;
+  return keys[index];
+}
+
 // src/routes/gibi.ts
 import { randomUUID, createHash } from "crypto";
 var router2 = (0, import_express2.Router)();
@@ -52576,7 +52591,7 @@ router2.get("/admin/verify", (req, res) => {
 });
 router2.get("/admin/test-drive", async (req, res) => {
   if (!requireAdmin(req, res)) return;
-  const driveApiKey = process.env["GOOGLE_DRIVE_API_KEY"];
+  const driveApiKey = nextDriveKey();
   if (!driveApiKey) {
     res.json({ ok: false, error: "GOOGLE_DRIVE_API_KEY n\xE3o configurada" });
     return;
@@ -52602,7 +52617,7 @@ router2.post("/admin/import-drive-library", async (req, res) => {
     res.status(503).json({ error: "db_unavailable", message: "Banco nao configurado" });
     return;
   }
-  const driveApiKey = process.env["GOOGLE_DRIVE_API_KEY"];
+  const driveApiKey = nextDriveKey();
   if (!driveApiKey) {
     res.status(503).json({ error: "no_drive_key", message: "GOOGLE_DRIVE_API_KEY nao configurada no servidor" });
     return;
@@ -52833,7 +52848,7 @@ router2.post("/admin/import-drive", async (req, res) => {
     res.status(503).json({ error: "db_unavailable", message: "Banco n\xE3o configurado" });
     return;
   }
-  const driveApiKey = process.env["GOOGLE_DRIVE_API_KEY"];
+  const driveApiKey = nextDriveKey();
   if (!driveApiKey) {
     res.status(503).json({ error: "no_drive_key", message: "GOOGLE_DRIVE_API_KEY n\xE3o configurada no servidor" });
     return;
@@ -53335,7 +53350,7 @@ router2.post("/feedback", async (req, res) => {
 });
 router2.get("/pdf/:fileId", async (req, res) => {
   const { fileId } = req.params;
-  const apiKey = process.env["GOOGLE_DRIVE_API_KEY"];
+  const apiKey = nextDriveKey();
   if (!apiKey) {
     res.status(500).json({ error: "API key n\xE3o configurada" });
     return;
@@ -53971,9 +53986,9 @@ var MangaDexProvider = class {
     const baseUrl = data.baseUrl;
     const hash = data.chapter.hash;
     const fileNames = data.chapter.data;
-    return fileNames.map((fn, index) => ({
+    return fileNames.map((fn, index2) => ({
       url: `${baseUrl}/data/${hash}/${fn}`,
-      pageNumber: index + 1
+      pageNumber: index2 + 1
     }));
   }
   async getCatalog(listType, nsfw) {
@@ -54593,7 +54608,7 @@ var MadaraProvider = class {
       const attrMatch = tag.match(/\s(?:data-src|data-lazy-src|data-original|src)=["']([^"']+)["']/i);
       addCandidate(attrMatch?.[1]);
     }
-    return Array.from(urls).map((url, index) => ({ url, index })).sort((a, b) => {
+    return Array.from(urls).map((url, index2) => ({ url, index: index2 })).sort((a, b) => {
       const pageA = a.url.match(/(?:^|[^\d])(\d{1,4})(?:\D*)\.(?:webp|jpe?g|png)/i)?.[1];
       const pageB = b.url.match(/(?:^|[^\d])(\d{1,4})(?:\D*)\.(?:webp|jpe?g|png)/i)?.[1];
       if (pageA && pageB) return Number(pageA) - Number(pageB);
@@ -54898,8 +54913,8 @@ var MadaraProvider = class {
         const numStr2 = numMatch2[2];
         const ext2 = numMatch2[3];
         const padLength2 = numStr2.length;
-        return Array.from({ length: totalPages }, (_, index) => {
-          const pageNum2 = index + 1;
+        return Array.from({ length: totalPages }, (_, index2) => {
+          const pageNum2 = index2 + 1;
           return {
             url: `${basePart2}${String(pageNum2).padStart(padLength2, "0")}.${ext2}`,
             pageNumber: pageNum2
@@ -54914,14 +54929,14 @@ var MadaraProvider = class {
       }
       const hentaiFoxThumbs = Array.from(html.matchAll(/data-src=["'](https?:\/\/[^"']+\/(\d+)t\.(?:webp|jpe?g|png))["']/gi));
       if (hentaiFoxThumbs.length > 0) {
-        return hentaiFoxThumbs.map((match2, index) => ({
+        return hentaiFoxThumbs.map((match2, index2) => ({
           url: match2[1].replace(/(\d+)t(\.(?:webp|jpe?g|png))$/i, "$1$2"),
-          pageNumber: index + 1
+          pageNumber: index2 + 1
         }));
       }
       const extractedPageUrls = this.collectPageUrls(html);
       if (extractedPageUrls.length > 0) {
-        return extractedPageUrls.map((url, index) => ({ url, pageNumber: index + 1 }));
+        return extractedPageUrls.map((url, index2) => ({ url, pageNumber: index2 + 1 }));
       }
       const match = html.match(/a=(https?%3A%2F%2F[^\s"&]+|https?:\/\/[^\s"&]+)/i) || html.match(/src="([^"]+001\.(?:webp|jpg|jpeg|png))"/i) || html.match(/data-src="([^"]+001\.(?:webp|jpg|jpeg|png))"/i) || html.match(/data-lazy-src="([^"]+001\.(?:webp|jpg|jpeg|png))"/i);
       if (!match) throw new Error("Could not find base/001 image URL inside page.");
@@ -55118,9 +55133,9 @@ var NHentaiProvider = class {
       const mediaId = data?.media_id;
       const pages = this.normalizePages(data?.images?.pages);
       if (!mediaId || pages.length === 0) return [];
-      return pages.map((page, index) => ({
-        url: `https://zrocdn.xyz/galleries/${mediaId}/${index + 1}.${this.ext(page?.t || "j")}`,
-        pageNumber: index + 1
+      return pages.map((page, index2) => ({
+        url: `https://zrocdn.xyz/galleries/${mediaId}/${index2 + 1}.${this.ext(page?.t || "j")}`,
+        pageNumber: index2 + 1
       }));
     } catch (err) {
       console.error("nHentai pages failed:", err);
@@ -55284,7 +55299,7 @@ var OrionProvider = class {
         seen.add(url);
         urls.push(url);
       }
-      return urls.map((url, index) => ({ url, pageNumber: index + 1 }));
+      return urls.map((url, index2) => ({ url, pageNumber: index2 + 1 }));
     } catch (err) {
       console.warn(`Orion provider [${this.id}] pages failed:`, err);
       return [];
@@ -55617,7 +55632,7 @@ var WordPressComicProvider = class {
           html = post2?.content?.rendered || "";
         }
       }
-      return this.extractImages(html).map((url, index) => ({ url, pageNumber: index + 1 }));
+      return this.extractImages(html).map((url, index2) => ({ url, pageNumber: index2 + 1 }));
     } catch (err) {
       console.warn(`WordPress provider [${this.id}] pages failed:`, err);
       return [];
@@ -55828,7 +55843,7 @@ var SlimeReadProvider = class {
         if (!lower.includes("/uploads/chapters/")) continue;
         urls.add(url);
       }
-      return Array.from(urls).map((url, index) => ({ url, pageNumber: index + 1 }));
+      return Array.from(urls).map((url, index2) => ({ url, pageNumber: index2 + 1 }));
     } catch (err) {
       console.error(`SlimeReadProvider [${this.id}] pages failed:`, err);
       return [];
@@ -55975,8 +55990,7 @@ var CuratedComicsProvider = class {
     }
   }
   async fetchDriveFolderItems() {
-    const driveApiKey = process.env["GOOGLE_DRIVE_API_KEY"];
-    if (!driveApiKey) return [];
+    if (!hasDriveKey()) return [];
     const items = [];
     const seenFiles = /* @__PURE__ */ new Set();
     const seenFolders = /* @__PURE__ */ new Set([DRIVE_FOLDER_ID]);
@@ -55990,7 +56004,7 @@ var CuratedComicsProvider = class {
       do {
         const params = new URLSearchParams({
           q: `'${folderId}' in parents and trashed=false and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`,
-          key: driveApiKey,
+          key: nextDriveKey() || "",
           pageSize: "100",
           fields: "nextPageToken,files(id,name,mimeType)"
         });
@@ -56624,10 +56638,10 @@ var ProviderManager = class {
 var router3 = (0, import_express3.Router)();
 async function injectRatings(results) {
   const mangadexIds = [];
-  results.forEach((item, index) => {
+  results.forEach((item, index2) => {
     const mdSource = item.sources?.find((s) => s.providerId === "mangadex");
     if (mdSource) {
-      mangadexIds.push({ mangaId: mdSource.id, resultIndex: index });
+      mangadexIds.push({ mangaId: mdSource.id, resultIndex: index2 });
     }
   });
   if (mangadexIds.length > 0) {
@@ -57276,7 +57290,7 @@ router5.get("/pdf-proxy", async (req, res) => {
   const rawUrl = req.query.url || "";
   let targetUrl = "";
   if (driveId) {
-    const apiKey = process.env["GOOGLE_DRIVE_API_KEY"];
+    const apiKey = nextDriveKey();
     targetUrl = apiKey ? `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(driveId)}?alt=media&key=${apiKey}` : `https://drive.google.com/uc?export=download&id=${encodeURIComponent(driveId)}`;
   } else if (rawUrl) {
     try {
