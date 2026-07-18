@@ -67,10 +67,13 @@ export function Header() {
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-20 md:h-24 flex items-center justify-between gap-2">
         
         {/* Logo */}
-        <Link href="/" className="flex items-center group comic-hover transition-transform shrink-0" title="Gibi Finder">
-          <div className="bg-primary text-primary-foreground font-display text-2xl md:text-4xl w-10 h-10 md:w-14 md:h-14 flex items-center justify-center rounded-lg border-2 sm:border-4 border-black comic-shadow transform -rotate-3 group-hover:rotate-0 transition-all">
-            G
+        <Link href="/" className="flex items-center gap-1.5 group comic-hover transition-transform shrink-0">
+          <div className="bg-primary text-primary-foreground font-display text-lg sm:text-xl md:text-3xl px-2 md:px-4 py-1 md:py-2 rounded-lg border-2 sm:border-4 border-black comic-shadow transform -rotate-3 group-hover:rotate-0 transition-all">
+            GIBI
           </div>
+          <span className="hidden sm:inline font-display text-2xl md:text-4xl text-black tracking-wider group-hover:scale-105 transition-transform drop-shadow-[2px_2px_0_white]">
+            FINDER
+          </span>
         </Link>
 
         {/* Desktop Navigation */}
