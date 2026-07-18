@@ -97,6 +97,7 @@ const DRIVE_FOLDER_IDS = [
 const DRIVE_INDEX_PAGES = [
   "https://sites.google.com/view/hqsmdc/marvel",
   "https://sites.google.com/view/hqsmdc/dc",
+  "https://sites.google.com/view/hqsmdc/outros",
 ];
 
 const SHAREPOINT_URL =

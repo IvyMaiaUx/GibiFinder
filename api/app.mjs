@@ -56280,7 +56280,8 @@ var DRIVE_FOLDER_IDS = [
 ];
 var DRIVE_INDEX_PAGES = [
   "https://sites.google.com/view/hqsmdc/marvel",
-  "https://sites.google.com/view/hqsmdc/dc"
+  "https://sites.google.com/view/hqsmdc/dc",
+  "https://sites.google.com/view/hqsmdc/outros"
 ];
 function normalizeText(value) {
   return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
