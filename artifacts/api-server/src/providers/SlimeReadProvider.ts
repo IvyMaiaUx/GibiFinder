@@ -157,8 +157,16 @@ export class SlimeReadProvider implements Provider {
 
   async search(query: string, nsfw?: boolean): Promise<SearchResult[]> {
     try {
-      const html = await this.fetchHtml("/");
-      const allResults = [...this.extractSpotlight(html), ...this.extractMangaLinks(html)];
+      // The site has no open search endpoint, so widen the pool by scanning the
+      // home, popular and updates pages before matching the query.
+      const pages = await Promise.all([
+        this.fetchHtml("/").catch(() => ""),
+        this.fetchHtml("/populares").catch(() => ""),
+        this.fetchHtml("/atualizacoes").catch(() => ""),
+      ]);
+      const allResults = pages.flatMap(html =>
+        html ? [...this.extractSpotlight(html), ...this.extractMangaLinks(html)] : []
+      );
       const unique = new Map<string, SearchResult>();
       for (const result of allResults) {
         if (!unique.has(result.id)) unique.set(result.id, result);
@@ -166,7 +174,7 @@ export class SlimeReadProvider implements Provider {
       return Array.from(unique.values())
         .filter(result => this.titleMatchesQuery(result.title, query))
         .filter(result => nsfw || !(result.genres || []).some(genre => this.isAdultText(genre)))
-        .slice(0, 24);
+        .slice(0, 40);
     } catch (err) {
       console.error(`SlimeReadProvider [${this.id}] search failed:`, err);
       return [];
@@ -241,6 +249,6 @@ export class SlimeReadProvider implements Provider {
     const unique = Array.from(new Map(results.map(result => [result.id, result])).values());
     return unique
       .filter(result => nsfw || !(result.genres || []).some(genre => this.isAdultText(genre)))
-      .slice(0, 24);
+      .slice(0, 60);
   }
 }

@@ -55753,13 +55753,19 @@ var SlimeReadProvider = class {
   }
   async search(query, nsfw) {
     try {
-      const html = await this.fetchHtml("/");
-      const allResults = [...this.extractSpotlight(html), ...this.extractMangaLinks(html)];
+      const pages = await Promise.all([
+        this.fetchHtml("/").catch(() => ""),
+        this.fetchHtml("/populares").catch(() => ""),
+        this.fetchHtml("/atualizacoes").catch(() => "")
+      ]);
+      const allResults = pages.flatMap(
+        (html) => html ? [...this.extractSpotlight(html), ...this.extractMangaLinks(html)] : []
+      );
       const unique2 = /* @__PURE__ */ new Map();
       for (const result of allResults) {
         if (!unique2.has(result.id)) unique2.set(result.id, result);
       }
-      return Array.from(unique2.values()).filter((result) => this.titleMatchesQuery(result.title, query)).filter((result) => nsfw || !(result.genres || []).some((genre) => this.isAdultText(genre))).slice(0, 24);
+      return Array.from(unique2.values()).filter((result) => this.titleMatchesQuery(result.title, query)).filter((result) => nsfw || !(result.genres || []).some((genre) => this.isAdultText(genre))).slice(0, 40);
     } catch (err) {
       console.error(`SlimeReadProvider [${this.id}] search failed:`, err);
       return [];
@@ -55827,7 +55833,7 @@ var SlimeReadProvider = class {
     const html = await this.fetchHtml(listType === "latest" ? "/atualizacoes" : "/populares").catch(() => this.fetchHtml("/"));
     const results = [...this.extractSpotlight(html), ...this.extractMangaLinks(html)];
     const unique2 = Array.from(new Map(results.map((result) => [result.id, result])).values());
-    return unique2.filter((result) => nsfw || !(result.genres || []).some((genre) => this.isAdultText(genre))).slice(0, 24);
+    return unique2.filter((result) => nsfw || !(result.genres || []).some((genre) => this.isAdultText(genre))).slice(0, 60);
   }
 };
 
