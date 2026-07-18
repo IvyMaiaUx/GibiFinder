@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Layout } from "@/components/layout/Layout";
-import { Loader2, AlertCircle, Compass, Star, ChevronLeft, ChevronRight, Play, BookOpen } from "lucide-react";
+import { Loader2, AlertCircle, Compass, Star, ChevronLeft, ChevronRight, Play, BookOpen, CheckCircle2, Sparkles } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
-import { isFavorite, toggleFavorite } from "@/lib/favorites";
-import { getLocalProgress } from "@/lib/user-history";
+import { isFavorite, toggleFavorite, getFavorites } from "@/lib/favorites";
+import { getLocalProgress, getLocalCompleted } from "@/lib/user-history";
 import { getEmptySources, hasReadableSource } from "@/lib/empty-sources";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -68,11 +68,12 @@ function ContinueCard({ item, onClick }: { item: { title: string; coverUrl?: str
   );
 }
 
-function CatalogCard({ item, onOpen, onToggleFav, favorited }: {
+function CatalogCard({ item, onOpen, onToggleFav, favorited, status }: {
   item: UnifiedCatalogItem;
   onOpen: () => void;
   onToggleFav: (e: React.MouseEvent) => void;
   favorited: boolean;
+  status?: "reading" | "read";
 }) {
   return (
     <div
@@ -80,7 +81,15 @@ function CatalogCard({ item, onOpen, onToggleFav, favorited }: {
       className="group relative w-32 sm:w-40 shrink-0 cursor-pointer bg-white border-4 border-black rounded-xl overflow-hidden comic-shadow-sm hover:translate-y-[-4px] hover:shadow-[6px_6px_0_rgba(0,0,0,1)] hover:bg-yellow-50 transition-all"
     >
       <div className="relative aspect-[3/4] bg-zinc-950 border-b-4 border-black overflow-hidden">
-        <SafeImage src={item.coverUrl} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" />
+        <SafeImage src={item.coverUrl} alt={item.title} className={cn("w-full h-full object-cover group-hover:scale-105 transition-transform", status && "opacity-90")} loading="lazy" />
+        {status && (
+          <span className={cn(
+            "absolute top-1.5 left-1.5 flex items-center gap-0.5 text-white text-3xs font-display px-1.5 py-0.5 border border-black rounded",
+            status === "reading" ? "bg-primary" : "bg-emerald-600"
+          )}>
+            {status === "reading" ? <><BookOpen className="w-2.5 h-2.5" /> LENDO</> : <><CheckCircle2 className="w-2.5 h-2.5" /> LIDO</>}
+          </span>
+        )}
         <button
           type="button"
           onClick={onToggleFav}
@@ -220,6 +229,40 @@ export default function Explore() {
   for (const it of allItems) if (!byId.has(it.id)) byId.set(it.id, it);
   const uniqueItems = Array.from(byId.values());
 
+  // Read / reading / favorite status (for badges + suggestions), keyed by source.
+  const keyOf = (providerId: string, mangaId: string) => `${providerId}:${mangaId}`;
+  const readingKeys = new Set(
+    Object.values(getLocalProgress())
+      .filter((p): p is NonNullable<typeof p> => !!p?.providerId && !!p?.mangaId)
+      .map(p => keyOf(p.providerId!, p.mangaId!))
+  );
+  const readKeys = new Set(getLocalCompleted().map(c => keyOf(c.providerId, c.mangaId)));
+  const favKeys = new Set(getFavorites().map(f => keyOf(f.providerId, f.mangaId)));
+  const interactedKeys = new Set([...readingKeys, ...readKeys, ...favKeys]);
+
+  const statusOf = (item: UnifiedCatalogItem): "reading" | "read" | undefined => {
+    if (item.sources?.some(s => readingKeys.has(keyOf(s.providerId, s.id)))) return "reading";
+    if (item.sources?.some(s => readKeys.has(keyOf(s.providerId, s.id)))) return "read";
+    return undefined;
+  };
+  const isInteracted = (item: UnifiedCatalogItem) =>
+    item.sources?.some(s => interactedKeys.has(keyOf(s.providerId, s.id)));
+
+  // Suggestions: rank the genres the user engaged with, then recommend unseen
+  // catalog titles in those genres.
+  const genreScore = new Map<string, number>();
+  for (const it of uniqueItems) {
+    if (!isInteracted(it)) continue;
+    for (const g of it.genres || []) genreScore.set(norm(g), (genreScore.get(norm(g)) || 0) + 1);
+  }
+  const topGenres = [...genreScore.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => g);
+  const suggestions = topGenres.length === 0 ? [] : uniqueItems
+    .filter(it => !isInteracted(it) && (it.genres || []).some(g => topGenres.includes(norm(g))))
+    .map(it => ({ it, score: (it.genres || []).filter(g => topGenres.includes(norm(g))).length + (it.rating || 0) / 20 }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 20)
+    .map(x => x.it);
+
   const genreRows: RowData[] = [];
   const usedInGenreRows = new Set<string>();
   for (const genre of FEATURED_GENRES) {
@@ -295,12 +338,23 @@ export default function Explore() {
               </Row>
             )}
 
+            {suggestions.length >= MIN_ROW_ITEMS && (
+              <Row title="✨ Sugestões pra você">
+                {suggestions.map(item => {
+                  const src = item.sources?.[0];
+                  return (
+                    <CatalogCard key={`sug-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} />
+                  );
+                })}
+              </Row>
+            )}
+
             {filteredPopular.length > 0 && (
               <Row title="🔥 Mais populares">
                 {filteredPopular.slice(0, 20).map(item => {
                   const src = item.sources?.[0];
                   return (
-                    <CatalogCard key={item.id} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} />
+                    <CatalogCard key={item.id} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} />
                   );
                 })}
               </Row>
@@ -311,7 +365,7 @@ export default function Explore() {
                 {filteredLatest.slice(0, 20).map(item => {
                   const src = item.sources?.[0];
                   return (
-                    <CatalogCard key={`new-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} />
+                    <CatalogCard key={`new-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} />
                   );
                 })}
               </Row>
@@ -322,7 +376,7 @@ export default function Explore() {
                 {row.items.map(item => {
                   const src = item.sources?.[0];
                   return (
-                    <CatalogCard key={`${row.key}-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} />
+                    <CatalogCard key={`${row.key}-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} />
                   );
                 })}
               </Row>
