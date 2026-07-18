@@ -68,17 +68,21 @@ function ContinueCard({ item, onClick }: { item: { title: string; coverUrl?: str
   );
 }
 
-function CatalogCard({ item, onOpen, onToggleFav, favorited, status }: {
+function CatalogCard({ item, onOpen, onToggleFav, favorited, status, full }: {
   item: UnifiedCatalogItem;
   onOpen: () => void;
   onToggleFav: (e: React.MouseEvent) => void;
   favorited: boolean;
   status?: "reading" | "read";
+  full?: boolean;
 }) {
   return (
     <div
       onClick={onOpen}
-      className="group relative w-32 sm:w-40 shrink-0 cursor-pointer bg-white border-4 border-black rounded-xl overflow-hidden comic-shadow-sm hover:translate-y-[-4px] hover:shadow-[6px_6px_0_rgba(0,0,0,1)] hover:bg-yellow-50 transition-all"
+      className={cn(
+        "group relative cursor-pointer bg-white border-4 border-black rounded-xl overflow-hidden comic-shadow-sm hover:translate-y-[-4px] hover:shadow-[6px_6px_0_rgba(0,0,0,1)] hover:bg-yellow-50 transition-all",
+        full ? "w-full" : "w-32 sm:w-40 shrink-0"
+      )}
     >
       <div className="relative aspect-[3/4] bg-zinc-950 border-b-4 border-black overflow-hidden">
         <SafeImage src={item.coverUrl} alt={item.title} className={cn("w-full h-full object-cover group-hover:scale-105 transition-transform", status && "opacity-90")} loading="lazy" />
@@ -396,11 +400,11 @@ export default function Explore() {
               <span className="font-sans text-xs font-bold text-gray-500">{viewAllList.length} títulos</span>
               {viewAllLoading && <Loader2 className="w-5 h-5 animate-spin text-primary" />}
             </div>
-            <div className="flex flex-wrap gap-3 sm:gap-4 justify-center sm:justify-start">
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 sm:gap-4">
               {viewAllList.map(item => {
                 const src = item.sources?.[0];
                 return (
-                  <CatalogCard key={`all-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} />
+                  <CatalogCard key={`all-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} full />
                 );
               })}
             </div>
