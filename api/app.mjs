@@ -55963,7 +55963,15 @@ var WordPressComicProvider = class {
           html = post2?.content?.rendered || "";
         }
       }
-      return this.extractImages(html).map((url, index2) => ({ url, pageNumber: index2 + 1 }));
+      const images = this.extractImages(html);
+      if (images.length > 0) {
+        return images.map((url, index2) => ({ url, pageNumber: index2 + 1 }));
+      }
+      const pdfMatch = html.match(/href=["']([^"']+\.pdf(?:\?[^"']*)?)["']/i) || html.match(/href=["'](https:\/\/drive\.google\.com\/file\/d\/[^"']+)["']/i) || html.match(/href=["'](https:\/\/drive\.google\.com\/[^"']*[?&]id=[^"']+)["']/i);
+      if (pdfMatch?.[1]) {
+        return [{ url: `pdf:${this.decodeHtml(pdfMatch[1])}`, pageNumber: 1 }];
+      }
+      return [];
     } catch (err) {
       logger.warn({ err }, `WordPress provider [${this.id}] pages failed:`);
       return [];

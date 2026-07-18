@@ -387,7 +387,22 @@ export class WordPressComicProvider implements Provider {
         }
       }
 
-      return this.extractImages(html).map((url, index) => ({ url, pageNumber: index + 1 }));
+      const images = this.extractImages(html);
+      if (images.length > 0) {
+        return images.map((url, index) => ({ url, pageNumber: index + 1 }));
+      }
+
+      // Download-only chapters: no inline images, but often a PDF / Google Drive
+      // link. Route it through the pdf.js reader so it's readable online.
+      const pdfMatch =
+        html.match(/href=["']([^"']+\.pdf(?:\?[^"']*)?)["']/i) ||
+        html.match(/href=["'](https:\/\/drive\.google\.com\/file\/d\/[^"']+)["']/i) ||
+        html.match(/href=["'](https:\/\/drive\.google\.com\/[^"']*[?&]id=[^"']+)["']/i);
+      if (pdfMatch?.[1]) {
+        return [{ url: `pdf:${this.decodeHtml(pdfMatch[1])}`, pageNumber: 1 }];
+      }
+
+      return [];
     } catch (err) {
       logger.warn({ err: err }, `WordPress provider [${this.id}] pages failed:`);
       return [];
