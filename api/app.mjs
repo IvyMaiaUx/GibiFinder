@@ -55952,6 +55952,7 @@ var WordPressComicProvider = class {
   async getPages(chapterId) {
     try {
       let html = "";
+      let postContent = "";
       if (chapterId.startsWith("url:")) {
         html = await this.fetchHtml(chapterId.replace(/^url:/, ""));
       } else if (chapterId.startsWith("page:")) {
@@ -55959,6 +55960,7 @@ var WordPressComicProvider = class {
         html = page?.content?.rendered || "";
       } else {
         const post2 = await this.getPost(chapterId);
+        postContent = post2?.content?.rendered || "";
         const readPage = post2 ? await this.findReadPage(post2).catch(() => null) : null;
         if (readPage?.id.startsWith("page:")) {
           const page = await this.getPageById(readPage.id.replace(/^page:/, ""));
@@ -55966,16 +55968,24 @@ var WordPressComicProvider = class {
         } else if (readPage?.url) {
           html = await this.fetchHtml(readPage.url);
         } else {
-          html = post2?.content?.rendered || "";
+          html = postContent;
         }
       }
       const images = this.extractImages(html);
       if (images.length > 0) {
         return images.map((url, index2) => ({ url, pageNumber: index2 + 1 }));
       }
-      const pdfMatch = html.match(/href=["']([^"']+\.pdf(?:\?[^"']*)?)["']/i) || html.match(/href=["'](https:\/\/drive\.google\.com\/file\/d\/[^"']+)["']/i) || html.match(/href=["'](https:\/\/drive\.google\.com\/[^"']*[?&]id=[^"']+)["']/i);
+      const searchIn = `${html}
+${postContent}`;
+      const pdfMatch = searchIn.match(/href=["']([^"']+\.pdf(?:\?[^"']*)?)["']/i) || searchIn.match(/href=["'](https:\/\/drive\.google\.com\/file\/d\/[^"']+)["']/i) || searchIn.match(/href=["'](https:\/\/drive\.google\.com\/[^"']*[?&]id=[^"']+)["']/i);
       if (pdfMatch?.[1]) {
         return [{ url: `pdf:${this.decodeHtml(pdfMatch[1])}`, pageNumber: 1 }];
+      }
+      const dlMatch = searchIn.match(
+        /href=["'](https?:\/\/[^"']*(?:workupload\.com|mega\.nz|mega\.io|mediafire\.com|pixeldrain\.com|gofile\.io|1drv\.ms|drive\.google\.com\/drive\/folders|\.(?:cbr|cbz|rar|zip))[^"']*)["']/i
+      );
+      if (dlMatch?.[1]) {
+        return [{ url: `external:${this.decodeHtml(dlMatch[1])}`, pageNumber: 1 }];
       }
       return [];
     } catch (err) {

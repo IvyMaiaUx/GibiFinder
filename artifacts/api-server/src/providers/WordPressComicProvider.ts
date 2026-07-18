@@ -375,6 +375,7 @@ export class WordPressComicProvider implements Provider {
   async getPages(chapterId: string): Promise<Page[]> {
     try {
       let html = "";
+      let postContent = "";
       if (chapterId.startsWith("url:")) {
         html = await this.fetchHtml(chapterId.replace(/^url:/, ""));
       } else if (chapterId.startsWith("page:")) {
@@ -382,6 +383,7 @@ export class WordPressComicProvider implements Provider {
         html = page?.content?.rendered || "";
       } else {
         const post = await this.getPost(chapterId);
+        postContent = post?.content?.rendered || "";
         const readPage = post ? await this.findReadPage(post).catch(() => null) : null;
         if (readPage?.id.startsWith("page:")) {
           const page = await this.getPageById(readPage.id.replace(/^page:/, ""));
@@ -389,7 +391,7 @@ export class WordPressComicProvider implements Provider {
         } else if (readPage?.url) {
           html = await this.fetchHtml(readPage.url);
         } else {
-          html = post?.content?.rendered || "";
+          html = postContent;
         }
       }
 
@@ -398,14 +400,22 @@ export class WordPressComicProvider implements Provider {
         return images.map((url, index) => ({ url, pageNumber: index + 1 }));
       }
 
-      // Download-only chapters: no inline images, but often a PDF / Google Drive
-      // link. Route it through the pdf.js reader so it's readable online.
+      // No online reader — look for a download (in the reader page and the post).
+      const searchIn = `${html}\n${postContent}`;
+      // PDF / Drive file → readable via the pdf.js reader.
       const pdfMatch =
-        html.match(/href=["']([^"']+\.pdf(?:\?[^"']*)?)["']/i) ||
-        html.match(/href=["'](https:\/\/drive\.google\.com\/file\/d\/[^"']+)["']/i) ||
-        html.match(/href=["'](https:\/\/drive\.google\.com\/[^"']*[?&]id=[^"']+)["']/i);
+        searchIn.match(/href=["']([^"']+\.pdf(?:\?[^"']*)?)["']/i) ||
+        searchIn.match(/href=["'](https:\/\/drive\.google\.com\/file\/d\/[^"']+)["']/i) ||
+        searchIn.match(/href=["'](https:\/\/drive\.google\.com\/[^"']*[?&]id=[^"']+)["']/i);
       if (pdfMatch?.[1]) {
         return [{ url: `pdf:${this.decodeHtml(pdfMatch[1])}`, pageNumber: 1 }];
+      }
+      // Other file hosts → external "open/download" screen (no online render).
+      const dlMatch = searchIn.match(
+        /href=["'](https?:\/\/[^"']*(?:workupload\.com|mega\.nz|mega\.io|mediafire\.com|pixeldrain\.com|gofile\.io|1drv\.ms|drive\.google\.com\/drive\/folders|\.(?:cbr|cbz|rar|zip))[^"']*)["']/i
+      );
+      if (dlMatch?.[1]) {
+        return [{ url: `external:${this.decodeHtml(dlMatch[1])}`, pageNumber: 1 }];
       }
 
       return [];

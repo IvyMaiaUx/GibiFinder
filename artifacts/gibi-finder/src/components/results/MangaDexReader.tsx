@@ -1246,10 +1246,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                 />
               </div>
             ) : isExternalLink(pages[currentPage]?.url) ? (
-              <div className="max-w-lg w-full bg-white border-4 border-black p-8 text-center text-black rounded-xl comic-shadow">
-                <h4 className="font-display text-2xl uppercase mb-3">Abrir catálogo externo</h4>
+              <div className="max-w-lg w-full bg-white border-4 border-black p-8 text-center text-black rounded-xl comic-shadow self-center">
+                <h4 className="font-display text-2xl uppercase mb-3">Somente download</h4>
                 <p className="font-sans font-bold text-sm text-gray-600 mb-6">
-                  Este título abre um catálogo em outro site. Clique abaixo para continuar.
+                  Este número não tem leitura online na fonte — só o arquivo para baixar. Clique abaixo para abrir o download.
                 </p>
                 <a
                   href={externalHref(pages[currentPage]?.url)}
@@ -1257,7 +1257,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                   rel="noreferrer"
                   className="inline-flex items-center gap-2 bg-primary text-white font-display px-6 py-3 border-2 border-black hover:bg-yellow-400 hover:text-black transition-colors"
                 >
-                  ABRIR FONTE <ExternalLink className="w-4 h-4" />
+                  BAIXAR / ABRIR FONTE <ExternalLink className="w-4 h-4" />
                 </a>
               </div>
             ) : readerMode === "scroll" ? (
