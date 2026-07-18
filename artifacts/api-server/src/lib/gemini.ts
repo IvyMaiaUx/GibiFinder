@@ -98,6 +98,29 @@ async function withKeyRotation<T>(fn: () => Promise<T>): Promise<T> {
   throw lastErr;
 }
 
+export function geminiAvailable(): boolean {
+  return clients.length > 0;
+}
+
+// Translate a synopsis to Brazilian Portuguese (returns the input unchanged if
+// Gemini is unavailable or it's already Portuguese).
+export async function translateToPortuguese(text: string): Promise<string> {
+  const clean = (text || "").trim();
+  if (!clean || clients.length === 0) return clean;
+  const prompt = `Traduza o texto a seguir para português do Brasil. Se já estiver em português, devolva-o sem mudanças. Responda SOMENTE com o texto traduzido — sem aspas, sem comentários, sem markdown.\n\nTexto:\n${clean}`;
+  try {
+    return await withKeyRotation(async () => {
+      const model = getModel();
+      const result = await model.generateContent(prompt);
+      const out = result.response.text().trim();
+      return out || clean;
+    });
+  } catch (err) {
+    logger.warn({ msg: "Gemini translate failed", err: err instanceof Error ? err.message : String(err) });
+    return clean;
+  }
+}
+
 const COMIC_EXPERT_CONTEXT = `Você é um especialista em histórias em quadrinhos (gibis, HQs e mangás) publicadas no Brasil, com profundo conhecimento sobre:
 - Turma da Mônica, Cebolinha, Cascão, Magali, Bidu e toda a turma do Mauricio de Sousa (incluindo Turma da Mônica Jovem)
 - Mangás japoneses publicados no Brasil (como Naruto, One Piece, Dragon Ball, Death Note, Bleach, Sailor Moon, My Hero Academia, Jujutsu Kaisen, etc.)

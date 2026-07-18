@@ -4,6 +4,7 @@ import gibiRouter from "./gibi";
 import providersRouter from "./providers";
 import imageProxyRouter from "./imageProxy";
 import pdfProxyRouter from "./pdfProxy";
+import translateRouter from "./translate";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use(gibiRouter);
 router.use(providersRouter);
 router.use(imageProxyRouter);
 router.use(pdfProxyRouter);
+router.use(translateRouter);
 
 export default router;

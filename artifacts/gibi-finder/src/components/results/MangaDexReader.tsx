@@ -603,16 +603,19 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
       // the viewport. Pages render in order, so we can stop at the first one
       // still below the marker.
       const marker = container.getBoundingClientRect().top + container.clientHeight * 0.3;
-      let bestIdx = 0;
+      let bestIdx = -1;
       for (let i = 0; i < pageRefs.current.length; i++) {
         const el = pageRefs.current[i];
         if (!el) continue;
-        if (el.getBoundingClientRect().top <= marker) {
-          bestIdx = i;
-        } else {
-          break;
-        }
+        const rect = el.getBoundingClientRect();
+        // Ignore pages that haven't laid out yet (images still loading, height ~0),
+        // otherwise they all stack at the top and the last one gets picked —
+        // which would falsely mark the chapter as fully read on open.
+        if (rect.height < 40) continue;
+        if (rect.top <= marker) bestIdx = i;
+        else break;
       }
+      if (bestIdx < 0) return; // nothing loaded yet — keep the current page
       setCurrentPage(prev => (prev === bestIdx ? prev : bestIdx));
     };
 
