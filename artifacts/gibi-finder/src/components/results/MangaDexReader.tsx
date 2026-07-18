@@ -97,71 +97,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   const zoomRef = useRef(1);
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
 
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(
-        !!document.fullscreenElement || 
-        !!(document as any).webkitFullscreenElement ||
-        !!(document as any).mozFullScreenElement ||
-        !!(document as any).msFullscreenElement
-      );
-    };
-    
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
-    document.addEventListener("mozfullscreenchange", handleFullscreenChange);
-    document.addEventListener("MSFullscreenChange", handleFullscreenChange);
-    
-    return () => {
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
-      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
-      document.removeEventListener("mozfullscreenchange", handleFullscreenChange);
-      document.removeEventListener("MSFullscreenChange", handleFullscreenChange);
-    };
-  }, []);
-
-  const toggleFullscreen = () => {
-    const element = readerRef.current;
-    if (!element) return;
-
-    const requestMethod = 
-      element.requestFullscreen || 
-      (element as any).webkitRequestFullscreen || 
-      (element as any).mozRequestFullScreen || 
-      (element as any).msRequestFullscreen;
-
-    const exitMethod = 
-      document.exitFullscreen || 
-      (document as any).webkitExitFullscreen || 
-      (document as any).mozCancelFullScreen || 
-      (document as any).msExitFullscreen;
-
-    const isNativeFullscreen = 
-      !!document.fullscreenElement || 
-      !!(document as any).webkitFullscreenElement ||
-      !!(document as any).mozFullScreenElement ||
-      !!(document as any).msFullscreenElement;
-
-    if (requestMethod) {
-      if (!isNativeFullscreen) {
-        requestMethod.call(element).then(() => {
-          // Chrome Android auto-locks orientation to the fullscreened content's
-          // "natural" shape (portrait for the tall cascade column). Release it so
-          // the device sensor can rotate freely in either reading mode.
-          try { (screen.orientation as any)?.unlock?.(); } catch { /* noop */ }
-        }).catch(err => {
-          console.error("Error enabling native fullscreen:", err);
-          // Fallback to virtual fullscreen
-          setIsFullscreen(true);
-        });
-      } else if (exitMethod) {
-        exitMethod.call(document);
-      }
-    } else {
-      // Fallback for devices without native Fullscreen API support (like iOS Safari)
-      setIsFullscreen(prev => !prev);
-    }
-  };
+  // CSS-only immersive mode (hide the header). The reader is already a full-screen
+  // fixed overlay, so we deliberately avoid the native Fullscreen API: on mobile it
+  // exits on scroll/overscroll and locks orientation, which caused repeated bugs.
+  const toggleFullscreen = () => setIsFullscreen(prev => !prev);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null);
   const [langFilter, setLangFilter] = useState<"pt" | "en" | "all">("all");
@@ -437,7 +376,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
         setPages(pagesData);
         setShowReader(true);
-        setIsFullscreen(true);
+        // Open windowed (header + chapter selector visible) rather than immersive.
 
         // Drive the resume-scroll effect so cascade mode lands on the saved page
         // instead of opening at the top.
@@ -454,25 +393,6 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
           newUrl.searchParams.delete("resume");
           window.history.replaceState({}, "", newUrl.toString());
         } catch {}
-
-        // Try to trigger native browser fullscreen after mount
-        setTimeout(() => {
-          const element = readerRef.current;
-          if (element) {
-            const requestMethod = 
-              element.requestFullscreen || 
-              (element as any).webkitRequestFullscreen || 
-              (element as any).mozRequestFullScreen || 
-              (element as any).msRequestFullscreen;
-            if (requestMethod) {
-              requestMethod.call(element).then(() => {
-                try { (screen.orientation as any)?.unlock?.(); } catch { /* noop */ }
-              }).catch(() => {
-                // Ignore security exceptions, virtual fullscreen handles the layout
-              });
-            }
-          }
-        }, 150);
       } else {
         // Fallback: If exact chapter not found, set default lang filter
         if (source.providerId === "comicextra") {
@@ -1326,6 +1246,15 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                     </button>
                   )}
 
+                  {/* Close Button (in the header, next to the chapter selector) */}
+                  <button
+                    onClick={() => setShowReader(false)}
+                    className="bg-primary hover:bg-red-600 text-white p-1.5 sm:p-2 border-2 border-white rounded transition-colors"
+                    title="Fechar Leitor"
+                  >
+                    <X className="w-4 h-4 sm:w-5 sm:h-5" strokeWidth={3} />
+                  </button>
+
                 </div>
               </div>
             </div>
@@ -1530,20 +1459,15 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
             >
               {isFullscreen ? <Minimize className="w-5 h-5" strokeWidth={3} /> : <Maximize className="w-5 h-5" strokeWidth={3} />}
             </button>
+            {/* Close — floating, so the reader can be closed while in fullscreen too */}
+            <button
+              onClick={() => { setIsFullscreen(false); setShowReader(false); }}
+              className="bg-primary hover:bg-red-600 text-white p-3 border-2 border-white rounded-full transition-all hover:scale-105"
+              title="Fechar Leitor"
+            >
+              <X className="w-5 h-5" strokeWidth={3} />
+            </button>
           </div>
-
-          {/* Single close button — transparent, top-left, always visible (incl. fullscreen) */}
-          <button
-            onClick={() => {
-              try { if (document.fullscreenElement) document.exitFullscreen?.(); } catch { /* noop */ }
-              setIsFullscreen(false);
-              setShowReader(false);
-            }}
-            className="fixed top-4 left-4 z-[110] bg-black/40 hover:bg-black/70 text-white p-2.5 border border-white/20 rounded-full backdrop-blur-sm transition-all hover:scale-105"
-            title="Fechar Leitor"
-          >
-            <X className="w-5 h-5" strokeWidth={3} />
-          </button>
 
           {/* Synopsis Popup Modal */}
           {showInfo && (

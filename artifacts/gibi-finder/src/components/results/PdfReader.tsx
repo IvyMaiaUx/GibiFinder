@@ -75,28 +75,12 @@ export function PdfReader({
     return () => window.removeEventListener("resize", measure);
   }, [numPages]);
 
-  // Fullscreen state sync.
-  useEffect(() => {
-    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener("fullscreenchange", onFsChange);
-    return () => document.removeEventListener("fullscreenchange", onFsChange);
-  }, []);
-
-  const toggleFullscreen = () => {
-    const el = rootRef.current;
-    if (!el) return;
-    if (!document.fullscreenElement) {
-      el.requestFullscreen?.().then(() => {
-        // Release Chrome Android's auto orientation lock so the reader can rotate.
-        try { (screen.orientation as any)?.unlock?.(); } catch { /* noop */ }
-      }).catch(() => setIsFullscreen(true));
-    } else {
-      document.exitFullscreen?.();
-    }
-  };
+  // CSS-only immersive mode (hide the header). The reader is already a full-screen
+  // fixed overlay; the native Fullscreen API exits on scroll and locks orientation
+  // on mobile, so we avoid it.
+  const toggleFullscreen = () => setIsFullscreen(prev => !prev);
 
   const handleClose = () => {
-    try { if (document.fullscreenElement) document.exitFullscreen?.(); } catch { /* noop */ }
     setIsFullscreen(false);
     onClose();
   };
@@ -255,6 +239,9 @@ export function PdfReader({
                 </button>
               </div>
             )}
+            <button onClick={handleClose} className="bg-primary hover:bg-red-600 text-white p-1.5 sm:p-2 border-2 border-white rounded transition-colors" title="Fechar Leitor">
+              <X className="w-4 h-4 sm:w-5 sm:h-5" strokeWidth={3} />
+            </button>
           </div>
         </div>
       )}
@@ -351,16 +338,14 @@ export function PdfReader({
         >
           {isFullscreen ? <Minimize className="w-5 h-5" strokeWidth={3} /> : <Maximize className="w-5 h-5" strokeWidth={3} />}
         </button>
+        <button
+          onClick={handleClose}
+          className="bg-primary hover:bg-red-600 text-white p-3 border-2 border-white rounded-full transition-all hover:scale-105"
+          title="Fechar Leitor"
+        >
+          <X className="w-5 h-5" strokeWidth={3} />
+        </button>
       </div>
-
-      {/* Single close button — transparent, top-left, always visible (incl. fullscreen) */}
-      <button
-        onClick={handleClose}
-        className="fixed top-4 left-4 z-[110] bg-black/40 hover:bg-black/70 text-white p-2.5 border border-white/20 rounded-full backdrop-blur-sm transition-all hover:scale-105"
-        title="Fechar Leitor"
-      >
-        <X className="w-5 h-5" strokeWidth={3} />
-      </button>
     </div>
   );
 }
