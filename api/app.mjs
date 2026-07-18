@@ -56222,7 +56222,7 @@ var SlimeReadProvider = class {
 
 // src/providers/CuratedComicsProvider.ts
 init_logger();
-var CACHE_ROW_ID = "catalog-v2";
+var CACHE_ROW_ID = "catalog-v3";
 var MEM_TTL_MS = 1e3 * 60 * 30;
 var REMOTE_TTL_MS = 1e3 * 60 * 60 * 6;
 var EMBED_PREFIX = "embed:";

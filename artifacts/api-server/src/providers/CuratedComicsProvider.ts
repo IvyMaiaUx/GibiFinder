@@ -8,7 +8,7 @@ import { supabase } from "../lib/supabase";
 //   create table curated_cache (id text primary key, data jsonb, updated_at timestamptz default now());
 // Bump the suffix to invalidate the shared cache after a crawl/format change
 // (e.g. new HQ/Gibi category tags) so items get re-crawled with the new shape.
-const CACHE_ROW_ID = "catalog-v2";
+const CACHE_ROW_ID = "catalog-v3";
 const MEM_TTL_MS = 1000 * 60 * 30;      // trust in-memory cache for 30 min
 const REMOTE_TTL_MS = 1000 * 60 * 60 * 6; // refresh the shared cache every 6 h
 
