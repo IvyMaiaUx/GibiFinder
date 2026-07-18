@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { cn, proxyPdfUrl } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
+import { useReaderZoom } from "@/components/reader/useReaderZoom";
 import { useAuth } from "@/hooks/use-auth";
 import { getLocalProgress, saveReadingState, markChapterCompleted } from "@/lib/user-history";
 import { markSourceEmpty, markSourceHasChapters } from "@/lib/empty-sources";
@@ -89,14 +90,6 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // heights are correct before we scroll.
   const [resumeTargetPage, setResumeTargetPage] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  // In-reader zoom (pinch + double-tap). Native pinch-zoom is unreliable inside a
-  // fixed fullscreen overlay and is disabled outright in installed PWAs, so we
-  // drive it ourselves via a CSS `zoom` on the page content. State lives here;
-  // the gesture effects are declared below, after the reader state they read.
-  const [zoom, setZoom] = useState(1);
-  const zoomRef = useRef(1);
-  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
-
   // CSS-only immersive mode (hide the header). The reader is already a full-screen
   // fixed overlay, so we deliberately avoid the native Fullscreen API: on mobile it
   // exits on scroll/overscroll and locks orientation, which caused repeated bugs.
@@ -112,8 +105,11 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   const [readerMode, setReaderMode] = useState<"page" | "scroll">("scroll");
   const [error, setError] = useState<string | null>(null);
 
-  // Reset zoom whenever the chapter or layout mode changes.
-  useEffect(() => { setZoom(1); }, [selectedChapter?.id, readerMode]);
+  // In-reader zoom (pinch + double-tap) — extracted into a reusable hook (Phase 1).
+  const { zoom, setZoom } = useReaderZoom(scrollContainerRef, {
+    enabled: showReader,
+    resetKey: `${selectedChapter?.id}-${readerMode}`,
+  });
 
   // Lock the page body while the reader is open so only the reader's own
   // container scrolls (steadier on iOS, where body scroll reveals Safari's bar).
@@ -124,53 +120,6 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     return () => { document.body.style.overflow = prev; };
   }, [showReader]);
 
-  // Pinch-to-zoom + double-tap-to-zoom on the reading area. Attached natively so
-  // we can preventDefault the pinch (a passive React handler cannot). Reads the
-  // live zoom from a ref so the listeners never re-attach mid-gesture.
-  useEffect(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    let pinchStartDist = 0;
-    let pinchStartZoom = 1;
-    let lastTap = 0;
-    const dist = (t: TouchList) =>
-      Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-    const clamp = (v: number) => Math.min(4, Math.max(1, v));
-
-    const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
-        pinchStartDist = dist(e.touches);
-        pinchStartZoom = zoomRef.current;
-      }
-    };
-    const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 2 && pinchStartDist > 0) {
-        e.preventDefault();
-        setZoom(clamp(pinchStartZoom * (dist(e.touches) / pinchStartDist)));
-      }
-    };
-    const onTouchEnd = (e: TouchEvent) => {
-      if (e.touches.length < 2) pinchStartDist = 0;
-      // Double-tap toggles between fit (1x) and 2.5x.
-      if (e.changedTouches.length === 1 && e.touches.length === 0) {
-        const now = Date.now();
-        if (now - lastTap < 300) {
-          setZoom(zoomRef.current > 1 ? 1 : 2.5);
-          lastTap = 0;
-        } else {
-          lastTap = now;
-        }
-      }
-    };
-    el.addEventListener("touchstart", onTouchStart, { passive: false });
-    el.addEventListener("touchmove", onTouchMove, { passive: false });
-    el.addEventListener("touchend", onTouchEnd, { passive: false });
-    return () => {
-      el.removeEventListener("touchstart", onTouchStart);
-      el.removeEventListener("touchmove", onTouchMove);
-      el.removeEventListener("touchend", onTouchEnd);
-    };
-  }, [showReader, readerMode]);
   const [lastReadProgress, setLastReadProgress] = useState<any>(null);
   const [showInfo, setShowInfo] = useState(false);
 
