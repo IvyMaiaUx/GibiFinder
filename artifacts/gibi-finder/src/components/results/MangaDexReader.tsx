@@ -1061,6 +1061,25 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               </span>
             </a>
 
+            {/* Retro Ad Box: Bakai (hentai +18) */}
+            <a
+              href={`https://bakai.org/?s=${encodeURIComponent(query)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="relative p-6 border-4 border-black bg-rose-100 hover:bg-rose-200 transition-all comic-shadow-sm flex flex-col justify-between group"
+            >
+              <div>
+                <span className="absolute top-2 right-2 bg-primary text-white text-2xs font-display px-2 py-0.5 border-2 border-black rotate-3">+18</span>
+                <h4 className="font-display text-xl text-black tracking-wide">BAKAI</h4>
+                <p className="font-sans text-xs font-bold text-gray-700 mt-2">
+                  Acervo de hentai/doujinshi em português. Busca por "{query}".
+                </p>
+              </div>
+              <span className="mt-4 font-display text-sm text-primary flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                BUSCAR NO BAKAI <ChevronRight className="w-4 h-4" />
+              </span>
+            </a>
+
             {/* Retro Ad Box 4: MangaDex Site */}
             <a 
               href={`https://mangadex.org/search?q=${encodeURIComponent(query)}`}
