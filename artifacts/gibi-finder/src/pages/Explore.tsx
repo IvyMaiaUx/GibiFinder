@@ -53,7 +53,7 @@ const MIN_FRANCHISE_ITEMS = 2;
 const ADULT_FEATURED_GENRES = ["Yaoi", "Yuri", "Lolicon", "Shotacon", "Bakunyū", "Futanari", "Incesto", "Netorare", "Hentai", "Ecchi"];
 // Curated rows fetched on demand for the HQ and Gibi tabs (their catalog is
 // sparse, so we search each series/character to populate real rows).
-const HQ_SERIES = ["Batman", "Homem-Aranha", "Superman", "The Boys", "X-Men", "Vingadores", "Lanterna Verde", "Mulher-Maravilha", "Coringa", "Demolidor", "Wolverine", "Hulk", "Flash", "Thor"];
+const HQ_SERIES = ["Batman", "Superman", "Homem-Aranha", "X-Men", "Vingadores", "Liga da Justiça", "The Boys", "Coringa", "Mulher-Maravilha", "Lanterna Verde", "Flash", "Aquaman", "Capitão América", "Homem de Ferro", "Thor", "Hulk", "Wolverine", "Deadpool", "Pantera Negra", "Venom", "Demolidor", "Quarteto Fantástico", "Guardiões da Galáxia", "Justiceiro"];
 const GIBI_SERIES = ["Turma da Mônica", "Mônica", "Cebolinha", "Magali", "Cascão", "Chico Bento", "Almanaque", "Pelezinho", "Ronaldinho Gaúcho"];
 const MIN_ROW_ITEMS = 4;
 
@@ -271,7 +271,12 @@ export default function Explore() {
         .then((items: UnifiedCatalogItem[]) => ({
           key: `c-${term}`,
           title: term,
-          items: (Array.isArray(items) ? items : []).filter(i => typeOf(i) === typeFilter).slice(0, 20),
+          // HQ rows accept both hq- and gibi-classified items: the curated Drive
+          // library (biblioteca-br) is classified "gibi" but holds the Marvel/DC
+          // issues, and the franchise search term already scopes the row.
+          items: (Array.isArray(items) ? items : [])
+            .filter(i => typeFilter === "hq" ? typeOf(i) !== "manga" : typeOf(i) === "gibi")
+            .slice(0, 20),
         }))
         .catch(() => ({ key: `c-${term}`, title: term, items: [] as UnifiedCatalogItem[] }));
 
