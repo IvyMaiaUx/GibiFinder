@@ -100,7 +100,7 @@ export class OrionProvider implements Provider {
 
   async search(query: string): Promise<SearchResult[]> {
     try {
-      const url = this.api(`obras?page=1&limit=20&q=${encodeURIComponent(query)}`);
+      const url = this.api(`obras?page=1&limit=40&q=${encodeURIComponent(query)}`);
       const data = await this.fetchJson<OrionSearchResponse>(url);
       return (data.series || []).map(series => this.toSearchResult(series));
     } catch (err) {
@@ -205,8 +205,22 @@ export class OrionProvider implements Provider {
   async getCatalog(listType: "popular" | "latest"): Promise<SearchResult[]> {
     try {
       const sort = listType === "latest" ? "recent" : "popular";
-      const data = await this.fetchJson<OrionSearchResponse>(this.api(`obras?page=1&limit=30&sort=${sort}`));
-      return (data.series || []).map(series => this.toSearchResult(series));
+      const all: SearchResult[] = [];
+      const seen = new Set<string>();
+      const MAX_PAGES = 5;
+      // Paginate so the Explore catalog surfaces a good chunk of the library,
+      // not just the first 30.
+      for (let page = 1; page <= MAX_PAGES; page++) {
+        const data = await this.fetchJson<OrionSearchResponse>(this.api(`obras?page=${page}&limit=30&sort=${sort}`));
+        const series = data.series || [];
+        if (series.length === 0) break;
+        for (const s of series) {
+          const r = this.toSearchResult(s);
+          if (!seen.has(r.id)) { seen.add(r.id); all.push(r); }
+        }
+        if (series.length < 30) break;
+      }
+      return all;
     } catch (err) {
       console.warn(`Orion provider [${this.id}] catalog failed:`, err);
       return [];

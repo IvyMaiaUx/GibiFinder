@@ -55201,7 +55201,7 @@ var OrionProvider = class {
   }
   async search(query) {
     try {
-      const url = this.api(`obras?page=1&limit=20&q=${encodeURIComponent(query)}`);
+      const url = this.api(`obras?page=1&limit=40&q=${encodeURIComponent(query)}`);
       const data = await this.fetchJson(url);
       return (data.series || []).map((series) => this.toSearchResult(series));
     } catch (err) {
@@ -55293,8 +55293,23 @@ var OrionProvider = class {
   async getCatalog(listType) {
     try {
       const sort = listType === "latest" ? "recent" : "popular";
-      const data = await this.fetchJson(this.api(`obras?page=1&limit=30&sort=${sort}`));
-      return (data.series || []).map((series) => this.toSearchResult(series));
+      const all = [];
+      const seen = /* @__PURE__ */ new Set();
+      const MAX_PAGES = 5;
+      for (let page = 1; page <= MAX_PAGES; page++) {
+        const data = await this.fetchJson(this.api(`obras?page=${page}&limit=30&sort=${sort}`));
+        const series = data.series || [];
+        if (series.length === 0) break;
+        for (const s of series) {
+          const r = this.toSearchResult(s);
+          if (!seen.has(r.id)) {
+            seen.add(r.id);
+            all.push(r);
+          }
+        }
+        if (series.length < 30) break;
+      }
+      return all;
     } catch (err) {
       console.warn(`Orion provider [${this.id}] catalog failed:`, err);
       return [];
