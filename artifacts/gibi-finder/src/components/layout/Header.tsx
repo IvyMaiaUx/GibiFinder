@@ -141,24 +141,8 @@ export function Header() {
           )}
         </div>
 
-        {/* Mobile Navigation — icon only, compact */}
-        <nav className="lg:hidden flex items-center gap-0.5 sm:gap-1">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.path}
-                href={item.path}
-                className={cn(
-                  "p-1.5 sm:p-2 border-2 sm:border-[3px] border-black rounded-lg transition-all",
-                  location === item.path ? "bg-white" : "bg-transparent hover:bg-white/50"
-                )}
-                title={item.label}
-              >
-                <Icon className="w-4 h-4 sm:w-5 sm:h-5" strokeWidth={3} />
-              </Link>
-            );
-          })}
+        {/* Mobile top-bar actions — main nav lives in the bottom bar (BottomNav) */}
+        <nav className="lg:hidden flex items-center gap-1">
 
           {/* +18 Mode Toggle (Mobile) */}
           <button
