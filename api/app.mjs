@@ -55939,15 +55939,10 @@ var WordPressComicProvider = class {
       return [];
     }
   }
-  async getCatalog(listType) {
+  async getCatalog(_listType) {
     try {
-      const orderby = listType === "latest" ? "date" : "date";
-      const posts = await this.fetchJson(this.api(`posts?per_page=12&orderby=${orderby}&_embed=1`));
-      const readable = await Promise.all(posts.map(async (post2) => ({
-        post: post2,
-        readable: await this.hasReadablePages(post2)
-      })));
-      return readable.filter((item) => item.readable).map((item) => this.toSearchResult(item.post));
+      const posts = await this.fetchJson(this.api(`posts?per_page=40&orderby=date&_embed=1`));
+      return posts.map((post2) => this.toSearchResult(post2));
     } catch {
       return [];
     }
@@ -56361,18 +56356,43 @@ var CuratedComicsProvider = class {
       return items;
     }
   }
+  refreshing = null;
+  async refreshCatalog() {
+    if (this.refreshing) return this.refreshing;
+    this.refreshing = (async () => {
+      const [sitesItems, driveItems] = await Promise.all([
+        this.fetchGoogleSitesItems(),
+        this.fetchDriveFolderItems()
+      ]);
+      const items = [...sitesItems, ...driveItems];
+      this.catalogCache = { fetchedAt: Date.now(), items };
+      this.refreshing = null;
+      return items;
+    })();
+    return this.refreshing;
+  }
   async getDynamicCatalog(force = false) {
     const now = Date.now();
     if (!force && this.catalogCache && now - this.catalogCache.fetchedAt < 1e3 * 60 * 30) {
       return this.catalogCache.items;
     }
-    const [sitesItems, driveItems] = await Promise.all([
-      this.fetchGoogleSitesItems(),
-      this.fetchDriveFolderItems()
-    ]);
-    const items = [...sitesItems, ...driveItems];
-    this.catalogCache = { fetchedAt: now, items };
-    return items;
+    return this.refreshCatalog();
+  }
+  // Non-blocking: return whatever is cached now (serving stale is fine) and warm
+  // in the background. Avoids the whole catalog timing out on the Drive crawl.
+  cachedOrWarm() {
+    if (!this.catalogCache) {
+      void this.refreshCatalog().catch(() => {
+        this.refreshing = null;
+      });
+      return [];
+    }
+    if (Date.now() - this.catalogCache.fetchedAt >= 1e3 * 60 * 30) {
+      void this.refreshCatalog().catch(() => {
+        this.refreshing = null;
+      });
+    }
+    return this.catalogCache.items;
   }
   async search(query) {
     const dynamicItems = await this.getDynamicCatalog();
@@ -56416,7 +56436,7 @@ var CuratedComicsProvider = class {
     return [];
   }
   async getCatalog(listType) {
-    const dynamicItems = await this.getDynamicCatalog();
+    const dynamicItems = this.cachedOrWarm();
     const allItems = [...STATIC_ITEMS, ...dynamicItems];
     const sorted = listType === "latest" ? [...allItems].reverse() : allItems;
     return sorted.slice(0, 400).map((item) => this.toSearchResult(item));

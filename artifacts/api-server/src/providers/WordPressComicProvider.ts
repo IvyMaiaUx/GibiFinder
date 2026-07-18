@@ -394,15 +394,13 @@ export class WordPressComicProvider implements Provider {
     }
   }
 
-  async getCatalog(listType: "popular" | "latest"): Promise<SearchResult[]> {
+  async getCatalog(_listType: "popular" | "latest"): Promise<SearchResult[]> {
     try {
-      const orderby = listType === "latest" ? "date" : "date";
-      const posts = await this.fetchJson<WpPost[]>(this.api(`posts?per_page=12&orderby=${orderby}&_embed=1`));
-      const readable = await Promise.all(posts.map(async post => ({
-        post,
-        readable: await this.hasReadablePages(post)
-      })));
-      return readable.filter(item => item.readable).map(item => this.toSearchResult(item.post));
+      // Note: don't validate each post's pages here — that's 1 request per post
+      // and blows the catalog timeout. Unreadable ones are hidden after a click
+      // via the empty-sources mechanism.
+      const posts = await this.fetchJson<WpPost[]>(this.api(`posts?per_page=40&orderby=date&_embed=1`));
+      return posts.map(post => this.toSearchResult(post));
     } catch {
       return [];
     }

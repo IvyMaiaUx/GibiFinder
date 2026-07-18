@@ -43,7 +43,7 @@ const FEATURED_GENRES = ["Ação", "Aventura", "Comédia", "Romance", "Drama", "
 const EXCLUDED_GENRES = new Set(["biblioteca", "nacional", "drive", "hq", "catalogo", "sharepoint", "infantil"]);
 const MIN_ROW_ITEMS = 4;
 
-const HQ_PROVIDER_IDS = ["comicextra"];
+const HQ_PROVIDER_IDS = ["comicextra", "jon-domingues", "batcave", "multiverso-hq", "mega-hq", "hq-desejo"];
 const GIBI_PROVIDER_IDS = ["biblioteca-br"];
 const typeOf = (item: UnifiedCatalogItem): "manga" | "hq" | "gibi" => {
   const provs = (item.sources || []).map(s => s.providerId);

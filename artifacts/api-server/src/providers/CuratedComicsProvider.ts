@@ -269,23 +269,42 @@ export class CuratedComicsProvider implements Provider {
     }
   }
 
+  private refreshing: Promise<CuratedItem[]> | null = null;
+
+  private async refreshCatalog(): Promise<CuratedItem[]> {
+    if (this.refreshing) return this.refreshing;
+    this.refreshing = (async () => {
+      const [sitesItems, driveItems] = await Promise.all([
+        this.fetchGoogleSitesItems(),
+        this.fetchDriveFolderItems()
+      ]);
+      const items = [...sitesItems, ...driveItems];
+      this.catalogCache = { fetchedAt: Date.now(), items };
+      this.refreshing = null;
+      return items;
+    })();
+    return this.refreshing;
+  }
+
   private async getDynamicCatalog(force = false): Promise<CuratedItem[]> {
     const now = Date.now();
     if (!force && this.catalogCache && now - this.catalogCache.fetchedAt < 1000 * 60 * 30) {
       return this.catalogCache.items;
     }
+    return this.refreshCatalog();
+  }
 
-    const [sitesItems, driveItems] = await Promise.all([
-      this.fetchGoogleSitesItems(),
-      this.fetchDriveFolderItems()
-    ]);
-
-    // Note: the "open folder" catalog-link cards (Quintana / Drive / SharePoint)
-    // were removed from the catalog — they are not readable comics and only
-    // confused users. Those links still live in the reader's "Links externos" tab.
-    const items = [...sitesItems, ...driveItems];
-    this.catalogCache = { fetchedAt: now, items };
-    return items;
+  // Non-blocking: return whatever is cached now (serving stale is fine) and warm
+  // in the background. Avoids the whole catalog timing out on the Drive crawl.
+  private cachedOrWarm(): CuratedItem[] {
+    if (!this.catalogCache) {
+      void this.refreshCatalog().catch(() => { this.refreshing = null; });
+      return [];
+    }
+    if (Date.now() - this.catalogCache.fetchedAt >= 1000 * 60 * 30) {
+      void this.refreshCatalog().catch(() => { this.refreshing = null; });
+    }
+    return this.catalogCache.items;
   }
 
   async search(query: string): Promise<SearchResult[]> {
@@ -337,7 +356,7 @@ export class CuratedComicsProvider implements Provider {
   }
 
   async getCatalog(listType: "popular" | "latest"): Promise<SearchResult[]> {
-    const dynamicItems = await this.getDynamicCatalog();
+    const dynamicItems = this.cachedOrWarm();
     const allItems = [...STATIC_ITEMS, ...dynamicItems];
     const sorted = listType === "latest"
       ? [...allItems].reverse()
