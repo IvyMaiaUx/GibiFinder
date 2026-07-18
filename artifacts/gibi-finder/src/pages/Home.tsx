@@ -12,6 +12,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { isFavorite, toggleFavorite } from "@/lib/favorites";
 import { addSearchHistoryItem } from "@/lib/user-history";
+import { getEmptySources, hasReadableSource } from "@/lib/empty-sources";
 
 interface UnifiedSearchResult {
   id: string;
@@ -315,7 +316,10 @@ export default function Home() {
         {onlineResults && !onlineSearching && (() => {
           const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
           const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
+          const empties = getEmptySources();
           const filtered = onlineResults.filter(item => {
+            // Hide titles whose every source is known to have no readable chapters.
+            if (!hasReadableSource(item.sources, empties)) return false;
             const isAdult = item.isAdult ||
                             item.sources?.some(s => ADULT_PROVIDERS.includes(s.providerId)) ||
                             item.genres?.some((g: string) => ADULT_GENRES.includes(g.toLowerCase()));

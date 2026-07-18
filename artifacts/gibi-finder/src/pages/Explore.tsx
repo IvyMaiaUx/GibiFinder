@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { isFavorite, toggleFavorite } from "@/lib/favorites";
 import { getLocalProgress } from "@/lib/user-history";
+import { getEmptySources, hasReadableSource } from "@/lib/empty-sources";
 import { useAuth } from "@/hooks/use-auth";
 
 interface CatalogSource {
@@ -203,7 +204,9 @@ export default function Explore() {
     setFavVersion(v => v + 1);
   };
 
-  const matchesNsfw = (item: UnifiedCatalogItem) => (isNsfw ? isAdultItem(item) : !isAdultItem(item));
+  const empties = getEmptySources();
+  const matchesNsfw = (item: UnifiedCatalogItem) =>
+    (isNsfw ? isAdultItem(item) : !isAdultItem(item)) && hasReadableSource(item.sources, empties);
 
   const filteredPopular = popular.filter(matchesNsfw);
   const filteredLatest = latest.filter(matchesNsfw);

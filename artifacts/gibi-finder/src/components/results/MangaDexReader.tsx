@@ -20,6 +20,7 @@ import { cn, proxyPdfUrl } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { useAuth } from "@/hooks/use-auth";
 import { getLocalProgress, saveReadingState, markChapterCompleted } from "@/lib/user-history";
+import { markSourceEmpty, markSourceHasChapters } from "@/lib/empty-sources";
 
 interface MangaDexReaderProps {
   mangaTitle: string;
@@ -215,6 +216,9 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
       const data = await res.json() as Chapter[];
       if (data.length === 0) {
         setError(`A fonte ${source.providerId.toUpperCase()} nao retornou capitulos legiveis para esta obra.`);
+        markSourceEmpty(source.providerId, source.id);
+      } else {
+        markSourceHasChapters(source.providerId, source.id);
       }
       setChapters(data);
 
