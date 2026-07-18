@@ -185,7 +185,7 @@ export class WordPressComicProvider implements Provider {
     const number = title.match(/#\s*([0-9]+)/)?.[1];
     const series = title.replace(/#\s*[0-9]+.*/i, "").replace(/\([^)]*\)/g, "").trim();
     const query = number ? `ler online ${series} ${number}` : `ler online ${title}`;
-    const hits = await this.fetchJson<Array<{ id: number; title: string; url: string; subtype: string }>>(this.api(`search?search=${encodeURIComponent(query)}&per_page=10`));
+    const hits = await this.fetchJson<Array<{ id: number; title: string; url: string; subtype: string }>>(this.api(`search?search=${encodeURIComponent(query)}&per_page=30`));
     const pageHit = hits.find(hit => hit.subtype === "page" && /ler/i.test(hit.title) && (!number || hit.title.includes(`#${number}`) || new RegExp(`\\b${number}\\b`).test(hit.title)));
     return pageHit ? { id: `page:${pageHit.id}`, title: pageHit.title, url: pageHit.url } : null;
   }
@@ -258,7 +258,7 @@ export class WordPressComicProvider implements Provider {
     try {
       const searchText = this.getSearchTerms(query).join(" ") || query;
       const [posts, pages] = await Promise.all([
-        this.fetchJson<WpPost[]>(this.api(`posts?search=${encodeURIComponent(searchText)}&per_page=12&_embed=1`)),
+        this.fetchJson<WpPost[]>(this.api(`posts?search=${encodeURIComponent(searchText)}&per_page=40&_embed=1`)),
         this.fetchJson<WpPost[]>(this.api(`pages?search=${encodeURIComponent(searchText)}&per_page=100&_embed=1`)).catch(() => [])
       ]);
       const queryIssue = (query.match(/#\s*(\d+)\s*$/) || query.match(/\b(\d{1,3})\s*$/))?.[1];
