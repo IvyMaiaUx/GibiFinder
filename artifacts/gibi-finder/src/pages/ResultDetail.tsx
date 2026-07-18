@@ -7,7 +7,7 @@ import { FeedbackActions } from "@/components/results/FeedbackActions";
 import { MangaDexReader } from "@/components/results/MangaDexReader";
 import { Link2, AlertCircle, Loader2, Star, BookOpen, ExternalLink, ShoppingCart, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { cn, translateToPt, cleanSynopsis } from "@/lib/utils";
+import { cn, translateToPt, cleanSynopsis, getGeneratedSynopsis } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -226,9 +226,10 @@ export default function ResultDetail() {
       : undefined;
 
   // Synopsis: drop junk (nav/credits) and translate real ones to PT. When the
-  // source has none we leave it blank instead of inventing one — AI-generated
-  // synopses from just the title were unrelated to the actual work.
+  // source has none, look up a REAL synopsis scraped from the Zona Fantasma comic
+  // blog (never invent one — AI-generated synopses were unrelated to the work).
   const cleanSin = cleanSynopsis((resultData as any)?.sinopse || (resultData as any)?.descricao);
+  const sinTitle = ((resultData as any)?.titulo || (resultData as any)?.revista || initialTitle || "").trim();
   useEffect(() => {
     setPtSinopse(null);
     let active = true;
@@ -236,10 +237,13 @@ export default function ResultDetail() {
       if (cleanSin) {
         const t = await translateToPt(cleanSin);
         if (active) setPtSinopse(t);
+      } else if (sinTitle) {
+        const scraped = await getGeneratedSynopsis(sinTitle);
+        if (active && scraped) setPtSinopse(scraped);
       }
     })();
     return () => { active = false; };
-  }, [cleanSin]);
+  }, [cleanSin, sinTitle]);
 
   const finalSinopse = ptSinopse || cleanSin || "Sinopse não disponível para este título.";
   // ComicCard renders `descricao`; online results carry `sinopse`. Fill both.

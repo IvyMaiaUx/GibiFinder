@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
-import { translateToPortuguese, generateSynopsis } from "../lib/gemini";
+import { translateToPortuguese } from "../lib/gemini";
+import { scrapeComicSynopsis } from "../lib/synopsisScraper";
 
 const router = Router();
 
@@ -35,14 +36,16 @@ router.post("/translate", async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/synopsis?title=<title> -> { text: <AI-generated pt-BR synopsis> }
+// GET /api/synopsis?title=<title> -> { text: <real pt-BR synopsis scraped from
+// the Zona Fantasma comic blog> }. Returns "" when no match is found (e.g. manga
+// the blog doesn't cover) — we never invent a synopsis.
 router.get("/synopsis", async (req: Request, res: Response) => {
   const title = typeof req.query.title === "string" ? req.query.title.trim() : "";
   if (!title) { res.json({ text: "" }); return; }
   const key = title.toLowerCase();
   if (synopsisCache.has(key)) { res.json({ text: synopsisCache.get(key), cached: true }); return; }
   try {
-    const text = await generateSynopsis(title);
+    const text = await scrapeComicSynopsis(title);
     if (text) {
       if (synopsisCache.size >= MAX_CACHE) {
         const oldest = synopsisCache.keys().next().value;

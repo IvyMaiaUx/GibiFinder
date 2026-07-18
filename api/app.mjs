@@ -15333,7 +15333,7 @@ var require_type_is = __commonJS({
     module.exports = typeofrequest;
     module.exports.is = typeis;
     module.exports.hasBody = hasbody;
-    module.exports.normalize = normalize;
+    module.exports.normalize = normalize2;
     module.exports.match = mimeMatch;
     function typeis(value, types_) {
       var i;
@@ -15353,7 +15353,7 @@ var require_type_is = __commonJS({
       }
       var type;
       for (i = 0; i < types.length; i++) {
-        if (mimeMatch(normalize(type = types[i]), val)) {
+        if (mimeMatch(normalize2(type = types[i]), val)) {
           return type[0] === "+" || type.indexOf("*") !== -1 ? val : type;
         }
       }
@@ -15368,7 +15368,7 @@ var require_type_is = __commonJS({
       var value = req.headers["content-type"];
       return typeis(value, types);
     }
-    function normalize(type) {
+    function normalize2(type) {
       if (typeof type !== "string") {
         return false;
       }
@@ -22398,7 +22398,7 @@ var require_send = __commonJS({
     var util2 = __require("util");
     var extname = path2.extname;
     var join2 = path2.join;
-    var normalize = path2.normalize;
+    var normalize2 = path2.normalize;
     var resolve = path2.resolve;
     var sep = path2.sep;
     var BYTES_RANGE_REGEXP = /^ *bytes=/;
@@ -22561,7 +22561,7 @@ var require_send = __commonJS({
       var parts;
       if (root !== null) {
         if (path3) {
-          path3 = normalize("." + sep + path3);
+          path3 = normalize2("." + sep + path3);
         }
         if (UP_PATH_REGEXP.test(path3)) {
           debug('malicious path "%s"', path3);
@@ -22569,14 +22569,14 @@ var require_send = __commonJS({
           return res;
         }
         parts = path3.split(sep);
-        path3 = normalize(join2(root, path3));
+        path3 = normalize2(join2(root, path3));
       } else {
         if (UP_PATH_REGEXP.test(path3)) {
           debug('malicious path "%s"', path3);
           this.error(403);
           return res;
         }
-        parts = normalize(path3).split(sep);
+        parts = normalize2(path3).split(sep);
         path3 = resolve(path3);
       }
       if (containsDotFile(parts)) {
@@ -28013,11 +28013,11 @@ var require_pino = __commonJS({
       depthLimit: 5,
       edgeLimit: 100
     };
-    var normalize = createArgsNormalizer(defaultOptions);
+    var normalize2 = createArgsNormalizer(defaultOptions);
     var serializers = Object.assign(/* @__PURE__ */ Object.create(null), stdSerializers);
     function pino2(...args) {
       const instance = {};
-      const { opts, stream } = normalize(instance, caller(), ...args);
+      const { opts, stream } = normalize2(instance, caller(), ...args);
       if (opts.level && typeof opts.level === "string" && DEFAULT_LEVELS[opts.level.toLowerCase()] !== void 0) opts.level = opts.level.toLowerCase();
       const {
         redact,
@@ -52844,8 +52844,8 @@ router2.post("/admin/import-google-sites-drive", async (req, res) => {
     res.status(503).json({ error: "db_unavailable", message: "Banco nao configurado" });
     return;
   }
-  const decodeHtml2 = (value) => value.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-  const cleanTitle2 = (fileName) => decodeHtml2(fileName).replace(/\.(?:pdf|cbr|cbz)$/i, "").replace(/\s+/g, " ").trim();
+  const decodeHtml3 = (value) => value.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+  const cleanTitle2 = (fileName) => decodeHtml3(fileName).replace(/\.(?:pdf|cbr|cbz)$/i, "").replace(/\s+/g, " ").trim();
   const parseEntry = (fileName) => {
     const title = cleanTitle2(fileName);
     const year = title.match(/\((20\d{2}|19\d{2})\)/)?.[1] || "";
@@ -52879,7 +52879,7 @@ router2.post("/admin/import-google-sites-drive", async (req, res) => {
     const entries = /* @__PURE__ */ new Map();
     const embedRegex = /aria-label="Drive,\s*([^"]+\.(?:pdf|cbr|cbz))"[^>]+data-src="https:\/\/drive\.google\.com\/file\/d\/([^/"]+)\/preview"/gi;
     for (const match of html.matchAll(embedRegex)) {
-      const fileName = decodeHtml2(match[1]).trim();
+      const fileName = decodeHtml3(match[1]).trim();
       const id = match[2].trim();
       if (fileName && id && !entries.has(id)) entries.set(id, { id, fileName });
     }
@@ -56257,7 +56257,8 @@ var STATIC_ITEMS = [
 var GOOGLE_SITES_URL = "https://sites.google.com/educacao.quintana.sp.gov.br/biblioteca-virtual/hist%C3%B3rias-em-quadrinhos";
 var DRIVE_FOLDER_IDS = [
   "1Etdsik4rGHDhNv5g4_8J_DDTuuvvlunN",
-  "1JPCtkMZrAoN1XujYbPrO1PjEhR43VgwM"
+  "1JPCtkMZrAoN1XujYbPrO1PjEhR43VgwM",
+  "1-0-G5WCbZH5WG7Iz2ZVLlw2mlaSUp0cP"
 ];
 function normalizeText(value) {
   return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
@@ -57792,6 +57793,91 @@ var pdfProxy_default = router5;
 // src/routes/translate.ts
 var import_express6 = __toESM(require_express2(), 1);
 init_gemini();
+
+// src/lib/synopsisScraper.ts
+init_logger();
+var BASE = "https://zonafantasmanet.wordpress.com";
+var HEADERS2 = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8"
+};
+function decodeHtml2(value = "") {
+  return value.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").replace(/&#8230;/g, "\u2026").replace(/&#8211;/g, "\u2013").replace(/&#8217;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10))).replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/\s+/g, " ").trim();
+}
+function stripHtml2(value = "") {
+  return decodeHtml2(
+    value.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ")
+  );
+}
+function normalize(value = "") {
+  return value.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+function titleTokens(title) {
+  const cleaned = normalize(title).replace(/\bler\s+(?:online\s+)?/g, " ").replace(/#/g, " ");
+  const issueMatch = cleaned.match(/\b(\d{1,4})\b/);
+  const issue = issueMatch ? String(parseInt(issueMatch[1], 10)) : null;
+  const words = cleaned.replace(/\d+/g, " ").split(/[^a-z]+/).filter((w) => w.length > 2);
+  return { words, issue };
+}
+function pickBestLink(html, title) {
+  const { words, issue } = titleTokens(title);
+  const links = /* @__PURE__ */ new Set();
+  for (const m of html.matchAll(
+    /href="(https:\/\/zonafantasmanet\.wordpress\.com\/20\d{2}\/\d{2}\/\d{2}\/[^"#]+?)"/gi
+  )) {
+    links.add(m[1].replace(/\/$/, ""));
+  }
+  let fallback = null;
+  for (const link of links) {
+    const slug = normalize(link.split("/").pop() || "");
+    const slugTokens = slug.split("-");
+    const allWords = words.every((w) => slugTokens.includes(w));
+    if (!allWords) continue;
+    if (!issue) return link;
+    if (slugTokens.includes(issue)) return link;
+    fallback = fallback || link;
+  }
+  return issue ? null : fallback;
+}
+function extractSynopsis(html) {
+  const patterns = [
+    /sinopse\s*<\/(?:strong|b|span)>\s*:?\s*([\s\S]*?)<\/(?:td|p|div|li|section)>/i,
+    /sinopse\s*:\s*(?:<\/(?:strong|b|span)>)?\s*([\s\S]*?)<\/(?:td|p|div|li|section)>/i
+  ];
+  for (const re of patterns) {
+    const m = html.match(re);
+    if (m) {
+      const text = stripHtml2(m[1]);
+      if (text.length >= 40) return text.slice(0, 1200);
+    }
+  }
+  return "";
+}
+async function fetchText(url) {
+  const res = await fetch(url, { headers: HEADERS2 });
+  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
+  return await res.text();
+}
+async function scrapeComicSynopsis(title) {
+  const clean = title.trim();
+  if (!clean) return "";
+  try {
+    const { words, issue } = titleTokens(clean);
+    if (words.length === 0) return "";
+    const query = [...words, issue].filter(Boolean).join(" ");
+    const searchHtml = await fetchText(`${BASE}/?s=${encodeURIComponent(query)}`);
+    const link = pickBestLink(searchHtml, clean);
+    if (!link) return "";
+    const postHtml = await fetchText(link);
+    return extractSynopsis(postHtml);
+  } catch (err) {
+    logger.warn({ err, title }, "synopsis scrape failed");
+    return "";
+  }
+}
+
+// src/routes/translate.ts
 var router6 = (0, import_express6.Router)();
 var synopsisCache = /* @__PURE__ */ new Map();
 var cache = /* @__PURE__ */ new Map();
@@ -57831,7 +57917,7 @@ router6.get("/synopsis", async (req, res) => {
     return;
   }
   try {
-    const text = await generateSynopsis(title);
+    const text = await scrapeComicSynopsis(title);
     if (text) {
       if (synopsisCache.size >= MAX_CACHE) {
         const oldest = synopsisCache.keys().next().value;
