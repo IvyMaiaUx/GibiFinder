@@ -37,8 +37,20 @@ const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read
 const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
 
 // Preferred genre rows, in display order (only shown if there are enough items).
-const FEATURED_GENRES = ["Nacional", "Infantil", "Biblioteca", "Ação", "Aventura", "Comédia", "Romance", "Terror", "Super-Herói", "Shounen", "Seinen", "Fantasia"];
+const FEATURED_GENRES = ["Ação", "Aventura", "Comédia", "Romance", "Drama", "Fantasia", "Terror", "Sobrenatural", "Super-Herói", "Shounen", "Seinen"];
+// Source/type markers — not real genres, kept out of the genre rows (they have
+// their own type tabs: Mangás / HQs / Gibis).
+const EXCLUDED_GENRES = new Set(["biblioteca", "nacional", "drive", "hq", "catalogo", "sharepoint", "infantil"]);
 const MIN_ROW_ITEMS = 4;
+
+const HQ_PROVIDER_IDS = ["comicextra"];
+const GIBI_PROVIDER_IDS = ["biblioteca-br"];
+const typeOf = (item: UnifiedCatalogItem): "manga" | "hq" | "gibi" => {
+  const provs = (item.sources || []).map(s => s.providerId);
+  if (provs.some(p => GIBI_PROVIDER_IDS.includes(p))) return "gibi";
+  if (provs.some(p => HQ_PROVIDER_IDS.includes(p))) return "hq";
+  return "manga";
+};
 
 const isAdultItem = (item: UnifiedCatalogItem) => {
   if (item.isAdult) return true;
@@ -156,9 +168,12 @@ export default function Explore() {
   const { user } = useAuth();
   const [popular, setPopular] = useState<UnifiedCatalogItem[]>([]);
   const [latest, setLatest] = useState<UnifiedCatalogItem[]>([]);
+  const [typeFilter, setTypeFilter] = useState<"all" | "manga" | "hq" | "gibi">("all");
   const [viewAllGenre, setViewAllGenre] = useState<string | null>(null);
   const [viewAllItems, setViewAllItems] = useState<UnifiedCatalogItem[]>([]);
   const [viewAllLoading, setViewAllLoading] = useState(false);
+  const [viewAllPage, setViewAllPage] = useState(1);
+  const VIEW_ALL_PAGE_SIZE = 250;
   const [continueItems, setContinueItems] = useState<{ providerId: string; mangaId: string; title: string; coverUrl?: string; chapterNum?: string; updatedAt: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -218,6 +233,7 @@ export default function Explore() {
   useEffect(() => {
     if (!viewAllGenre) { setViewAllItems([]); return; }
     let cancelled = false;
+    setViewAllPage(1);
     setViewAllLoading(true);
     fetch(`${BASE}/api/providers/by-genre?genre=${encodeURIComponent(viewAllGenre)}&nsfw=${isNsfw}`)
       .then(r => (r.ok ? r.json() : []))
@@ -242,8 +258,9 @@ export default function Explore() {
   };
 
   const empties = getEmptySources();
+  const matchesType = (item: UnifiedCatalogItem) => typeFilter === "all" || typeOf(item) === typeFilter;
   const matchesNsfw = (item: UnifiedCatalogItem) =>
-    (isNsfw ? isAdultItem(item) : !isAdultItem(item)) && hasReadableSource(item.sources, empties);
+    (isNsfw ? isAdultItem(item) : !isAdultItem(item)) && hasReadableSource(item.sources, empties) && matchesType(item);
 
   const filteredPopular = popular.filter(matchesNsfw);
   const filteredLatest = latest.filter(matchesNsfw);
@@ -305,7 +322,7 @@ export default function Explore() {
   }
   const featuredNorm = new Set(FEATURED_GENRES.map(norm));
   const extraGenres = [...genreCounts.entries()]
-    .filter(([k, v]) => !featuredNorm.has(k) && v.count >= MIN_ROW_ITEMS)
+    .filter(([k, v]) => !featuredNorm.has(k) && !EXCLUDED_GENRES.has(k) && v.count >= MIN_ROW_ITEMS)
     .sort((a, b) => b[1].count - a[1].count)
     .map(([, v]) => v.display);
   const allGenres = [...FEATURED_GENRES, ...extraGenres];
@@ -334,6 +351,7 @@ export default function Explore() {
       const t = (i.title || "").toLowerCase().trim();
       if (!t || seenT.has(t)) return false;
       if (!isNsfw && isAdultItem(i)) return false;
+      if (!matchesType(i)) return false;
       seenT.add(t);
       return true;
     });
@@ -382,6 +400,29 @@ export default function Explore() {
           </div>
         )}
 
+        {/* Type tabs */}
+        {!viewAllGenre && (
+          <div className="flex flex-wrap gap-2">
+            {([
+              { id: "all", label: "Todos" },
+              { id: "manga", label: "Mangás" },
+              { id: "hq", label: "HQs" },
+              { id: "gibi", label: "Gibis" },
+            ] as const).map(t => (
+              <button
+                key={t.id}
+                onClick={() => setTypeFilter(t.id)}
+                className={cn(
+                  "font-display text-sm uppercase px-4 py-2 border-4 border-black rounded-lg transition-all",
+                  typeFilter === t.id ? "bg-primary text-white comic-shadow-sm translate-y-[-1px]" : "bg-white text-black hover:bg-secondary"
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {loading ? (
           <div className="py-24 text-center">
             <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
@@ -401,13 +442,33 @@ export default function Explore() {
               {viewAllLoading && <Loader2 className="w-5 h-5 animate-spin text-primary" />}
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 sm:gap-4">
-              {viewAllList.map(item => {
-                const src = item.sources?.[0];
-                return (
-                  <CatalogCard key={`all-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} full />
-                );
-              })}
+              {viewAllList
+                .slice((viewAllPage - 1) * VIEW_ALL_PAGE_SIZE, viewAllPage * VIEW_ALL_PAGE_SIZE)
+                .map(item => {
+                  const src = item.sources?.[0];
+                  return (
+                    <CatalogCard key={`all-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} full />
+                  );
+                })}
             </div>
+
+            {(() => {
+              const totalPages = Math.ceil(viewAllList.length / VIEW_ALL_PAGE_SIZE);
+              if (totalPages <= 1) return null;
+              const go = (p: number) => { setViewAllPage(p); window.scrollTo({ top: 0, behavior: "smooth" }); };
+              return (
+                <div className="flex flex-wrap justify-center items-center gap-2 pt-4 font-sans">
+                  <button disabled={viewAllPage === 1} onClick={() => go(viewAllPage - 1)} className="px-3 py-1.5 border-2 border-black rounded font-bold bg-white text-black hover:bg-secondary disabled:opacity-40 disabled:hover:bg-white">&lt;</button>
+                  {Array.from({ length: totalPages }).map((_, idx) => {
+                    const p = idx + 1;
+                    return (
+                      <button key={p} onClick={() => go(p)} className={cn("w-9 h-9 border-2 border-black rounded font-bold transition-all", viewAllPage === p ? "bg-secondary text-black scale-110 font-black" : "bg-white text-gray-700 hover:bg-muted")}>{p}</button>
+                    );
+                  })}
+                  <button disabled={viewAllPage === totalPages} onClick={() => go(viewAllPage + 1)} className="px-3 py-1.5 border-2 border-black rounded font-bold bg-white text-black hover:bg-secondary disabled:opacity-40 disabled:hover:bg-white">&gt;</button>
+                </div>
+              );
+            })()}
           </div>
         ) : (
           <div className="space-y-8">

@@ -182,7 +182,33 @@ export class ComicExtraProvider implements Provider {
     }
   }
 
-  async getCatalog(_listType: "popular" | "latest"): Promise<SearchResult[]> {
-    return [];
+  async getCatalog(listType: "popular" | "latest"): Promise<SearchResult[]> {
+    try {
+      const path = listType === "latest" ? "/new-comic" : "/popular-comic";
+      const html = await this.fetchHtml(`${this.baseUrl}${path}`);
+      const results: SearchResult[] = [];
+      const regex = /<a[^>]+href=["']([^"']*\/comic\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>[\s\S]{0,800}?<img[^>]+(?:src|data-src)=["']([^"']+)["']/gi;
+      let match;
+      const seen = new Set<string>();
+      while ((match = regex.exec(html)) !== null && results.length < 60) {
+        const comicId = this.extractSlug(match[1]);
+        if (!comicId || seen.has(comicId)) continue;
+        seen.add(comicId);
+        const rawTitle = match[2].replace(/<[^>]*>/g, "").trim();
+        const title = this.decodeHtml(rawTitle || comicId.replace(/-/g, " "));
+        results.push({
+          id: comicId,
+          title,
+          description: "HQ importada de ComicExtra.",
+          coverUrl: this.absolutize(this.decodeHtml(match[3])),
+          providerId: this.id,
+          genres: ["HQ"]
+        });
+      }
+      return results;
+    } catch (err) {
+      logger.warn({ err }, "ComicExtra catalog failed");
+      return [];
+    }
   }
 }
