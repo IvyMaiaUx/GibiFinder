@@ -252,11 +252,25 @@ export class SlimeReadProvider implements Provider {
   }
 
   async getCatalog(listType: "popular" | "latest", nsfw?: boolean): Promise<SearchResult[]> {
-    const html = await this.fetchHtml(listType === "latest" ? "/atualizacoes" : "/populares").catch(() => this.fetchHtml("/"));
-    const results = [...this.extractSpotlight(html), ...this.extractMangaLinks(html)];
-    const unique = Array.from(new Map(results.map(result => [result.id, result])).values());
-    return unique
+    const base = listType === "latest" ? "/atualizacoes" : "/populares";
+    const unique = new Map<string, SearchResult>();
+    // Paginate the browse pages (+ /catalogo) to surface many more titles.
+    const sources = [base, "/catalogo"];
+    for (const src of sources) {
+      for (let page = 1; page <= 5 && unique.size < 200; page++) {
+        const path = page === 1 ? src : `${src}?page=${page}`;
+        const html = await this.fetchHtml(path).catch(() => "");
+        if (!html) break;
+        const items = [...this.extractSpotlight(html), ...this.extractMangaLinks(html)];
+        let added = 0;
+        for (const it of items) {
+          if (!unique.has(it.id)) { unique.set(it.id, it); added++; }
+        }
+        if (added === 0) break; // no new titles on this page — stop paginating
+      }
+    }
+    return Array.from(unique.values())
       .filter(result => nsfw || !(result.genres || []).some(genre => this.isAdultText(genre)))
-      .slice(0, 60);
+      .slice(0, 200);
   }
 }

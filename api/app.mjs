@@ -56206,10 +56206,26 @@ var SlimeReadProvider = class {
     }
   }
   async getCatalog(listType, nsfw) {
-    const html = await this.fetchHtml(listType === "latest" ? "/atualizacoes" : "/populares").catch(() => this.fetchHtml("/"));
-    const results = [...this.extractSpotlight(html), ...this.extractMangaLinks(html)];
-    const unique2 = Array.from(new Map(results.map((result) => [result.id, result])).values());
-    return unique2.filter((result) => nsfw || !(result.genres || []).some((genre) => this.isAdultText(genre))).slice(0, 60);
+    const base = listType === "latest" ? "/atualizacoes" : "/populares";
+    const unique2 = /* @__PURE__ */ new Map();
+    const sources = [base, "/catalogo"];
+    for (const src of sources) {
+      for (let page = 1; page <= 5 && unique2.size < 200; page++) {
+        const path2 = page === 1 ? src : `${src}?page=${page}`;
+        const html = await this.fetchHtml(path2).catch(() => "");
+        if (!html) break;
+        const items = [...this.extractSpotlight(html), ...this.extractMangaLinks(html)];
+        let added = 0;
+        for (const it of items) {
+          if (!unique2.has(it.id)) {
+            unique2.set(it.id, it);
+            added++;
+          }
+        }
+        if (added === 0) break;
+      }
+    }
+    return Array.from(unique2.values()).filter((result) => nsfw || !(result.genres || []).some((genre) => this.isAdultText(genre))).slice(0, 200);
   }
 };
 
