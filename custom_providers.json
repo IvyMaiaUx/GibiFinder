@@ -195,5 +195,29 @@
     "baseUrl": "https://meuhentai.com/",
     "engine": "wordpress-comic",
     "active": true
+  },
+  {
+    "id": "superhentais",
+    "name": "SuperHentais",
+    "language": "pt",
+    "baseUrl": "https://superhentais.com.br/",
+    "engine": "wordpress-comic",
+    "active": true
+  },
+  {
+    "id": "hentaidatia",
+    "name": "Hentai Datia",
+    "language": "pt",
+    "baseUrl": "https://hentaidatia.com/",
+    "engine": "wordpress-comic",
+    "active": true
+  },
+  {
+    "id": "muitohentai",
+    "name": "Muito Hentai",
+    "language": "pt",
+    "baseUrl": "https://www.muitohentai.com/",
+    "engine": "wordpress-comic",
+    "active": true
   }
 ]

@@ -9,7 +9,11 @@ const GENRE_EN_PT: Record<string, string> = {
   "Isekai": "Isekai", "Military": "Militar", "Psychological": "Psicológico",
   "School Life": "Vida Escolar", "Martial Arts": "Artes Marciais", "Magic": "Magia",
   "Crime": "Crime", "Monsters": "Monstros", "Hentai": "Hentai", "Ecchi": "Ecchi",
-  "Doujinshi": "Doujinshi", "Erotica": "Erótico"
+  "Doujinshi": "Doujinshi", "Erotica": "Erótico",
+  // Adult subgenres
+  "Boys' Love": "Yaoi", "Yaoi": "Yaoi", "Girls' Love": "Yuri", "Yuri": "Yuri",
+  "Loli": "Lolicon", "Lolicon": "Lolicon", "Shota": "Shotacon", "Shotacon": "Shotacon",
+  "Futanari": "Futanari", "Incest": "Incesto", "Netorare": "Netorare", "NTR": "Netorare"
 };
 const mdNorm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 const GENRE_PT_EN: Record<string, string> = Object.fromEntries(
@@ -42,40 +46,11 @@ export class MangaDexProvider implements Provider {
 
   private extractGenres(item: any): string[] {
     const tags = item.attributes?.tags || [];
-    const translationMap: Record<string, string> = {
-      "Action": "Ação",
-      "Adventure": "Aventura",
-      "Comedy": "Comédia",
-      "Drama": "Drama",
-      "Fantasy": "Fantasia",
-      "Horror": "Horror",
-      "Mystery": "Mistério",
-      "Romance": "Romance",
-      "Sci-Fi": "Sci-Fi",
-      "Slice of Life": "Slice of Life",
-      "Sports": "Esportes",
-      "Supernatural": "Sobrenatural",
-      "Thriller": "Thriller",
-      "Historical": "Histórico",
-      "Isekai": "Isekai",
-      "Military": "Militar",
-      "Psychological": "Psicológico",
-      "School Life": "Vida Escolar",
-      "Martial Arts": "Artes Marciais",
-      "Magic": "Magia",
-      "Crime": "Crime",
-      "Monsters": "Monstros",
-      "Hentai": "Hentai",
-      "Ecchi": "Ecchi",
-      "Doujinshi": "Doujinshi",
-      "Erotica": "Erótico"
-    };
-
     return tags
-      .filter((t: any) => t.attributes?.group === "genre" || t.attributes?.group === "theme")
+      .filter((t: any) => t.attributes?.group === "genre" || t.attributes?.group === "theme" || t.attributes?.group === "content")
       .map((t: any) => {
         const name = t.attributes?.name?.en || "";
-        return translationMap[name] || name;
+        return GENRE_EN_PT[name] || name;
       })
       .filter(Boolean);
   }

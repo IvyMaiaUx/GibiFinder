@@ -54044,7 +54044,20 @@ var GENRE_EN_PT = {
   "Hentai": "Hentai",
   "Ecchi": "Ecchi",
   "Doujinshi": "Doujinshi",
-  "Erotica": "Er\xF3tico"
+  "Erotica": "Er\xF3tico",
+  // Adult subgenres
+  "Boys' Love": "Yaoi",
+  "Yaoi": "Yaoi",
+  "Girls' Love": "Yuri",
+  "Yuri": "Yuri",
+  "Loli": "Lolicon",
+  "Lolicon": "Lolicon",
+  "Shota": "Shotacon",
+  "Shotacon": "Shotacon",
+  "Futanari": "Futanari",
+  "Incest": "Incesto",
+  "Netorare": "Netorare",
+  "NTR": "Netorare"
 };
 var mdNorm = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 var GENRE_PT_EN = Object.fromEntries(
@@ -54073,37 +54086,9 @@ var MangaDexProvider = class _MangaDexProvider {
   }
   extractGenres(item) {
     const tags = item.attributes?.tags || [];
-    const translationMap = {
-      "Action": "A\xE7\xE3o",
-      "Adventure": "Aventura",
-      "Comedy": "Com\xE9dia",
-      "Drama": "Drama",
-      "Fantasy": "Fantasia",
-      "Horror": "Horror",
-      "Mystery": "Mist\xE9rio",
-      "Romance": "Romance",
-      "Sci-Fi": "Sci-Fi",
-      "Slice of Life": "Slice of Life",
-      "Sports": "Esportes",
-      "Supernatural": "Sobrenatural",
-      "Thriller": "Thriller",
-      "Historical": "Hist\xF3rico",
-      "Isekai": "Isekai",
-      "Military": "Militar",
-      "Psychological": "Psicol\xF3gico",
-      "School Life": "Vida Escolar",
-      "Martial Arts": "Artes Marciais",
-      "Magic": "Magia",
-      "Crime": "Crime",
-      "Monsters": "Monstros",
-      "Hentai": "Hentai",
-      "Ecchi": "Ecchi",
-      "Doujinshi": "Doujinshi",
-      "Erotica": "Er\xF3tico"
-    };
-    return tags.filter((t) => t.attributes?.group === "genre" || t.attributes?.group === "theme").map((t) => {
+    return tags.filter((t) => t.attributes?.group === "genre" || t.attributes?.group === "theme" || t.attributes?.group === "content").map((t) => {
       const name = t.attributes?.name?.en || "";
-      return translationMap[name] || name;
+      return GENRE_EN_PT[name] || name;
     }).filter(Boolean);
   }
   async search(query, nsfw) {
@@ -56489,7 +56474,10 @@ var ProviderManager = class {
     "quadrinhos-eroticos",
     "universo-hentai",
     "hentai-teca",
-    "sombras-de-hentai"
+    "sombras-de-hentai",
+    "superhentais",
+    "hentaidatia",
+    "muitohentai"
   ]);
   static adultTerms = [
     "adulto",

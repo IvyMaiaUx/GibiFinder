@@ -121,7 +121,7 @@ export async function translateToPt(text: string | undefined | null): Promise<st
   }
 }
 
-export const ADULT_PROVIDER_IDS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
+export const ADULT_PROVIDER_IDS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai"];
 
 /** Whether a provider id belongs to the +18 catalog. */
 export const isAdultProviderId = (id?: string | null): boolean => !!id && ADULT_PROVIDER_IDS.includes(id);

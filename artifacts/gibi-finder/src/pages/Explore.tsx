@@ -33,7 +33,7 @@ interface RowData {
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
+const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai"];
 const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
 
 // Preferred genre rows, in display order (only shown if there are enough items).
@@ -49,6 +49,12 @@ const FRANCHISES = [
   "Capitão América", "Pantera Negra", "Coringa", "Turma da Mônica",
 ];
 const MIN_FRANCHISE_ITEMS = 2;
+// Hentai subgenres highlighted when +18 mode is on.
+const ADULT_FEATURED_GENRES = ["Yaoi", "Yuri", "Lolicon", "Shotacon", "Bakunyū", "Futanari", "Incesto", "Netorare", "Hentai", "Ecchi"];
+// Curated rows fetched on demand for the HQ and Gibi tabs (their catalog is
+// sparse, so we search each series/character to populate real rows).
+const HQ_SERIES = ["Batman", "Homem-Aranha", "Superman", "The Boys", "X-Men", "Vingadores", "Lanterna Verde", "Mulher-Maravilha", "Coringa", "Demolidor", "Wolverine", "Hulk", "Flash", "Thor"];
+const GIBI_SERIES = ["Turma da Mônica", "Mônica", "Cebolinha", "Magali", "Cascão", "Chico Bento", "Almanaque", "Pelezinho", "Ronaldinho Gaúcho"];
 const MIN_ROW_ITEMS = 4;
 
 const HQ_PROVIDER_IDS = ["comicextra", "jon-domingues", "batcave", "multiverso-hq", "mega-hq", "hq-desejo"];
@@ -177,6 +183,8 @@ export default function Explore() {
   const [popular, setPopular] = useState<UnifiedCatalogItem[]>([]);
   const [latest, setLatest] = useState<UnifiedCatalogItem[]>([]);
   const [typeFilter, setTypeFilter] = useState<"all" | "manga" | "hq" | "gibi">("all");
+  const [curatedRows, setCuratedRows] = useState<RowData[]>([]);
+  const [curatedLoading, setCuratedLoading] = useState(false);
   const [viewAllGenre, setViewAllGenre] = useState<string | null>(null);
   const [viewAllKind, setViewAllKind] = useState<"genre" | "franchise">("genre");
   const openViewAll = (value: string, kind: "genre" | "franchise") => {
@@ -241,6 +249,30 @@ export default function Explore() {
   }, []);
 
   useEffect(() => { loadCatalog(isNsfw); }, [isNsfw, loadCatalog]);
+
+  // HQ / Gibi tabs: fetch curated series/character rows on demand (their catalog
+  // is sparse, so we search each one to build real rows).
+  useEffect(() => {
+    if (typeFilter !== "hq" && typeFilter !== "gibi") { setCuratedRows([]); return; }
+    const series = typeFilter === "hq" ? HQ_SERIES : GIBI_SERIES;
+    let cancelled = false;
+    setCuratedLoading(true);
+    Promise.all(series.map(term =>
+      fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(term)}&nsfw=${isNsfw}`)
+        .then(r => (r.ok ? r.json() : []))
+        .then((items: UnifiedCatalogItem[]) => ({
+          key: `c-${term}`,
+          title: term,
+          items: (Array.isArray(items) ? items : []).filter(i => typeOf(i) === typeFilter).slice(0, 20),
+        }))
+        .catch(() => ({ key: `c-${term}`, title: term, items: [] as UnifiedCatalogItem[] }))
+    )).then(rows => {
+      if (cancelled) return;
+      setCuratedRows(rows.filter(r => r.items.length > 0));
+      setCuratedLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [typeFilter, isNsfw]);
 
   // On "Ver tudo": fetch a large set for that genre on demand (keeps the initial
   // catalog light). Local matches show instantly; fetched ones merge in.
@@ -337,12 +369,13 @@ export default function Explore() {
       genreCounts.set(k, e);
     }
   }
-  const featuredNorm = new Set(FEATURED_GENRES.map(norm));
+  const activeFeatured = isNsfw ? ADULT_FEATURED_GENRES : FEATURED_GENRES;
+  const featuredNorm = new Set(activeFeatured.map(norm));
   const extraGenres = [...genreCounts.entries()]
     .filter(([k, v]) => !featuredNorm.has(k) && !EXCLUDED_GENRES.has(k) && v.count >= MIN_ROW_ITEMS)
     .sort((a, b) => b[1].count - a[1].count)
     .map(([, v]) => v.display);
-  const allGenres = [...FEATURED_GENRES, ...extraGenres];
+  const allGenres = [...activeFeatured, ...extraGenres];
 
   const itemsInGenre = (genre: string) => uniqueItems.filter(i => (i.genres || []).some(g => norm(g) === norm(genre)));
   const itemsInFranchise = (f: string) => uniqueItems.filter(i => norm(i.title).includes(norm(f)));
@@ -547,7 +580,13 @@ export default function Explore() {
               </Row>
             )}
 
-            {franchiseRows.map(row => (
+            {/* Curated series/character rows for HQ and Gibi tabs */}
+            {(typeFilter === "hq" || typeFilter === "gibi") && curatedLoading && curatedRows.length === 0 && (
+              <div className="py-8 text-center text-gray-500 font-display flex items-center justify-center gap-2">
+                <Loader2 className="w-5 h-5 animate-spin text-primary" /> Carregando categorias...
+              </div>
+            )}
+            {curatedRows.map(row => (
               <Row key={row.key} title={row.title} onSeeAll={() => openViewAll(row.title, "franchise")}>
                 {row.items.map(item => {
                   const src = item.sources?.[0];
@@ -558,7 +597,18 @@ export default function Explore() {
               </Row>
             ))}
 
-            {genreRows.map(row => (
+            {typeFilter !== "hq" && typeFilter !== "gibi" && franchiseRows.map(row => (
+              <Row key={row.key} title={row.title} onSeeAll={() => openViewAll(row.title, "franchise")}>
+                {row.items.map(item => {
+                  const src = item.sources?.[0];
+                  return (
+                    <CatalogCard key={`${row.key}-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} />
+                  );
+                })}
+              </Row>
+            ))}
+
+            {typeFilter !== "hq" && typeFilter !== "gibi" && genreRows.map(row => (
               <Row key={row.key} title={row.title} onSeeAll={() => openViewAll(row.title, "genre")}>
                 {row.items.map(item => {
                   const src = item.sources?.[0];

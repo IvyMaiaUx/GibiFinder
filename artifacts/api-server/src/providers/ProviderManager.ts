@@ -42,7 +42,10 @@ export class ProviderManager {
     "quadrinhos-eroticos",
     "universo-hentai",
     "hentai-teca",
-    "sombras-de-hentai"
+    "sombras-de-hentai",
+    "superhentais",
+    "hentaidatia",
+    "muitohentai"
   ]);
   private static adultTerms = [
     "adulto",

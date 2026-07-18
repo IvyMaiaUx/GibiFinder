@@ -34,7 +34,7 @@ interface UnifiedSearchResult {
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 export const LAST_ONLINE_SEARCH_KEY = "gibi-finder:last-online-search";
 const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erotico", "erotica", "adulto", "adult"];
-const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
+const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai"];
 
 const PUBLISHER_FILTERS = [
   { id: "all", label: "Todas" },
@@ -315,7 +315,7 @@ export default function Home() {
         {/* Online Aggregated Search Results */}
         {onlineResults && !onlineSearching && (() => {
           const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
-          const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
+          const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai"];
           const empties = getEmptySources();
           const filtered = onlineResults.filter(item => {
             // Hide titles whose every source is known to have no readable chapters.
@@ -475,7 +475,7 @@ export default function Home() {
                           )}
                           {item.genres && item.genres.length > 0 && (() => {
                             const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
-                            const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
+                            const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai"];
                             const isAdult = item.isAdult ||
                                             item.sources.some(s => ADULT_PROVIDERS.includes(s.providerId)) ||
                                             item.genres.some((g: string) => ADULT_GENRES.includes(g.toLowerCase()));
