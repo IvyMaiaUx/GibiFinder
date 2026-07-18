@@ -226,7 +226,7 @@ export default function ResultDetail() {
       : undefined;
 
   // Translate the synopsis to Portuguese (cached; skips text already in PT).
-  const rawSinopse = (resultData as any)?.sinopse as string | undefined;
+  const rawSinopse = ((resultData as any)?.sinopse || (resultData as any)?.descricao) as string | undefined;
   useEffect(() => {
     setPtSinopse(null);
     if (!rawSinopse) return;
@@ -235,8 +235,14 @@ export default function ResultDetail() {
     return () => { active = false; };
   }, [rawSinopse]);
 
-  const displayResult = resultData && ptSinopse
-    ? { ...(resultData as any), sinopse: ptSinopse }
+  // ComicCard renders `descricao`; online results carry `sinopse`. Fill both with
+  // the translated (or original) text so the synopsis always shows in Portuguese.
+  const displayResult = resultData
+    ? {
+        ...(resultData as any),
+        sinopse: ptSinopse || (resultData as any).sinopse,
+        descricao: ptSinopse || (resultData as any).descricao || (resultData as any).sinopse,
+      }
     : resultData;
 
   return (

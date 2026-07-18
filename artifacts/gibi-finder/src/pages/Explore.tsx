@@ -346,7 +346,7 @@ export default function Explore() {
     <Layout>
       <div className="max-w-6xl mx-auto space-y-8 pb-16 select-none">
         {/* Hero */}
-        {hero && !loading && (
+        {hero && !loading && !viewAllGenre && (
           <div className={cn(
             "relative overflow-hidden border-4 border-black rounded-2xl comic-shadow",
             isNsfw ? "bg-zinc-950" : "bg-primary"
