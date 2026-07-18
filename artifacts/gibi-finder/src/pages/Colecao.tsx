@@ -5,7 +5,8 @@ import { useLocation } from "wouter";
 import { cn, isAdultProviderId } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { useAuth } from "@/hooks/use-auth";
-import { getLocalCompleted, saveLocalCompleted, type CompletedReadingItem } from "@/lib/user-history";
+import { getLocalCompleted, saveLocalCompleted, getSyncedReadingHistory, getSyncedCompleted, removeCompletedRemote, type CompletedReadingItem } from "@/lib/user-history";
+import { getSyncedFavorites } from "@/lib/favorites";
 
 interface ReadingProgress {
   providerId: string;
@@ -93,10 +94,25 @@ export default function Colecao() {
   };
 
   useEffect(() => {
-    loadShelf();
-    loadFavorites();
-    loadCompleted();
-  }, []);
+    let cancelled = false;
+    (async () => {
+      // When logged in, pull progress + favorites from the account first so the
+      // shelf reflects the account (cross-device), not just this browser.
+      if (user?.id) {
+        await Promise.all([
+          getSyncedReadingHistory(user.id).catch(() => {}),
+          getSyncedFavorites(user.id).catch(() => {}),
+          getSyncedCompleted(user.id).catch(() => {}),
+        ]);
+      }
+      if (cancelled) return;
+      loadShelf();
+      loadFavorites();
+      loadCompleted();
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const handleResume = (item: ReadingProgress) => {
     const url = `/gibi/online?providerId=${item.providerId}&id=${encodeURIComponent(item.gibiId)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&resume=true`;
@@ -142,6 +158,7 @@ export default function Colecao() {
         entry => !(entry.mangaId === item.mangaId && entry.providerId === item.providerId && entry.chapterId === item.chapterId)
       );
       saveLocalCompleted(filtered);
+      removeCompletedRemote(item, user?.id);
       loadCompleted();
     } catch (err) {
       console.error("Error removing from completed shelf:", err);

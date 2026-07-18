@@ -53838,6 +53838,86 @@ router2.delete("/auth/history/reading", async (req, res) => {
   }
   res.json({ success: true });
 });
+router2.get("/auth/history/completed", async (req, res) => {
+  if (!supabase) {
+    res.status(503).json({ error: "db_unavailable" });
+    return;
+  }
+  const userId = req.query.userId;
+  if (!userId) {
+    res.status(400).json({ error: "missing_userId" });
+    return;
+  }
+  try {
+    const { data, error } = await supabase.from("user_completed").select("*").eq("user_id", userId).order("completed_at", { ascending: false }).limit(200);
+    if (error) {
+      res.status(500).json({ error: "db_error", message: error.message });
+      return;
+    }
+    res.json((data || []).map((item) => ({
+      providerId: item.provider_id,
+      mangaId: item.manga_id,
+      title: item.title,
+      coverUrl: item.cover_url || void 0,
+      chapterId: item.chapter_id,
+      chapterNum: item.chapter_num || "",
+      completedAt: item.completed_at
+    })));
+  } catch {
+    res.status(500).json({ error: "server_error" });
+  }
+});
+router2.post("/auth/history/completed/upsert", async (req, res) => {
+  if (!supabase) {
+    res.status(503).json({ error: "db_unavailable" });
+    return;
+  }
+  const { userId, item } = req.body;
+  if (!userId || !item?.mangaId || !item?.providerId || !item?.chapterId) {
+    res.status(400).json({ error: "bad_request" });
+    return;
+  }
+  try {
+    await supabase.from("user_completed").delete().eq("user_id", userId).eq("provider_id", item.providerId).eq("manga_id", item.mangaId).eq("chapter_id", item.chapterId);
+    const { error } = await supabase.from("user_completed").insert({
+      user_id: userId,
+      provider_id: item.providerId,
+      manga_id: item.mangaId,
+      title: item.title,
+      cover_url: item.coverUrl || null,
+      chapter_id: item.chapterId,
+      chapter_num: item.chapterNum || "",
+      completed_at: item.completedAt || (/* @__PURE__ */ new Date()).toISOString()
+    });
+    if (error) {
+      res.status(500).json({ error: "db_error", message: error.message });
+      return;
+    }
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ error: "server_error" });
+  }
+});
+router2.delete("/auth/history/completed", async (req, res) => {
+  if (!supabase) {
+    res.status(503).json({ error: "db_unavailable" });
+    return;
+  }
+  const userId = req.query.userId;
+  const providerId = req.query.providerId;
+  const mangaId = req.query.mangaId;
+  const chapterId = req.query.chapterId;
+  if (!userId || !providerId || !mangaId || !chapterId) {
+    res.status(400).json({ error: "missing_params" });
+    return;
+  }
+  const { error } = await supabase.from("user_completed").delete().eq("user_id", userId).eq("provider_id", providerId).eq("manga_id", mangaId).eq("chapter_id", chapterId);
+  if (error) {
+    res.status(500).json({ error: "db_error", message: error.message });
+    return;
+  }
+  res.json({ success: true });
+});
 router2.get("/admin/users", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   if (!supabase) {

@@ -204,3 +204,21 @@ ALTER TABLE user_search_history DISABLE ROW LEVEL SECURITY;
 ALTER TABLE user_reading_history DISABLE ROW LEVEL SECURITY;
 ALTER TABLE user_reading_progress DISABLE ROW LEVEL SECURITY;
 ALTER TABLE suggestions DISABLE ROW LEVEL SECURITY;
+
+-- ============================================================
+-- Table: user_completed (synced "Já Lidos" shelf)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_completed (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  provider_id TEXT NOT NULL,
+  manga_id TEXT NOT NULL,
+  title TEXT,
+  cover_url TEXT,
+  chapter_id TEXT NOT NULL,
+  chapter_num TEXT,
+  completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_completed_user_id ON user_completed(user_id);
+ALTER TABLE user_completed DISABLE ROW LEVEL SECURITY;

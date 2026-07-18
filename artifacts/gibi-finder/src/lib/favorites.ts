@@ -21,6 +21,21 @@ export const getFavorites = (): FavoriteItem[] => {
 export const isFavorite = (providerId: string, mangaId: string): boolean =>
   getFavorites().some(f => f.mangaId === mangaId && f.providerId === providerId);
 
+// Load favorites from the account (when logged in) and mirror them locally, so
+// the shelf shows the same favorites on any device.
+export const getSyncedFavorites = async (userId?: string): Promise<FavoriteItem[]> => {
+  if (!userId) return getFavorites();
+  try {
+    const res = await fetch(`${BASE}/api/auth/favorites?userId=${encodeURIComponent(userId)}`);
+    if (!res.ok) return getFavorites();
+    const items = await res.json() as FavoriteItem[];
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(items));
+    return items;
+  } catch {
+    return getFavorites();
+  }
+};
+
 export const toggleFavorite = (
   item: Omit<FavoriteItem, "timestamp">,
   userId?: string

@@ -138,6 +138,35 @@ export const saveLocalCompleted = (items: CompletedReadingItem[]) => {
   writeJson(COMPLETED_KEY, items);
 };
 
+export const getSyncedCompleted = async (userId?: string): Promise<CompletedReadingItem[]> => {
+  if (!userId) return getLocalCompleted();
+  try {
+    const res = await fetch(`${BASE}/api/auth/history/completed?userId=${encodeURIComponent(userId)}`);
+    if (!res.ok) return getLocalCompleted();
+    const items = await res.json() as CompletedReadingItem[];
+    saveLocalCompleted(items);
+    return items;
+  } catch (err) {
+    console.error("Failed to load synced completed:", err);
+    return getLocalCompleted();
+  }
+};
+
+export const removeCompletedRemote = async (
+  item: CompletedReadingItem,
+  userId?: string
+) => {
+  if (!userId) return;
+  const params = new URLSearchParams({
+    userId,
+    providerId: item.providerId,
+    mangaId: item.mangaId,
+    chapterId: item.chapterId,
+  });
+  await fetch(`${BASE}/api/auth/history/completed?${params.toString()}`, { method: "DELETE" })
+    .catch(err => console.error("Failed to delete completed:", err));
+};
+
 export const markChapterCompleted = (
   item: CompletedReadingItem,
   userId?: string
