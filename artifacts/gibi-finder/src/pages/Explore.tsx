@@ -114,7 +114,7 @@ function CatalogCard({ item, onOpen, onToggleFav, favorited, status }: {
   );
 }
 
-function Row({ title, children }: { title: string; children: React.ReactNode }) {
+function Row({ title, children, onSeeAll }: { title: string; children: React.ReactNode; onSeeAll?: () => void }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const scrollBy = (dir: 1 | -1) => {
     const el = scrollerRef.current;
@@ -122,15 +122,22 @@ function Row({ title, children }: { title: string; children: React.ReactNode }) 
   };
   return (
     <section className="space-y-2">
-      <div className="flex items-center justify-between">
-        <h3 className="font-display text-xl sm:text-2xl text-black uppercase">{title}</h3>
-        <div className="hidden sm:flex gap-1">
-          <button onClick={() => scrollBy(-1)} className="p-1.5 border-2 border-black rounded bg-white hover:bg-secondary transition-colors" aria-label="Anterior">
-            <ChevronLeft className="w-4 h-4" strokeWidth={3} />
-          </button>
-          <button onClick={() => scrollBy(1)} className="p-1.5 border-2 border-black rounded bg-white hover:bg-secondary transition-colors" aria-label="Próximo">
-            <ChevronRight className="w-4 h-4" strokeWidth={3} />
-          </button>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-display text-xl sm:text-2xl text-black uppercase truncate">{title}</h3>
+        <div className="flex items-center gap-1 shrink-0">
+          {onSeeAll && (
+            <button onClick={onSeeAll} className="font-display text-xs uppercase text-primary hover:underline px-2 py-1">
+              Ver tudo →
+            </button>
+          )}
+          <div className="hidden sm:flex gap-1">
+            <button onClick={() => scrollBy(-1)} className="p-1.5 border-2 border-black rounded bg-white hover:bg-secondary transition-colors" aria-label="Anterior">
+              <ChevronLeft className="w-4 h-4" strokeWidth={3} />
+            </button>
+            <button onClick={() => scrollBy(1)} className="p-1.5 border-2 border-black rounded bg-white hover:bg-secondary transition-colors" aria-label="Próximo">
+              <ChevronRight className="w-4 h-4" strokeWidth={3} />
+            </button>
+          </div>
         </div>
       </div>
       <div ref={scrollerRef} className="flex gap-3 sm:gap-4 overflow-x-auto pb-3 -mx-1 px-1 scroll-smooth [scrollbar-width:thin]">
@@ -145,6 +152,7 @@ export default function Explore() {
   const { user } = useAuth();
   const [popular, setPopular] = useState<UnifiedCatalogItem[]>([]);
   const [latest, setLatest] = useState<UnifiedCatalogItem[]>([]);
+  const [viewAllGenre, setViewAllGenre] = useState<string | null>(null);
   const [continueItems, setContinueItems] = useState<{ providerId: string; mangaId: string; title: string; coverUrl?: string; chapterNum?: string; updatedAt: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -263,12 +271,33 @@ export default function Explore() {
     .slice(0, 20)
     .map(x => x.it);
 
+  // Dynamic genre list: featured genres first, then every other genre that has
+  // enough items — so the catalog surfaces all available genres, not just a fixed set.
+  const genreCounts = new Map<string, { display: string; count: number }>();
+  for (const it of uniqueItems) {
+    for (const g of it.genres || []) {
+      const k = norm(g);
+      if (!k) continue;
+      const e = genreCounts.get(k) || { display: g, count: 0 };
+      e.count += 1;
+      genreCounts.set(k, e);
+    }
+  }
+  const featuredNorm = new Set(FEATURED_GENRES.map(norm));
+  const extraGenres = [...genreCounts.entries()]
+    .filter(([k, v]) => !featuredNorm.has(k) && v.count >= MIN_ROW_ITEMS)
+    .sort((a, b) => b[1].count - a[1].count)
+    .map(([, v]) => v.display);
+  const allGenres = [...FEATURED_GENRES, ...extraGenres];
+
+  const itemsInGenre = (genre: string) => uniqueItems.filter(i => (i.genres || []).some(g => norm(g) === norm(genre)));
+
   const genreRows: RowData[] = [];
   const usedInGenreRows = new Set<string>();
-  for (const genre of FEATURED_GENRES) {
+  for (const genre of allGenres) {
     // Each title lands in at most one genre row, so the same manga doesn't repeat
     // across several categories.
-    const items = uniqueItems.filter(i => !usedInGenreRows.has(i.id) && i.genres?.some(g => norm(g) === norm(genre)));
+    const items = itemsInGenre(genre).filter(i => !usedInGenreRows.has(i.id));
     if (items.length >= MIN_ROW_ITEMS) {
       const rowItems = items.slice(0, 20);
       rowItems.forEach(i => usedInGenreRows.add(i.id));
@@ -323,6 +352,26 @@ export default function Explore() {
             <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
             <h3 className="font-display text-2xl">CARREGANDO O CATÁLOGO...</h3>
           </div>
+        ) : viewAllGenre ? (
+          <div className="space-y-5">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setViewAllGenre(null)}
+                className="inline-flex items-center gap-1 bg-white text-black font-display text-sm uppercase px-3 py-2 border-4 border-black rounded-lg comic-shadow-sm hover:bg-secondary transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" strokeWidth={3} /> Voltar
+              </button>
+              <h2 className="font-display text-2xl sm:text-3xl text-black uppercase">{viewAllGenre}</h2>
+            </div>
+            <div className="flex flex-wrap gap-3 sm:gap-4 justify-center sm:justify-start">
+              {itemsInGenre(viewAllGenre).map(item => {
+                const src = item.sources?.[0];
+                return (
+                  <CatalogCard key={`all-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} />
+                );
+              })}
+            </div>
+          </div>
         ) : (
           <div className="space-y-8">
             {/* Continue reading */}
@@ -372,7 +421,7 @@ export default function Explore() {
             )}
 
             {genreRows.map(row => (
-              <Row key={row.key} title={row.title}>
+              <Row key={row.key} title={row.title} onSeeAll={() => { setViewAllGenre(row.title); window.scrollTo({ top: 0 }); }}>
                 {row.items.map(item => {
                   const src = item.sources?.[0];
                   return (
