@@ -135,7 +135,12 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
     if (requestMethod) {
       if (!isNativeFullscreen) {
-        requestMethod.call(element).catch(err => {
+        requestMethod.call(element).then(() => {
+          // Chrome Android auto-locks orientation to the fullscreened content's
+          // "natural" shape (portrait for the tall cascade column). Release it so
+          // the device sensor can rotate freely in either reading mode.
+          try { (screen.orientation as any)?.unlock?.(); } catch { /* noop */ }
+        }).catch(err => {
           console.error("Error enabling native fullscreen:", err);
           // Fallback to virtual fullscreen
           setIsFullscreen(true);
@@ -400,7 +405,9 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               (element as any).mozRequestFullScreen || 
               (element as any).msRequestFullscreen;
             if (requestMethod) {
-              requestMethod.call(element).catch(() => {
+              requestMethod.call(element).then(() => {
+                try { (screen.orientation as any)?.unlock?.(); } catch { /* noop */ }
+              }).catch(() => {
                 // Ignore security exceptions, virtual fullscreen handles the layout
               });
             }
@@ -1265,7 +1272,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
           )}
 
           {/* Reader Body */}
-          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overscroll-contain flex justify-center p-4">
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overscroll-contain flex justify-center p-0 sm:p-4">
             {getEmbedUrl(pages[currentPage]?.url) ? (
               <div className="w-full max-w-5xl h-full min-h-[70vh] border-4 border-white/20 bg-zinc-900 rounded-lg overflow-hidden">
                 <iframe
@@ -1292,12 +1299,12 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               </div>
             ) : readerMode === "scroll" ? (
               /* Continuous Scroll Mode */
-              <div className="max-w-2xl w-full space-y-4 flex flex-col items-center">
+              <div className="max-w-2xl w-full space-y-1 sm:space-y-4 flex flex-col items-center">
                 {pages.map((p, idx) => (
                   <div
                     key={idx}
                     ref={(el) => { pageRefs.current[idx] = el; }}
-                    className="relative w-full border-4 border-white/10 bg-zinc-900"
+                    className="relative w-full border-0 sm:border-4 border-white/10 bg-zinc-900"
                   >
                     <SafeImage
                       src={p.url}

@@ -86,7 +86,10 @@ export function PdfReader({
     const el = rootRef.current;
     if (!el) return;
     if (!document.fullscreenElement) {
-      el.requestFullscreen?.().catch(() => setIsFullscreen(true));
+      el.requestFullscreen?.().then(() => {
+        // Release Chrome Android's auto orientation lock so the reader can rotate.
+        try { (screen.orientation as any)?.unlock?.(); } catch { /* noop */ }
+      }).catch(() => setIsFullscreen(true));
     } else {
       document.exitFullscreen?.();
     }
