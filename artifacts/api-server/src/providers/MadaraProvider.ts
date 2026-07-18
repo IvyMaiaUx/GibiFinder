@@ -1,4 +1,5 @@
 import { Provider, SearchResult, MangaDetails, Chapter, Page } from "./types";
+import { logger } from "../lib/logger";
 
 const BROWSER_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -421,7 +422,7 @@ export class MadaraProvider implements Provider {
 
       return Array.from(results.values());
     } catch (err) {
-      console.error(`MadaraProvider [${this.id}] search failed:`, err);
+      logger.error({ err: err }, `MadaraProvider [${this.id}] search failed:`);
       return [];
     }
   }
@@ -471,7 +472,7 @@ export class MadaraProvider implements Provider {
         providerId: this.id
       };
     } catch (err) {
-      console.error(`MadaraProvider [${this.id}] getDetails failed:`, err);
+      logger.error({ err: err }, `MadaraProvider [${this.id}] getDetails failed:`);
       return {
         id,
         title: id.replace(/^post:/, "").replace(/-/g, " ").toUpperCase(),
@@ -511,7 +512,7 @@ export class MadaraProvider implements Provider {
 
       return chapters.reverse();
     } catch (err) {
-      console.error(`MadaraProvider [${this.id}] getChapters failed:`, err);
+      logger.error({ err: err }, `MadaraProvider [${this.id}] getChapters failed:`);
       return [];
     }
   }
@@ -633,7 +634,7 @@ export class MadaraProvider implements Provider {
 
       return pages;
     } catch (err) {
-      console.error(`MadaraProvider [${this.id}] getPages failed:`, err);
+      logger.error({ err: err }, `MadaraProvider [${this.id}] getPages failed:`);
       return [];
     }
   }

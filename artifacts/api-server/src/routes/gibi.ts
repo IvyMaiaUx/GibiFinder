@@ -1,4 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
+import { logger } from "../lib/logger";
 import { identifyFromImages, searchByText, searchByCharacter } from "../lib/gemini";
 import { fetchFandomContext } from "../lib/fandom";
 import { supabase } from "../lib/supabase";
@@ -156,7 +157,7 @@ async function saveToSupabase(result: ReturnType<typeof buildResult>, query: str
       result_json: resultJson,
     });
   } catch (err) {
-    console.error("Supabase save error:", err);
+    logger.error({ err: err }, "Supabase save error:");
   }
 }
 
@@ -174,7 +175,7 @@ async function searchCollection(terms: string[]): Promise<ComicResultData[]> {
         ).join(",")
       )
       .limit(10);
-    if (error) { console.error("Collection search error:", JSON.stringify(error)); return driveMatches; }
+    if (error) { logger.error({ err: error }, "Collection search error:"); return driveMatches; }
     const dbResults = rankCollectionResults(terms, data || []);
     const driveOnly = driveMatches.filter(item => !dbResults.some(db => db.drive_url && db.drive_url === item.drive_url));
     return [...dbResults, ...driveOnly].slice(0, 20);
@@ -247,7 +248,7 @@ router.get("/colecao", async (req: Request, res: Response) => {
 
     const { data, count, error } = await query;
     if (error) {
-      console.error("Colecao list error:", JSON.stringify(error));
+      logger.error({ err: JSON.stringify(error) }, "Colecao list error:");
       res.json({ items: staticItems, total: staticItems.length });
       return;
     }
@@ -260,7 +261,7 @@ router.get("/colecao", async (req: Request, res: Response) => {
     }
     const driveOnly = staticItems.filter(item => !dbItems.some(db => db.drive_url && db.drive_url === item.drive_url));
     res.json({ items: [...dbItems, ...driveOnly], total: total + driveOnly.length });
-  } catch (err) { console.error("Colecao list exception:", err); res.json({ items: staticItems, total: staticItems.length }); }
+  } catch (err) { logger.error({ err: err }, "Colecao list exception:"); res.json({ items: staticItems, total: staticItems.length }); }
 });
 
 // POST /api/colecao — submit for review (status: pending)
@@ -296,7 +297,7 @@ router.post("/colecao", async (req: Request, res: Response) => {
       .select()
       .single();
 
-    if (error) { console.error("Colecao insert error:", JSON.stringify(error)); res.status(500).json({ error: "db_error", message: error.message }); return; }
+    if (error) { logger.error({ err: error }, "Colecao insert error:"); req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
     res.status(201).json({ item: data, status });
   } catch (err) {
     res.status(500).json({ error: "insert_error", message: err instanceof Error ? err.message : "Erro ao adicionar gibi" });
@@ -316,7 +317,7 @@ router.put("/colecao/:id", async (req: Request, res: Response) => {
       .eq("id", id)
       .select()
       .single();
-    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
     if (!data) { res.status(404).json({ error: "not_found", message: "Gibi não encontrado" }); return; }
     res.json({ item: data });
   } catch (err) {
@@ -331,7 +332,7 @@ router.delete("/colecao/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { error } = await supabase.from("gibis").delete().eq("id", id);
-    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "delete_error", message: err instanceof Error ? err.message : "Erro ao remover" });
@@ -352,9 +353,9 @@ router.get("/admin/pending", async (req: Request, res: Response) => {
       .select("*", { count: "exact" })
       .eq("status", "pending")
       .order("created_at", { ascending: true });
-    if (error) { console.error("Admin pending error:", JSON.stringify(error)); res.json({ items: [], total: 0 }); return; }
+    if (error) { logger.error({ err: error }, "Admin pending error:"); res.json({ items: [], total: 0 }); return; }
     res.json({ items: data || [], total: count || 0 });
-  } catch (err) { console.error("Admin pending exception:", err); res.json({ items: [], total: 0 }); }
+  } catch (err) { logger.error({ err: err }, "Admin pending exception:"); res.json({ items: [], total: 0 }); }
 });
 
 // PUT /api/admin/review/:id — approve or reject
@@ -375,7 +376,7 @@ router.put("/admin/review/:id", async (req: Request, res: Response) => {
       .eq("id", id)
       .select()
       .single();
-    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
     res.json({ item: data, status });
   } catch (err) {
     res.status(500).json({ error: "review_error", message: err instanceof Error ? err.message : "Erro ao revisar" });
@@ -552,7 +553,7 @@ router.post("/admin/import-drive-library", async (req: Request, res: Response) =
       message: allFiles.length > files.length ? `Processados ${files.length} de ${allFiles.length} arquivos.` : undefined
     });
   } catch (err) {
-    console.error("Import drive library error:", err);
+    logger.error({ err: err }, "Import drive library error:");
     res.status(500).json({ error: "import_error", message: err instanceof Error ? err.message : "Erro na importacao" });
   }
 });
@@ -694,7 +695,7 @@ router.post("/admin/import-google-sites-drive", async (req: Request, res: Respon
       message: entries.size > files.length ? `Processados ${files.length} de ${entries.size} arquivos.` : undefined
     });
   } catch (err) {
-    console.error("Import Google Sites Drive error:", err);
+    logger.error({ err: err }, "Import Google Sites Drive error:");
     res.status(500).json({ error: "import_error", message: err instanceof Error ? err.message : "Erro na importacao" });
   }
 });
@@ -726,7 +727,7 @@ router.post("/admin/import-drive", async (req: Request, res: Response) => {
     const listRes = await fetch(listUrl);
     if (!listRes.ok) {
       const errText = await listRes.text();
-      console.error("Drive API error:", listRes.status, errText);
+      logger.error({ err: listRes.status, errText }, "Drive API error:");
       let detail = "";
       try { detail = JSON.parse(errText)?.error?.message || errText; } catch { detail = errText; }
       res.status(502).json({ error: "drive_api_error", message: `Drive API (${listRes.status}): ${detail}` });
@@ -833,7 +834,7 @@ router.post("/admin/import-drive", async (req: Request, res: Response) => {
 
     res.json({ imported, skipped, results, message });
   } catch (err) {
-    console.error("Import drive error:", err);
+    logger.error({ err: err }, "Import drive error:");
     res.status(500).json({ error: "import_error", message: err instanceof Error ? err.message : "Erro na importação" });
   }
 });
@@ -971,7 +972,7 @@ router.delete("/history/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { error } = await supabase.from("search_history").delete().eq("id", id);
-    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "delete_error", message: err instanceof Error ? err.message : "Erro" });
@@ -991,13 +992,13 @@ router.get("/history", async (req: Request, res: Response) => {
     if (titulo) query = query.ilike("titulo", `%${titulo}%`);
     if (editora) query = query.ilike("editora", `%${editora}%`);
     const { data, count, error } = await query;
-    if (error) { console.error("History error:", JSON.stringify(error)); res.json({ items: [], total: 0 }); return; }
+    if (error) { logger.error({ err: error }, "History error:"); res.json({ items: [], total: 0 }); return; }
     const items = (data || []).map((row: Record<string, unknown>) => {
       const feedback = (row.result_feedback as { is_correct: boolean }[]) || [];
       return { ...row, feedback_count: feedback.length, correct_count: feedback.filter((f) => f.is_correct).length, result_feedback: undefined };
     });
     res.json({ items, total: count || 0 });
-  } catch (err) { console.error("History exception:", err); res.json({ items: [], total: 0 }); }
+  } catch (err) { logger.error({ err: err }, "History exception:"); res.json({ items: [], total: 0 }); }
 });
 
 router.get("/ranking", async (req: Request, res: Response) => {
@@ -1014,7 +1015,7 @@ router.get("/ranking", async (req: Request, res: Response) => {
       .gte("created_at", weekStart.toISOString())
       .not("revista", "is", null)
       .not("revista", "eq", "");
-    if (error) { console.error("Ranking error:", JSON.stringify(error)); res.json({ items: [], week_start: weekStart.toISOString() }); return; }
+    if (error) { logger.error({ err: error }, "Ranking error:"); res.json({ items: [], week_start: weekStart.toISOString() }); return; }
     const counts = new Map<string, { revista: string; titulo: string; editora: string; images: string[]; search_count: number; last_searched: string }>();
     for (const row of data || []) {
       const key = `${row.revista}||${row.titulo}`;
@@ -1060,7 +1061,7 @@ router.post("/suggestion", async (req: Request, res: Response) => {
       email: email?.trim() || null,
       status: "novo",
     });
-    if (error) { console.error("Suggestion insert error:", JSON.stringify(error)); res.status(500).json({ error: "db_error", message: error.message }); return; }
+    if (error) { logger.error({ err: error }, "Suggestion insert error:"); req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "insert_error", message: err instanceof Error ? err.message : "Erro ao salvar" });
@@ -1097,7 +1098,7 @@ router.delete("/admin/ranking/entry", async (req: Request, res: Response) => {
     const { revista, titulo } = req.body as { revista?: string; titulo?: string };
     if (!revista || !titulo) { res.status(400).json({ error: "invalid_input", message: "revista e titulo obrigatórios" }); return; }
     const { error } = await supabase.from("search_history").delete().eq("revista", revista).eq("titulo", titulo);
-    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: "delete_error", message: err instanceof Error ? err.message : "Erro" }); }
 });
@@ -1107,7 +1108,7 @@ router.delete("/admin/ranking/all", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
   try {
     const { error } = await supabase.from("search_history").delete().not("id", "is", null);
-    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: "delete_error", message: err instanceof Error ? err.message : "Erro" }); }
 });
@@ -1120,9 +1121,9 @@ router.get("/admin/suggestions", async (req: Request, res: Response) => {
     let query = supabase.from("suggestions").select("*", { count: "exact" }).order("created_at", { ascending: false });
     if (status) query = query.eq("status", status);
     const { data, count, error } = await query;
-    if (error) { console.error("Suggestions list error:", JSON.stringify(error)); res.json({ items: [], total: 0 }); return; }
+    if (error) { logger.error({ err: error }, "Suggestions list error:"); res.json({ items: [], total: 0 }); return; }
     res.json({ items: data || [], total: count || 0 });
-  } catch (err) { console.error("Suggestions list exception:", err); res.json({ items: [], total: 0 }); }
+  } catch (err) { logger.error({ err: err }, "Suggestions list exception:"); res.json({ items: [], total: 0 }); }
 });
 
 router.put("/admin/suggestions/:id", async (req: Request, res: Response) => {
@@ -1135,7 +1136,7 @@ router.put("/admin/suggestions/:id", async (req: Request, res: Response) => {
       res.status(400).json({ error: "invalid_status" }); return;
     }
     const { error } = await supabase.from("suggestions").update({ status }).eq("id", id);
-    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "update_error", message: err instanceof Error ? err.message : "Erro" });
@@ -1148,7 +1149,7 @@ router.delete("/admin/suggestions/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { error } = await supabase.from("suggestions").delete().eq("id", id);
-    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "delete_error", message: err instanceof Error ? err.message : "Erro" });
@@ -1162,7 +1163,7 @@ router.post("/feedback", async (req: Request, res: Response) => {
   if (!supabase) { res.json({ success: true, id: feedbackId }); return; }
   try {
     const { error } = await supabase.from("result_feedback").insert({ id: feedbackId, result_id, is_correct, correction_text: correction_text || null });
-    if (error) console.error("Feedback error:", JSON.stringify(error));
+    if (error) logger.error({ err: error }, "Feedback error:");
     res.json({ success: true, id: feedbackId });
   } catch { res.json({ success: true, id: feedbackId }); }
 });
@@ -1190,7 +1191,7 @@ router.get("/pdf/:fileId", async (req: Request, res: Response) => {
     const buffer = await upstream.arrayBuffer();
     res.send(Buffer.from(buffer));
   } catch (err) {
-    console.error("PDF proxy error:", err);
+    logger.error({ err: err }, "PDF proxy error:");
     res.status(500).json({ error: "Falha ao buscar PDF" });
   }
 });
@@ -1217,7 +1218,7 @@ router.post("/auth/register", async (req: Request, res: Response) => {
       if (error.code === "23505") {
         res.status(409).json({ error: "username_taken", message: "Este nome de usuário já está em uso" });
       } else {
-        res.status(500).json({ error: "db_error", message: error.message });
+        req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" });
       }
       return;
     }
@@ -1278,7 +1279,7 @@ router.get("/auth/favorites", async (req: Request, res: Response) => {
       timestamp: Number(f.timestamp)
     }));
     res.json(mapped);
-  } catch { res.status(500).json({ error: "server_error" }); }
+  } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
 });
 
 // POST /api/auth/favorites/sync - sync favorites to database
@@ -1319,7 +1320,7 @@ router.get("/auth/history/search", async (req: Request, res: Response) => {
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(50);
-    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
     res.json((data || []).map((item: any) => ({
       id: item.item_id,
       titulo: item.titulo || "",
@@ -1330,7 +1331,7 @@ router.get("/auth/history/search", async (req: Request, res: Response) => {
       search_type: item.search_type || "text",
       created_at: item.created_at
     })));
-  } catch { res.status(500).json({ error: "server_error" }); }
+  } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
 });
 
 // POST /api/auth/history/search/upsert - save one search history item
@@ -1351,9 +1352,9 @@ router.post("/auth/history/search/upsert", async (req: Request, res: Response) =
       search_type: item.search_type || "text",
       created_at: item.created_at || new Date().toISOString()
     });
-    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
     res.json({ success: true });
-  } catch { res.status(500).json({ error: "server_error" }); }
+  } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
 });
 
 // POST /api/auth/history/search/sync - merge local and server search history
@@ -1398,7 +1399,7 @@ router.post("/auth/history/search/sync", async (req: Request, res: Response) => 
       await supabase.from("user_search_history").insert(rows);
     }
     res.json({ success: true });
-  } catch { res.status(500).json({ error: "server_error" }); }
+  } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
 });
 
 router.delete("/auth/history/search/:itemId", async (req: Request, res: Response) => {
@@ -1406,7 +1407,7 @@ router.delete("/auth/history/search/:itemId", async (req: Request, res: Response
   const userId = req.query.userId as string;
   if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
   const { error } = await supabase.from("user_search_history").delete().eq("user_id", userId).eq("item_id", req.params.itemId);
-  if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+  if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
   res.json({ success: true });
 });
 
@@ -1415,7 +1416,7 @@ router.delete("/auth/history/search", async (req: Request, res: Response) => {
   const userId = req.query.userId as string;
   if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
   const { error } = await supabase.from("user_search_history").delete().eq("user_id", userId);
-  if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+  if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
   res.json({ success: true });
 });
 
@@ -1431,7 +1432,7 @@ router.get("/auth/history/reading", async (req: Request, res: Response) => {
       .eq("user_id", userId)
       .order("timestamp", { ascending: false })
       .limit(100);
-    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
     res.json((data || []).map((item: any) => ({
       id: item.item_id,
       title: item.title,
@@ -1445,7 +1446,7 @@ router.get("/auth/history/reading", async (req: Request, res: Response) => {
       pageNumber: Number(item.page_number || 1),
       timestamp: Number(item.timestamp)
     })));
-  } catch { res.status(500).json({ error: "server_error" }); }
+  } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
 });
 
 // POST /api/auth/history/reading/upsert - save one reading history/progress item
@@ -1484,9 +1485,9 @@ router.post("/auth/history/reading/upsert", async (req: Request, res: Response) 
       page_number: historyItem.pageNumber || 1,
       timestamp: historyItem.timestamp || Date.now()
     });
-    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
     res.json({ success: true });
-  } catch { res.status(500).json({ error: "server_error" }); }
+  } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
 });
 
 // POST /api/auth/history/reading/sync - merge local and server reading history/progress
@@ -1553,7 +1554,7 @@ router.post("/auth/history/reading/sync", async (req: Request, res: Response) =>
     }
 
     res.json({ success: true });
-  } catch { res.status(500).json({ error: "server_error" }); }
+  } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
 });
 
 router.delete("/auth/history/reading/:itemId", async (req: Request, res: Response) => {
@@ -1561,7 +1562,7 @@ router.delete("/auth/history/reading/:itemId", async (req: Request, res: Respons
   const userId = req.query.userId as string;
   if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
   const { error } = await supabase.from("user_reading_history").delete().eq("user_id", userId).eq("item_id", req.params.itemId);
-  if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+  if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
   res.json({ success: true });
 });
 
@@ -1570,7 +1571,7 @@ router.delete("/auth/history/reading", async (req: Request, res: Response) => {
   const userId = req.query.userId as string;
   if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
   const { error } = await supabase.from("user_reading_history").delete().eq("user_id", userId);
-  if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+  if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
   res.json({ success: true });
 });
 
@@ -1587,7 +1588,7 @@ router.get("/auth/history/completed", async (req: Request, res: Response) => {
       .eq("user_id", userId)
       .order("completed_at", { ascending: false })
       .limit(200);
-    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
     res.json((data || []).map((item: any) => ({
       providerId: item.provider_id,
       mangaId: item.manga_id,
@@ -1597,7 +1598,7 @@ router.get("/auth/history/completed", async (req: Request, res: Response) => {
       chapterNum: item.chapter_num || "",
       completedAt: item.completed_at
     })));
-  } catch { res.status(500).json({ error: "server_error" }); }
+  } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
 });
 
 // POST /api/auth/history/completed/upsert - mark one chapter completed
@@ -1618,9 +1619,9 @@ router.post("/auth/history/completed/upsert", async (req: Request, res: Response
       chapter_num: item.chapterNum || "",
       completed_at: item.completedAt || new Date().toISOString()
     });
-    if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+    if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
     res.json({ success: true });
-  } catch { res.status(500).json({ error: "server_error" }); }
+  } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
 });
 
 // DELETE /api/auth/history/completed - remove one completed entry (by keys)
@@ -1633,7 +1634,7 @@ router.delete("/auth/history/completed", async (req: Request, res: Response) => 
   if (!userId || !providerId || !mangaId || !chapterId) { res.status(400).json({ error: "missing_params" }); return; }
   const { error } = await supabase.from("user_completed").delete()
     .eq("user_id", userId).eq("provider_id", providerId).eq("manga_id", mangaId).eq("chapter_id", chapterId);
-  if (error) { res.status(500).json({ error: "db_error", message: error.message }); return; }
+  if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
   res.json({ success: true });
 });
 
@@ -1649,7 +1650,7 @@ router.get("/admin/users", async (req: Request, res: Response) => {
     
     if (error) { res.status(500).json({ error: "db_error" }); return; }
     res.json({ items: data, total: data.length });
-  } catch { res.status(500).json({ error: "server_error" }); }
+  } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
 });
 
 export default router;

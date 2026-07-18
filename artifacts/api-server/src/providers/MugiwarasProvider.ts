@@ -1,4 +1,5 @@
 import { Provider, SearchResult, MangaDetails, Chapter, Page } from "./types";
+import { logger } from "../lib/logger";
 
 export class MugiwarasProvider implements Provider {
   id = "mugiwaras";
@@ -58,7 +59,7 @@ export class MugiwarasProvider implements Provider {
 
       return results;
     } catch (err) {
-      console.error("Mugiwaras search failed:", err);
+      logger.error({ err: err }, "Mugiwaras search failed:");
       return [];
     }
   }
@@ -93,7 +94,7 @@ export class MugiwarasProvider implements Provider {
         providerId: this.id
       };
     } catch (err) {
-      console.error("Mugiwaras getDetails failed:", err);
+      logger.error({ err: err }, "Mugiwaras getDetails failed:");
       const found = this.popularComics.find(c => c.id === id);
       return {
         id,
@@ -145,7 +146,7 @@ export class MugiwarasProvider implements Provider {
       // Return reversed (ascending order)
       return chapters.reverse();
     } catch (err) {
-      console.error("Mugiwaras getChapters failed:", err);
+      logger.error({ err: err }, "Mugiwaras getChapters failed:");
       return [];
     }
   }
@@ -214,7 +215,7 @@ export class MugiwarasProvider implements Provider {
 
       return pages;
     } catch (err) {
-      console.error("Mugiwaras getPages failed:", err);
+      logger.error({ err: err }, "Mugiwaras getPages failed:");
       return [];
     }
   }

@@ -1,4 +1,5 @@
 import { Provider, SearchResult, MangaDetails, Chapter, Page } from "./types";
+import { logger } from "../lib/logger";
 
 const BROWSER_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -94,7 +95,7 @@ export class NHentaiProvider implements Provider {
       const html = await this.fetchHtml(url.toString());
       return this.parseGalleryCards(html);
     } catch (err) {
-      console.error("nHentai search failed:", err);
+      logger.error({ err: err }, "nHentai search failed:");
       return [];
     }
   }
@@ -121,7 +122,7 @@ export class NHentaiProvider implements Provider {
         genres: tags
       };
     } catch (err) {
-      console.error("nHentai details failed:", err);
+      logger.error({ err: err }, "nHentai details failed:");
       return {
         id,
         title: `nHentai #${id}`,
@@ -156,7 +157,7 @@ export class NHentaiProvider implements Provider {
         pageNumber: index + 1
       }));
     } catch (err) {
-      console.error("nHentai pages failed:", err);
+      logger.error({ err: err }, "nHentai pages failed:");
       return [];
     }
   }
@@ -167,7 +168,7 @@ export class NHentaiProvider implements Provider {
       const html = await this.fetchHtml(new URL(path, this.baseUrl).toString());
       return this.parseGalleryCards(html);
     } catch (err) {
-      console.error("nHentai catalog failed:", err);
+      logger.error({ err: err }, "nHentai catalog failed:");
       return [];
     }
   }

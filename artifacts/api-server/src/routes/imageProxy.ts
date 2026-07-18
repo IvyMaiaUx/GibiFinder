@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { logger } from "../lib/logger";
 import https from "https";
 import http from "http";
 
@@ -79,7 +80,7 @@ router.get("/image-proxy", async (req: Request, res: Response) => {
     });
     res.send(result.buffer);
   } catch (err) {
-    console.error("Image proxy error:", err);
+    logger.error({ err: err }, "Image proxy error:");
     res.status(502).json({ error: "proxy_failed", message: "Falha ao buscar imagem do servidor externo." });
   }
 });

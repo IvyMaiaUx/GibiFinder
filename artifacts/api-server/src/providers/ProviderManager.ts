@@ -1,4 +1,5 @@
 import { Provider, UnifiedSearchResult, MangaDetails, Chapter, Page } from "./types";
+import { logger } from "../lib/logger";
 import { MangaDexProvider } from "./MangaDexProvider";
 import { ComicExtraProvider } from "./ComicExtraProvider";
 import { MangaPlusProvider } from "./MangaPlusProvider";
@@ -99,7 +100,7 @@ export class ProviderManager {
         }
       }
     } catch (err) {
-      console.error("Failed to load custom providers:", err);
+      logger.error({ err: err }, "Failed to load custom providers:");
     }
   }
 
@@ -146,7 +147,7 @@ export class ProviderManager {
           }
         }
       } catch (err) {
-        console.error("Failed to persist toggle state for custom provider:", err);
+        logger.error({ err: err }, "Failed to persist toggle state for custom provider:");
       }
     }
   }
@@ -177,7 +178,7 @@ export class ProviderManager {
       list.push({ id, name, language, baseUrl, active: true });
       fs.writeFileSync(filePath, JSON.stringify(list, null, 2), "utf-8");
     } catch (err) {
-      console.error("Failed to save custom provider:", err);
+      logger.error({ err: err }, "Failed to save custom provider:");
     }
 
     return provider;
@@ -196,7 +197,7 @@ export class ProviderManager {
         fs.writeFileSync(filePath, JSON.stringify(list, null, 2), "utf-8");
       }
     } catch (err) {
-      console.error("Failed to delete custom provider:", err);
+      logger.error({ err: err }, "Failed to delete custom provider:");
     }
   }
 
@@ -433,7 +434,7 @@ export class ProviderManager {
     const searchPromises = activeProviders.map(p =>
       this.withTimeout(
         p.search(query, nsfw).catch(err => {
-          console.error(`Error searching provider ${p.name}:`, err);
+          logger.error({ err: err }, `Error searching provider ${p.name}:`);
           return [];
         }),
         7000,
@@ -550,7 +551,7 @@ export class ProviderManager {
     const catalogPromises = activeProviders.map(p =>
       this.withTimeout(
         p.getCatalog(listType, nsfw).catch(err => {
-          console.error(`Error loading catalog from ${p.name}:`, err);
+          logger.error({ err: err }, `Error loading catalog from ${p.name}:`);
           return [];
         }),
         8000,

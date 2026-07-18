@@ -26,7 +26,8 @@ router.post("/translate", async (req: Request, res: Response) => {
     }
     cache.set(text, translated);
     res.json({ text: translated });
-  } catch {
+  } catch (err) {
+    req.log.error({ err, action: "translate" }, "translation failed");
     res.status(500).json({ text, error: "translate_failed" });
   }
 });

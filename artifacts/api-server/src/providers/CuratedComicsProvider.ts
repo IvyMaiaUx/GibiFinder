@@ -1,4 +1,5 @@
 import { Provider, SearchResult, MangaDetails, Chapter, Page } from "./types";
+import { logger } from "../lib/logger";
 import { hasDriveKey, nextDriveKey } from "../lib/driveKeys";
 
 type ReaderKind = "embed" | "external" | "pdf";
@@ -181,7 +182,7 @@ export class CuratedComicsProvider implements Provider {
         };
       });
     } catch (err) {
-      console.warn(`Curated provider [${this.id}] Google Sites fetch failed:`, err);
+      logger.warn({ err: err }, `Curated provider [${this.id}] Google Sites fetch failed:`);
       return [];
     }
   }
@@ -263,7 +264,7 @@ export class CuratedComicsProvider implements Provider {
       }
       return items;
     } catch (err) {
-      console.warn(`Curated provider [${this.id}] Drive folder fetch failed:`, err);
+      logger.warn({ err: err }, `Curated provider [${this.id}] Drive folder fetch failed:`);
       return items;
     }
   }

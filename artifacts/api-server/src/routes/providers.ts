@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { logger } from "../lib/logger";
 import { ProviderManager } from "../providers/ProviderManager";
 
 const router = Router();
@@ -34,7 +35,7 @@ async function injectRatings(results: any[]) {
         });
       }
     } catch (err) {
-      console.error("Failed to fetch bulk statistics from MangaDex:", err);
+      logger.error({ err: err }, "Failed to fetch bulk statistics from MangaDex:");
     }
   }
 

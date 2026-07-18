@@ -1,4 +1,5 @@
 import { Provider, SearchResult, MangaDetails, Chapter, Page } from "./types";
+import { logger } from "../lib/logger";
 
 export class ComicExtraProvider implements Provider {
   id = "comicextra";
@@ -81,7 +82,7 @@ export class ComicExtraProvider implements Provider {
 
       return results;
     } catch (err) {
-      console.warn("ComicExtra scraper failed:", err);
+      logger.warn({ err: err }, "ComicExtra scraper failed:");
       return [];
     }
   }
@@ -105,7 +106,7 @@ export class ComicExtraProvider implements Provider {
         providerId: this.id
       };
     } catch (err) {
-      console.warn("ComicExtra details failed:", err);
+      logger.warn({ err: err }, "ComicExtra details failed:");
       return {
         id,
         title: id.replace(/-/g, " ").toUpperCase(),
@@ -147,7 +148,7 @@ export class ComicExtraProvider implements Provider {
 
       return chapters.reverse();
     } catch (err) {
-      console.warn("ComicExtra chapters scraper failed:", err);
+      logger.warn({ err: err }, "ComicExtra chapters scraper failed:");
       return [];
     }
   }
@@ -176,7 +177,7 @@ export class ComicExtraProvider implements Provider {
 
       return pages;
     } catch (err) {
-      console.warn("ComicExtra pages scraper failed:", err);
+      logger.warn({ err: err }, "ComicExtra pages scraper failed:");
       return [];
     }
   }

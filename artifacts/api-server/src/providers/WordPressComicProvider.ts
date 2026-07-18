@@ -1,4 +1,5 @@
 import { Chapter, MangaDetails, Page, Provider, SearchResult } from "./types";
+import { logger } from "../lib/logger";
 
 const BROWSER_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -298,7 +299,7 @@ export class WordPressComicProvider implements Provider {
         return true;
       });
     } catch (err) {
-      console.warn(`WordPress provider [${this.id}] search failed:`, err);
+      logger.warn({ err: err }, `WordPress provider [${this.id}] search failed:`);
       return [];
     }
   }
@@ -388,7 +389,7 @@ export class WordPressComicProvider implements Provider {
 
       return this.extractImages(html).map((url, index) => ({ url, pageNumber: index + 1 }));
     } catch (err) {
-      console.warn(`WordPress provider [${this.id}] pages failed:`, err);
+      logger.warn({ err: err }, `WordPress provider [${this.id}] pages failed:`);
       return [];
     }
   }

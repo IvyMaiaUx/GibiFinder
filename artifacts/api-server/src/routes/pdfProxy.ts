@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { logger } from "../lib/logger";
 import https from "https";
 import http from "http";
 import { nextDriveKey } from "../lib/driveKeys";
@@ -83,7 +84,7 @@ router.get("/pdf-proxy", async (req: Request, res: Response) => {
     });
     res.send(result.buffer);
   } catch (err) {
-    console.error("PDF proxy error:", err);
+    logger.error({ err: err }, "PDF proxy error:");
     res.status(502).json({ error: "proxy_failed", message: "Falha ao buscar o PDF." });
   }
 });

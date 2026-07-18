@@ -1,4 +1,5 @@
 import { Chapter, MangaDetails, Page, Provider, SearchResult } from "./types";
+import { logger } from "../lib/logger";
 
 const BROWSER_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -183,7 +184,7 @@ export class SlimeReadProvider implements Provider {
         .filter(result => nsfw || !(result.genres || []).some(genre => this.isAdultText(genre)))
         .slice(0, 40);
     } catch (err) {
-      console.error(`SlimeReadProvider [${this.id}] search failed:`, err);
+      logger.error({ err: err }, `SlimeReadProvider [${this.id}] search failed:`);
       return [];
     }
   }
@@ -227,7 +228,7 @@ export class SlimeReadProvider implements Provider {
       }
       return chapters.sort((a, b) => Number(a.chapterNum) - Number(b.chapterNum));
     } catch (err) {
-      console.error(`SlimeReadProvider [${this.id}] chapters failed:`, err);
+      logger.error({ err: err }, `SlimeReadProvider [${this.id}] chapters failed:`);
       return [];
     }
   }
@@ -245,7 +246,7 @@ export class SlimeReadProvider implements Provider {
       }
       return Array.from(urls).map((url, index) => ({ url, pageNumber: index + 1 }));
     } catch (err) {
-      console.error(`SlimeReadProvider [${this.id}] pages failed:`, err);
+      logger.error({ err: err }, `SlimeReadProvider [${this.id}] pages failed:`);
       return [];
     }
   }

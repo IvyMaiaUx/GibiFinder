@@ -28386,6 +28386,53 @@ var require_logger = __commonJS({
   }
 });
 
+// src/lib/logger.ts
+var import_pino, usePrettyLogs, logger;
+var init_logger = __esm({
+  "src/lib/logger.ts"() {
+    "use strict";
+    import_pino = __toESM(require_pino(), 1);
+    usePrettyLogs = process.env["PRETTY_LOGS"] === "true";
+    logger = (0, import_pino.default)({
+      level: process.env.LOG_LEVEL ?? "info",
+      redact: {
+        paths: [
+          "req.headers.authorization",
+          "req.headers.cookie",
+          "res.headers['set-cookie']",
+          // PII / secrets — masked wherever they appear in a logged object.
+          "password",
+          "senha",
+          "token",
+          "access_token",
+          "refresh_token",
+          "apiKey",
+          "api_key",
+          "*.password",
+          "*.senha",
+          "*.token",
+          "*.access_token",
+          "*.refresh_token",
+          "*.apiKey",
+          "*.api_key",
+          "req.body.password",
+          "req.body.senha",
+          "req.body.token",
+          "*.email",
+          "req.body.email"
+        ],
+        censor: "[REDACTED]"
+      },
+      ...usePrettyLogs ? {
+        transport: {
+          target: "pino-pretty",
+          options: { colorize: true }
+        }
+      } : {}
+    });
+  }
+});
+
 // ../../node_modules/.pnpm/@google+generative-ai@0.24.1/node_modules/@google/generative-ai/dist/index.mjs
 function getClientHeaders(requestOptions) {
   const clientHeaders = [];
@@ -29383,30 +29430,6 @@ var init_dist = __esm({
         return new GenerativeModel(this.apiKey, modelParamsFromCache, requestOptions);
       }
     };
-  }
-});
-
-// src/lib/logger.ts
-var import_pino, usePrettyLogs, logger;
-var init_logger = __esm({
-  "src/lib/logger.ts"() {
-    "use strict";
-    import_pino = __toESM(require_pino(), 1);
-    usePrettyLogs = process.env["PRETTY_LOGS"] === "true";
-    logger = (0, import_pino.default)({
-      level: process.env.LOG_LEVEL ?? "info",
-      redact: [
-        "req.headers.authorization",
-        "req.headers.cookie",
-        "res.headers['set-cookie']"
-      ],
-      ...usePrettyLogs ? {
-        transport: {
-          target: "pino-pretty",
-          options: { colorize: true }
-        }
-      } : {}
-    });
   }
 });
 
@@ -43900,6 +43923,7 @@ var health_default = router;
 
 // src/routes/gibi.ts
 var import_express2 = __toESM(require_express2(), 1);
+init_logger();
 init_gemini();
 
 // src/lib/fandom.ts
@@ -52406,7 +52430,7 @@ async function saveToSupabase(result, query, resultJson) {
       result_json: resultJson
     });
   } catch (err) {
-    console.error("Supabase save error:", err);
+    logger.error({ err }, "Supabase save error:");
   }
 }
 async function searchCollection(terms) {
@@ -52419,7 +52443,7 @@ async function searchCollection(terms) {
       ).join(",")
     ).limit(10);
     if (error) {
-      console.error("Collection search error:", JSON.stringify(error));
+      logger.error({ err: error }, "Collection search error:");
       return driveMatches;
     }
     const dbResults = rankCollectionResults(terms, data || []);
@@ -52472,7 +52496,7 @@ router2.get("/colecao", async (req, res) => {
     if (editora) query = query.ilike("editora", `%${editora}%`);
     const { data, count, error } = await query;
     if (error) {
-      console.error("Colecao list error:", JSON.stringify(error));
+      logger.error({ err: JSON.stringify(error) }, "Colecao list error:");
       res.json({ items: staticItems, total: staticItems.length });
       return;
     }
@@ -52486,7 +52510,7 @@ router2.get("/colecao", async (req, res) => {
     const driveOnly = staticItems.filter((item) => !dbItems.some((db) => db.drive_url && db.drive_url === item.drive_url));
     res.json({ items: [...dbItems, ...driveOnly], total: total + driveOnly.length });
   } catch (err) {
-    console.error("Colecao list exception:", err);
+    logger.error({ err }, "Colecao list exception:");
     res.json({ items: staticItems, total: staticItems.length });
   }
 });
@@ -52517,8 +52541,9 @@ router2.post("/colecao", async (req, res) => {
       status
     }).select().single();
     if (error) {
-      console.error("Colecao insert error:", JSON.stringify(error));
-      res.status(500).json({ error: "db_error", message: error.message });
+      logger.error({ err: error }, "Colecao insert error:");
+      req.log.error({ err: error }, "db error");
+      res.status(500).json({ error: "db_error" });
       return;
     }
     res.status(201).json({ item: data, status });
@@ -52537,7 +52562,8 @@ router2.put("/colecao/:id", async (req, res) => {
     const body = req.body;
     const { data, error } = await supabase.from("gibis").update({ ...body, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", id).select().single();
     if (error) {
-      res.status(500).json({ error: "db_error", message: error.message });
+      req.log.error({ err: error }, "db error");
+      res.status(500).json({ error: "db_error" });
       return;
     }
     if (!data) {
@@ -52559,7 +52585,8 @@ router2.delete("/colecao/:id", async (req, res) => {
     const { id } = req.params;
     const { error } = await supabase.from("gibis").delete().eq("id", id);
     if (error) {
-      res.status(500).json({ error: "db_error", message: error.message });
+      req.log.error({ err: error }, "db error");
+      res.status(500).json({ error: "db_error" });
       return;
     }
     res.json({ success: true });
@@ -52576,13 +52603,13 @@ router2.get("/admin/pending", async (req, res) => {
   try {
     const { data, count, error } = await supabase.from("gibis").select("*", { count: "exact" }).eq("status", "pending").order("created_at", { ascending: true });
     if (error) {
-      console.error("Admin pending error:", JSON.stringify(error));
+      logger.error({ err: error }, "Admin pending error:");
       res.json({ items: [], total: 0 });
       return;
     }
     res.json({ items: data || [], total: count || 0 });
   } catch (err) {
-    console.error("Admin pending exception:", err);
+    logger.error({ err }, "Admin pending exception:");
     res.json({ items: [], total: 0 });
   }
 });
@@ -52602,7 +52629,8 @@ router2.put("/admin/review/:id", async (req, res) => {
     const status = action === "approve" ? "approved" : "rejected";
     const { data, error } = await supabase.from("gibis").update({ status, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", id).select().single();
     if (error) {
-      res.status(500).json({ error: "db_error", message: error.message });
+      req.log.error({ err: error }, "db error");
+      res.status(500).json({ error: "db_error" });
       return;
     }
     res.json({ item: data, status });
@@ -52761,7 +52789,7 @@ router2.post("/admin/import-drive-library", async (req, res) => {
       message: allFiles.length > files.length ? `Processados ${files.length} de ${allFiles.length} arquivos.` : void 0
     });
   } catch (err) {
-    console.error("Import drive library error:", err);
+    logger.error({ err }, "Import drive library error:");
     res.status(500).json({ error: "import_error", message: err instanceof Error ? err.message : "Erro na importacao" });
   }
 });
@@ -52862,7 +52890,7 @@ router2.post("/admin/import-google-sites-drive", async (req, res) => {
       message: entries.size > files.length ? `Processados ${files.length} de ${entries.size} arquivos.` : void 0
     });
   } catch (err) {
-    console.error("Import Google Sites Drive error:", err);
+    logger.error({ err }, "Import Google Sites Drive error:");
     res.status(500).json({ error: "import_error", message: err instanceof Error ? err.message : "Erro na importacao" });
   }
 });
@@ -52893,7 +52921,7 @@ router2.post("/admin/import-drive", async (req, res) => {
     const listRes = await fetch(listUrl);
     if (!listRes.ok) {
       const errText = await listRes.text();
-      console.error("Drive API error:", listRes.status, errText);
+      logger.error({ err: listRes.status, errText }, "Drive API error:");
       let detail = "";
       try {
         detail = JSON.parse(errText)?.error?.message || errText;
@@ -52984,7 +53012,7 @@ router2.post("/admin/import-drive", async (req, res) => {
     const message = files.length > MAX_FILES ? `Processados ${MAX_FILES} de ${files.length} arquivos (limite por importa\xE7\xE3o).` : void 0;
     res.json({ imported, skipped, results, message });
   } catch (err) {
-    console.error("Import drive error:", err);
+    logger.error({ err }, "Import drive error:");
     res.status(500).json({ error: "import_error", message: err instanceof Error ? err.message : "Erro na importa\xE7\xE3o" });
   }
 });
@@ -53108,7 +53136,8 @@ router2.delete("/history/:id", async (req, res) => {
     const { id } = req.params;
     const { error } = await supabase.from("search_history").delete().eq("id", id);
     if (error) {
-      res.status(500).json({ error: "db_error", message: error.message });
+      req.log.error({ err: error }, "db error");
+      res.status(500).json({ error: "db_error" });
       return;
     }
     res.json({ success: true });
@@ -53128,7 +53157,7 @@ router2.get("/history", async (req, res) => {
     if (editora) query = query.ilike("editora", `%${editora}%`);
     const { data, count, error } = await query;
     if (error) {
-      console.error("History error:", JSON.stringify(error));
+      logger.error({ err: error }, "History error:");
       res.json({ items: [], total: 0 });
       return;
     }
@@ -53138,7 +53167,7 @@ router2.get("/history", async (req, res) => {
     });
     res.json({ items, total: count || 0 });
   } catch (err) {
-    console.error("History exception:", err);
+    logger.error({ err }, "History exception:");
     res.json({ items: [], total: 0 });
   }
 });
@@ -53155,7 +53184,7 @@ router2.get("/ranking", async (req, res) => {
     weekStart.setHours(0, 0, 0, 0);
     const { data, error } = await supabase.from("search_history").select("revista, titulo, editora, images, created_at").gte("created_at", weekStart.toISOString()).not("revista", "is", null).not("revista", "eq", "");
     if (error) {
-      console.error("Ranking error:", JSON.stringify(error));
+      logger.error({ err: error }, "Ranking error:");
       res.json({ items: [], week_start: weekStart.toISOString() });
       return;
     }
@@ -53215,8 +53244,9 @@ router2.post("/suggestion", async (req, res) => {
       status: "novo"
     });
     if (error) {
-      console.error("Suggestion insert error:", JSON.stringify(error));
-      res.status(500).json({ error: "db_error", message: error.message });
+      logger.error({ err: error }, "Suggestion insert error:");
+      req.log.error({ err: error }, "db error");
+      res.status(500).json({ error: "db_error" });
       return;
     }
     res.json({ success: true });
@@ -53265,7 +53295,8 @@ router2.delete("/admin/ranking/entry", async (req, res) => {
     }
     const { error } = await supabase.from("search_history").delete().eq("revista", revista).eq("titulo", titulo);
     if (error) {
-      res.status(500).json({ error: "db_error", message: error.message });
+      req.log.error({ err: error }, "db error");
+      res.status(500).json({ error: "db_error" });
       return;
     }
     res.json({ success: true });
@@ -53282,7 +53313,8 @@ router2.delete("/admin/ranking/all", async (req, res) => {
   try {
     const { error } = await supabase.from("search_history").delete().not("id", "is", null);
     if (error) {
-      res.status(500).json({ error: "db_error", message: error.message });
+      req.log.error({ err: error }, "db error");
+      res.status(500).json({ error: "db_error" });
       return;
     }
     res.json({ success: true });
@@ -53302,13 +53334,13 @@ router2.get("/admin/suggestions", async (req, res) => {
     if (status) query = query.eq("status", status);
     const { data, count, error } = await query;
     if (error) {
-      console.error("Suggestions list error:", JSON.stringify(error));
+      logger.error({ err: error }, "Suggestions list error:");
       res.json({ items: [], total: 0 });
       return;
     }
     res.json({ items: data || [], total: count || 0 });
   } catch (err) {
-    console.error("Suggestions list exception:", err);
+    logger.error({ err }, "Suggestions list exception:");
     res.json({ items: [], total: 0 });
   }
 });
@@ -53327,7 +53359,8 @@ router2.put("/admin/suggestions/:id", async (req, res) => {
     }
     const { error } = await supabase.from("suggestions").update({ status }).eq("id", id);
     if (error) {
-      res.status(500).json({ error: "db_error", message: error.message });
+      req.log.error({ err: error }, "db error");
+      res.status(500).json({ error: "db_error" });
       return;
     }
     res.json({ success: true });
@@ -53345,7 +53378,8 @@ router2.delete("/admin/suggestions/:id", async (req, res) => {
     const { id } = req.params;
     const { error } = await supabase.from("suggestions").delete().eq("id", id);
     if (error) {
-      res.status(500).json({ error: "db_error", message: error.message });
+      req.log.error({ err: error }, "db error");
+      res.status(500).json({ error: "db_error" });
       return;
     }
     res.json({ success: true });
@@ -53366,7 +53400,7 @@ router2.post("/feedback", async (req, res) => {
   }
   try {
     const { error } = await supabase.from("result_feedback").insert({ id: feedbackId, result_id, is_correct, correction_text: correction_text || null });
-    if (error) console.error("Feedback error:", JSON.stringify(error));
+    if (error) logger.error({ err: error }, "Feedback error:");
     res.json({ success: true, id: feedbackId });
   } catch {
     res.json({ success: true, id: feedbackId });
@@ -53395,7 +53429,7 @@ router2.get("/pdf/:fileId", async (req, res) => {
     const buffer = await upstream.arrayBuffer();
     res.send(Buffer.from(buffer));
   } catch (err) {
-    console.error("PDF proxy error:", err);
+    logger.error({ err }, "PDF proxy error:");
     res.status(500).json({ error: "Falha ao buscar PDF" });
   }
 });
@@ -53416,7 +53450,8 @@ router2.post("/auth/register", async (req, res) => {
       if (error.code === "23505") {
         res.status(409).json({ error: "username_taken", message: "Este nome de usu\xE1rio j\xE1 est\xE1 em uso" });
       } else {
-        res.status(500).json({ error: "db_error", message: error.message });
+        req.log.error({ err: error }, "db error");
+        res.status(500).json({ error: "db_error" });
       }
       return;
     }
@@ -53473,7 +53508,8 @@ router2.get("/auth/favorites", async (req, res) => {
       timestamp: Number(f.timestamp)
     }));
     res.json(mapped);
-  } catch {
+  } catch (err) {
+    req.log.error({ err }, "handler failed");
     res.status(500).json({ error: "server_error" });
   }
 });
@@ -53519,7 +53555,8 @@ router2.get("/auth/history/search", async (req, res) => {
   try {
     const { data, error } = await supabase.from("user_search_history").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(50);
     if (error) {
-      res.status(500).json({ error: "db_error", message: error.message });
+      req.log.error({ err: error }, "db error");
+      res.status(500).json({ error: "db_error" });
       return;
     }
     res.json((data || []).map((item) => ({
@@ -53532,7 +53569,8 @@ router2.get("/auth/history/search", async (req, res) => {
       search_type: item.search_type || "text",
       created_at: item.created_at
     })));
-  } catch {
+  } catch (err) {
+    req.log.error({ err }, "handler failed");
     res.status(500).json({ error: "server_error" });
   }
 });
@@ -53560,11 +53598,13 @@ router2.post("/auth/history/search/upsert", async (req, res) => {
       created_at: item.created_at || (/* @__PURE__ */ new Date()).toISOString()
     });
     if (error) {
-      res.status(500).json({ error: "db_error", message: error.message });
+      req.log.error({ err: error }, "db error");
+      res.status(500).json({ error: "db_error" });
       return;
     }
     res.json({ success: true });
-  } catch {
+  } catch (err) {
+    req.log.error({ err }, "handler failed");
     res.status(500).json({ error: "server_error" });
   }
 });
@@ -53613,7 +53653,8 @@ router2.post("/auth/history/search/sync", async (req, res) => {
       await supabase.from("user_search_history").insert(rows);
     }
     res.json({ success: true });
-  } catch {
+  } catch (err) {
+    req.log.error({ err }, "handler failed");
     res.status(500).json({ error: "server_error" });
   }
 });
@@ -53629,7 +53670,8 @@ router2.delete("/auth/history/search/:itemId", async (req, res) => {
   }
   const { error } = await supabase.from("user_search_history").delete().eq("user_id", userId).eq("item_id", req.params.itemId);
   if (error) {
-    res.status(500).json({ error: "db_error", message: error.message });
+    req.log.error({ err: error }, "db error");
+    res.status(500).json({ error: "db_error" });
     return;
   }
   res.json({ success: true });
@@ -53646,7 +53688,8 @@ router2.delete("/auth/history/search", async (req, res) => {
   }
   const { error } = await supabase.from("user_search_history").delete().eq("user_id", userId);
   if (error) {
-    res.status(500).json({ error: "db_error", message: error.message });
+    req.log.error({ err: error }, "db error");
+    res.status(500).json({ error: "db_error" });
     return;
   }
   res.json({ success: true });
@@ -53664,7 +53707,8 @@ router2.get("/auth/history/reading", async (req, res) => {
   try {
     const { data, error } = await supabase.from("user_reading_history").select("*").eq("user_id", userId).order("timestamp", { ascending: false }).limit(100);
     if (error) {
-      res.status(500).json({ error: "db_error", message: error.message });
+      req.log.error({ err: error }, "db error");
+      res.status(500).json({ error: "db_error" });
       return;
     }
     res.json((data || []).map((item) => ({
@@ -53680,7 +53724,8 @@ router2.get("/auth/history/reading", async (req, res) => {
       pageNumber: Number(item.page_number || 1),
       timestamp: Number(item.timestamp)
     })));
-  } catch {
+  } catch (err) {
+    req.log.error({ err }, "handler failed");
     res.status(500).json({ error: "server_error" });
   }
 });
@@ -53725,11 +53770,13 @@ router2.post("/auth/history/reading/upsert", async (req, res) => {
       timestamp: historyItem.timestamp || Date.now()
     });
     if (error) {
-      res.status(500).json({ error: "db_error", message: error.message });
+      req.log.error({ err: error }, "db error");
+      res.status(500).json({ error: "db_error" });
       return;
     }
     res.json({ success: true });
-  } catch {
+  } catch (err) {
+    req.log.error({ err }, "handler failed");
     res.status(500).json({ error: "server_error" });
   }
 });
@@ -53800,7 +53847,8 @@ router2.post("/auth/history/reading/sync", async (req, res) => {
       if (rows.length > 0) await supabase.from("user_reading_progress").insert(rows);
     }
     res.json({ success: true });
-  } catch {
+  } catch (err) {
+    req.log.error({ err }, "handler failed");
     res.status(500).json({ error: "server_error" });
   }
 });
@@ -53816,7 +53864,8 @@ router2.delete("/auth/history/reading/:itemId", async (req, res) => {
   }
   const { error } = await supabase.from("user_reading_history").delete().eq("user_id", userId).eq("item_id", req.params.itemId);
   if (error) {
-    res.status(500).json({ error: "db_error", message: error.message });
+    req.log.error({ err: error }, "db error");
+    res.status(500).json({ error: "db_error" });
     return;
   }
   res.json({ success: true });
@@ -53833,7 +53882,8 @@ router2.delete("/auth/history/reading", async (req, res) => {
   }
   const { error } = await supabase.from("user_reading_history").delete().eq("user_id", userId);
   if (error) {
-    res.status(500).json({ error: "db_error", message: error.message });
+    req.log.error({ err: error }, "db error");
+    res.status(500).json({ error: "db_error" });
     return;
   }
   res.json({ success: true });
@@ -53851,7 +53901,8 @@ router2.get("/auth/history/completed", async (req, res) => {
   try {
     const { data, error } = await supabase.from("user_completed").select("*").eq("user_id", userId).order("completed_at", { ascending: false }).limit(200);
     if (error) {
-      res.status(500).json({ error: "db_error", message: error.message });
+      req.log.error({ err: error }, "db error");
+      res.status(500).json({ error: "db_error" });
       return;
     }
     res.json((data || []).map((item) => ({
@@ -53863,7 +53914,8 @@ router2.get("/auth/history/completed", async (req, res) => {
       chapterNum: item.chapter_num || "",
       completedAt: item.completed_at
     })));
-  } catch {
+  } catch (err) {
+    req.log.error({ err }, "handler failed");
     res.status(500).json({ error: "server_error" });
   }
 });
@@ -53890,11 +53942,13 @@ router2.post("/auth/history/completed/upsert", async (req, res) => {
       completed_at: item.completedAt || (/* @__PURE__ */ new Date()).toISOString()
     });
     if (error) {
-      res.status(500).json({ error: "db_error", message: error.message });
+      req.log.error({ err: error }, "db error");
+      res.status(500).json({ error: "db_error" });
       return;
     }
     res.json({ success: true });
-  } catch {
+  } catch (err) {
+    req.log.error({ err }, "handler failed");
     res.status(500).json({ error: "server_error" });
   }
 });
@@ -53913,7 +53967,8 @@ router2.delete("/auth/history/completed", async (req, res) => {
   }
   const { error } = await supabase.from("user_completed").delete().eq("user_id", userId).eq("provider_id", providerId).eq("manga_id", mangaId).eq("chapter_id", chapterId);
   if (error) {
-    res.status(500).json({ error: "db_error", message: error.message });
+    req.log.error({ err: error }, "db error");
+    res.status(500).json({ error: "db_error" });
     return;
   }
   res.json({ success: true });
@@ -53931,7 +53986,8 @@ router2.get("/admin/users", async (req, res) => {
       return;
     }
     res.json({ items: data, total: data.length });
-  } catch {
+  } catch (err) {
+    req.log.error({ err }, "handler failed");
     res.status(500).json({ error: "server_error" });
   }
 });
@@ -53939,8 +53995,13 @@ var gibi_default = router2;
 
 // src/routes/providers.ts
 var import_express3 = __toESM(require_express2(), 1);
+init_logger();
+
+// src/providers/ProviderManager.ts
+init_logger();
 
 // src/providers/MangaDexProvider.ts
+init_logger();
 var MangaDexProvider = class {
   id = "mangadex";
   name = "MangaDex";
@@ -54023,7 +54084,7 @@ var MangaDexProvider = class {
         return { id, title, description, coverUrl, genres, providerId: this.id, releaseDate: this.getReleaseDate(item) };
       });
     } catch (err) {
-      console.error("MangaDex search failed:", err);
+      logger.error({ err }, "MangaDex search failed:");
       return [];
     }
   }
@@ -54078,7 +54139,7 @@ var MangaDexProvider = class {
       }
       return uniqueChapters;
     } catch (err) {
-      console.error("MangaDex chapters load failed:", err);
+      logger.error({ err }, "MangaDex chapters load failed:");
       return [];
     }
   }
@@ -54122,13 +54183,14 @@ var MangaDexProvider = class {
         return { id, title, description, coverUrl, genres, providerId: this.id, releaseDate: this.getReleaseDate(item) };
       });
     } catch (err) {
-      console.error("MangaDex catalog failed:", err);
+      logger.error({ err }, "MangaDex catalog failed:");
       return [];
     }
   }
 };
 
 // src/providers/ComicExtraProvider.ts
+init_logger();
 var ComicExtraProvider = class {
   id = "comicextra";
   name = "ComicExtra";
@@ -54191,7 +54253,7 @@ var ComicExtraProvider = class {
       }
       return results;
     } catch (err) {
-      console.warn("ComicExtra scraper failed:", err);
+      logger.warn({ err }, "ComicExtra scraper failed:");
       return [];
     }
   }
@@ -54210,7 +54272,7 @@ var ComicExtraProvider = class {
         providerId: this.id
       };
     } catch (err) {
-      console.warn("ComicExtra details failed:", err);
+      logger.warn({ err }, "ComicExtra details failed:");
       return {
         id,
         title: id.replace(/-/g, " ").toUpperCase(),
@@ -54247,7 +54309,7 @@ var ComicExtraProvider = class {
       }
       return chapters.reverse();
     } catch (err) {
-      console.warn("ComicExtra chapters scraper failed:", err);
+      logger.warn({ err }, "ComicExtra chapters scraper failed:");
       return [];
     }
   }
@@ -54271,7 +54333,7 @@ var ComicExtraProvider = class {
       }
       return pages;
     } catch (err) {
-      console.warn("ComicExtra pages scraper failed:", err);
+      logger.warn({ err }, "ComicExtra pages scraper failed:");
       return [];
     }
   }
@@ -54396,6 +54458,7 @@ var MangaFireProvider = class {
 };
 
 // src/providers/MugiwarasProvider.ts
+init_logger();
 var MugiwarasProvider = class {
   id = "mugiwaras";
   name = "Mugiwaras";
@@ -54439,7 +54502,7 @@ var MugiwarasProvider = class {
       }
       return results;
     } catch (err) {
-      console.error("Mugiwaras search failed:", err);
+      logger.error({ err }, "Mugiwaras search failed:");
       return [];
     }
   }
@@ -54464,7 +54527,7 @@ var MugiwarasProvider = class {
         providerId: this.id
       };
     } catch (err) {
-      console.error("Mugiwaras getDetails failed:", err);
+      logger.error({ err }, "Mugiwaras getDetails failed:");
       const found = this.popularComics.find((c) => c.id === id);
       return {
         id,
@@ -54506,7 +54569,7 @@ var MugiwarasProvider = class {
       }
       return chapters.reverse();
     } catch (err) {
-      console.error("Mugiwaras getChapters failed:", err);
+      logger.error({ err }, "Mugiwaras getChapters failed:");
       return [];
     }
   }
@@ -54562,7 +54625,7 @@ var MugiwarasProvider = class {
       }
       return pages;
     } catch (err) {
-      console.error("Mugiwaras getPages failed:", err);
+      logger.error({ err }, "Mugiwaras getPages failed:");
       return [];
     }
   }
@@ -54595,6 +54658,7 @@ var MugiwarasProvider = class {
 };
 
 // src/providers/MadaraProvider.ts
+init_logger();
 var BROWSER_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -54919,7 +54983,7 @@ var MadaraProvider = class {
       }
       return Array.from(results.values());
     } catch (err) {
-      console.error(`MadaraProvider [${this.id}] search failed:`, err);
+      logger.error({ err }, `MadaraProvider [${this.id}] search failed:`);
       return [];
     }
   }
@@ -54951,7 +55015,7 @@ var MadaraProvider = class {
         providerId: this.id
       };
     } catch (err) {
-      console.error(`MadaraProvider [${this.id}] getDetails failed:`, err);
+      logger.error({ err }, `MadaraProvider [${this.id}] getDetails failed:`);
       return {
         id,
         title: id.replace(/^post:/, "").replace(/-/g, " ").toUpperCase(),
@@ -54986,7 +55050,7 @@ var MadaraProvider = class {
       }
       return chapters.reverse();
     } catch (err) {
-      console.error(`MadaraProvider [${this.id}] getChapters failed:`, err);
+      logger.error({ err }, `MadaraProvider [${this.id}] getChapters failed:`);
       return [];
     }
   }
@@ -55081,7 +55145,7 @@ var MadaraProvider = class {
       }
       return pages;
     } catch (err) {
-      console.error(`MadaraProvider [${this.id}] getPages failed:`, err);
+      logger.error({ err }, `MadaraProvider [${this.id}] getPages failed:`);
       return [];
     }
   }
@@ -55120,6 +55184,7 @@ var EightMusesProvider = class {
 };
 
 // src/providers/NHentaiProvider.ts
+init_logger();
 var BROWSER_HEADERS2 = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 };
@@ -55187,7 +55252,7 @@ var NHentaiProvider = class {
       const html = await this.fetchHtml(url.toString());
       return this.parseGalleryCards(html);
     } catch (err) {
-      console.error("nHentai search failed:", err);
+      logger.error({ err }, "nHentai search failed:");
       return [];
     }
   }
@@ -55210,7 +55275,7 @@ var NHentaiProvider = class {
         genres: tags
       };
     } catch (err) {
-      console.error("nHentai details failed:", err);
+      logger.error({ err }, "nHentai details failed:");
       return {
         id,
         title: `nHentai #${id}`,
@@ -55242,7 +55307,7 @@ var NHentaiProvider = class {
         pageNumber: index2 + 1
       }));
     } catch (err) {
-      console.error("nHentai pages failed:", err);
+      logger.error({ err }, "nHentai pages failed:");
       return [];
     }
   }
@@ -55252,13 +55317,14 @@ var NHentaiProvider = class {
       const html = await this.fetchHtml(new URL(path2, this.baseUrl).toString());
       return this.parseGalleryCards(html);
     } catch (err) {
-      console.error("nHentai catalog failed:", err);
+      logger.error({ err }, "nHentai catalog failed:");
       return [];
     }
   }
 };
 
 // src/providers/OrionProvider.ts
+init_logger();
 var BROWSER_HEADERS3 = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
@@ -55324,7 +55390,7 @@ var OrionProvider = class {
       const data = await this.fetchJson(url);
       return (data.series || []).map((series) => this.toSearchResult(series));
     } catch (err) {
-      console.warn(`Orion provider [${this.id}] search failed:`, err);
+      logger.warn({ err }, `Orion provider [${this.id}] search failed:`);
       return [];
     }
   }
@@ -55386,7 +55452,7 @@ var OrionProvider = class {
       }
       return Array.from(chapters.values()).sort((a, b) => Number(a.chapterNum) - Number(b.chapterNum));
     } catch (err) {
-      console.warn(`Orion provider [${this.id}] chapters failed:`, err);
+      logger.warn({ err }, `Orion provider [${this.id}] chapters failed:`);
       return [];
     }
   }
@@ -55405,7 +55471,7 @@ var OrionProvider = class {
       }
       return urls.map((url, index2) => ({ url, pageNumber: index2 + 1 }));
     } catch (err) {
-      console.warn(`Orion provider [${this.id}] pages failed:`, err);
+      logger.warn({ err }, `Orion provider [${this.id}] pages failed:`);
       return [];
     }
   }
@@ -55430,13 +55496,14 @@ var OrionProvider = class {
       }
       return all;
     } catch (err) {
-      console.warn(`Orion provider [${this.id}] catalog failed:`, err);
+      logger.warn({ err }, `Orion provider [${this.id}] catalog failed:`);
       return [];
     }
   }
 };
 
 // src/providers/WordPressComicProvider.ts
+init_logger();
 var BROWSER_HEADERS4 = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   "Accept": "application/json,text/html;q=0.9,*/*;q=0.8",
@@ -55655,7 +55722,7 @@ var WordPressComicProvider = class {
         return true;
       });
     } catch (err) {
-      console.warn(`WordPress provider [${this.id}] search failed:`, err);
+      logger.warn({ err }, `WordPress provider [${this.id}] search failed:`);
       return [];
     }
   }
@@ -55738,7 +55805,7 @@ var WordPressComicProvider = class {
       }
       return this.extractImages(html).map((url, index2) => ({ url, pageNumber: index2 + 1 }));
     } catch (err) {
-      console.warn(`WordPress provider [${this.id}] pages failed:`, err);
+      logger.warn({ err }, `WordPress provider [${this.id}] pages failed:`);
       return [];
     }
   }
@@ -55758,6 +55825,7 @@ var WordPressComicProvider = class {
 };
 
 // src/providers/SlimeReadProvider.ts
+init_logger();
 var BROWSER_HEADERS5 = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -55891,7 +55959,7 @@ var SlimeReadProvider = class {
       }
       return results.filter((result) => nsfw || !(result.genres || []).some((genre) => this.isAdultText(genre))).slice(0, 40);
     } catch (err) {
-      console.error(`SlimeReadProvider [${this.id}] search failed:`, err);
+      logger.error({ err }, `SlimeReadProvider [${this.id}] search failed:`);
       return [];
     }
   }
@@ -55932,7 +56000,7 @@ var SlimeReadProvider = class {
       }
       return chapters.sort((a, b) => Number(a.chapterNum) - Number(b.chapterNum));
     } catch (err) {
-      console.error(`SlimeReadProvider [${this.id}] chapters failed:`, err);
+      logger.error({ err }, `SlimeReadProvider [${this.id}] chapters failed:`);
       return [];
     }
   }
@@ -55949,7 +56017,7 @@ var SlimeReadProvider = class {
       }
       return Array.from(urls).map((url, index2) => ({ url, pageNumber: index2 + 1 }));
     } catch (err) {
-      console.error(`SlimeReadProvider [${this.id}] pages failed:`, err);
+      logger.error({ err }, `SlimeReadProvider [${this.id}] pages failed:`);
       return [];
     }
   }
@@ -55962,6 +56030,7 @@ var SlimeReadProvider = class {
 };
 
 // src/providers/CuratedComicsProvider.ts
+init_logger();
 var EMBED_PREFIX = "embed:";
 var STATIC_ITEMS = [
   {
@@ -56089,7 +56158,7 @@ var CuratedComicsProvider = class {
         };
       });
     } catch (err) {
-      console.warn(`Curated provider [${this.id}] Google Sites fetch failed:`, err);
+      logger.warn({ err }, `Curated provider [${this.id}] Google Sites fetch failed:`);
       return [];
     }
   }
@@ -56158,7 +56227,7 @@ var CuratedComicsProvider = class {
       }
       return items;
     } catch (err) {
-      console.warn(`Curated provider [${this.id}] Drive folder fetch failed:`, err);
+      logger.warn({ err }, `Curated provider [${this.id}] Drive folder fetch failed:`);
       return items;
     }
   }
@@ -56317,7 +56386,7 @@ var ProviderManager = class {
         }
       }
     } catch (err) {
-      console.error("Failed to load custom providers:", err);
+      logger.error({ err }, "Failed to load custom providers:");
     }
   }
   static {
@@ -56353,7 +56422,7 @@ var ProviderManager = class {
           }
         }
       } catch (err) {
-        console.error("Failed to persist toggle state for custom provider:", err);
+        logger.error({ err }, "Failed to persist toggle state for custom provider:");
       }
     }
   }
@@ -56374,7 +56443,7 @@ var ProviderManager = class {
       list.push({ id, name, language, baseUrl, active: true });
       fs.writeFileSync(filePath, JSON.stringify(list, null, 2), "utf-8");
     } catch (err) {
-      console.error("Failed to save custom provider:", err);
+      logger.error({ err }, "Failed to save custom provider:");
     }
     return provider;
   }
@@ -56390,7 +56459,7 @@ var ProviderManager = class {
         fs.writeFileSync(filePath, JSON.stringify(list, null, 2), "utf-8");
       }
     } catch (err) {
-      console.error("Failed to delete custom provider:", err);
+      logger.error({ err }, "Failed to delete custom provider:");
     }
   }
   static listProviders() {
@@ -56576,7 +56645,7 @@ var ProviderManager = class {
     const searchPromises = activeProviders.map(
       (p) => this.withTimeout(
         p.search(query, nsfw).catch((err) => {
-          console.error(`Error searching provider ${p.name}:`, err);
+          logger.error({ err }, `Error searching provider ${p.name}:`);
           return [];
         }),
         7e3,
@@ -56671,7 +56740,7 @@ var ProviderManager = class {
     const catalogPromises = activeProviders.map(
       (p) => this.withTimeout(
         p.getCatalog(listType, nsfw).catch((err) => {
-          console.error(`Error loading catalog from ${p.name}:`, err);
+          logger.error({ err }, `Error loading catalog from ${p.name}:`);
           return [];
         }),
         8e3,
@@ -56768,7 +56837,7 @@ async function injectRatings(results) {
         });
       }
     } catch (err) {
-      console.error("Failed to fetch bulk statistics from MangaDex:", err);
+      logger.error({ err }, "Failed to fetch bulk statistics from MangaDex:");
     }
   }
   results.forEach((item) => {
@@ -57291,6 +57360,7 @@ var providers_default = router3;
 
 // src/routes/imageProxy.ts
 var import_express4 = __toESM(require_express2(), 1);
+init_logger();
 import https from "https";
 import http from "http";
 var router4 = (0, import_express4.Router)();
@@ -57353,7 +57423,7 @@ router4.get("/image-proxy", async (req, res) => {
     });
     res.send(result.buffer);
   } catch (err) {
-    console.error("Image proxy error:", err);
+    logger.error({ err }, "Image proxy error:");
     res.status(502).json({ error: "proxy_failed", message: "Falha ao buscar imagem do servidor externo." });
   }
 });
@@ -57361,6 +57431,7 @@ var imageProxy_default = router4;
 
 // src/routes/pdfProxy.ts
 var import_express5 = __toESM(require_express2(), 1);
+init_logger();
 import https2 from "https";
 import http2 from "http";
 var router5 = (0, import_express5.Router)();
@@ -57425,7 +57496,7 @@ router5.get("/pdf-proxy", async (req, res) => {
     });
     res.send(result.buffer);
   } catch (err) {
-    console.error("PDF proxy error:", err);
+    logger.error({ err }, "PDF proxy error:");
     res.status(502).json({ error: "proxy_failed", message: "Falha ao buscar o PDF." });
   }
 });
@@ -57455,7 +57526,8 @@ router6.post("/translate", async (req, res) => {
     }
     cache.set(text, translated);
     res.json({ text: translated });
-  } catch {
+  } catch (err) {
+    req.log.error({ err, action: "translate" }, "translation failed");
     res.status(500).json({ text, error: "translate_failed" });
   }
 });
@@ -57496,7 +57568,16 @@ app.use(
 app.use((0, import_cors.default)());
 app.use(import_express8.default.json({ limit: "20mb" }));
 app.use(import_express8.default.urlencoded({ extended: true, limit: "20mb" }));
+app.use((req, res, next) => {
+  if (req.id !== void 0) res.setHeader("X-Request-Id", String(req.id));
+  next();
+});
 app.use("/api", routes_default);
+app.use((err, req, res, _next) => {
+  req.log.error({ err }, "unhandled error");
+  if (res.headersSent) return;
+  res.status(500).json({ error: "internal_error", requestId: req.id });
+});
 var app_default = app;
 export {
   app_default as default

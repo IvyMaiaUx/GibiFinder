@@ -1,4 +1,5 @@
 import { Provider, SearchResult, MangaDetails, Chapter, Page } from "./types";
+import { logger } from "../lib/logger";
 
 export class MangaDexProvider implements Provider {
   id = "mangadex";
@@ -98,7 +99,7 @@ export class MangaDexProvider implements Provider {
         return { id, title, description, coverUrl, genres, providerId: this.id, releaseDate: this.getReleaseDate(item) };
       });
     } catch (err) {
-      console.error("MangaDex search failed:", err);
+      logger.error({ err: err }, "MangaDex search failed:");
       return [];
     }
   }
@@ -170,7 +171,7 @@ export class MangaDexProvider implements Provider {
 
       return uniqueChapters;
     } catch (err) {
-      console.error("MangaDex chapters load failed:", err);
+      logger.error({ err: err }, "MangaDex chapters load failed:");
       return [];
     }
   }
@@ -227,7 +228,7 @@ export class MangaDexProvider implements Provider {
         return { id, title, description, coverUrl, genres, providerId: this.id, releaseDate: this.getReleaseDate(item) };
       });
     } catch (err) {
-      console.error("MangaDex catalog failed:", err);
+      logger.error({ err: err }, "MangaDex catalog failed:");
       return [];
     }
   }
