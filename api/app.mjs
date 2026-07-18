@@ -55781,11 +55781,15 @@ var WordPressComicProvider = class {
     const content = post2.content?.rendered || "";
     const direct = this.extractReadLinks(content)[0];
     if (direct) {
-      const slug = new URL(direct.url).pathname.replace(/^\/+|\/+$/g, "");
-      const pages = await this.fetchJson(this.api(`pages?slug=${encodeURIComponent(slug)}&per_page=1`));
-      if (pages[0] && this.readPageMatchesPost(pages[0], post2)) {
-        return { id: `page:${pages[0].id}`, title: direct.title, url: pages[0].link };
+      try {
+        const slug = new URL(direct.url).pathname.replace(/^\/+|\/+$/g, "");
+        const pages = await this.fetchJson(this.api(`pages?slug=${encodeURIComponent(slug)}&per_page=1`));
+        if (pages[0] && this.readPageMatchesPost(pages[0], post2)) {
+          return { id: `page:${pages[0].id}`, title: direct.title, url: pages[0].link };
+        }
+      } catch {
       }
+      return { id: `url:${direct.url}`, title: direct.title, url: direct.url };
     }
     const title = this.stripHtml(post2.title?.rendered || "");
     const number = title.match(/#\s*([0-9]+)/)?.[1];
