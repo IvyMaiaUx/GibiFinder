@@ -81,6 +81,11 @@ export function drivePreviewUrl(rawUrl: string): string | null {
   return null;
 }
 
+export const ADULT_PROVIDER_IDS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai"];
+
+/** Whether a provider id belongs to the +18 catalog. */
+export const isAdultProviderId = (id?: string | null): boolean => !!id && ADULT_PROVIDER_IDS.includes(id);
+
 export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const MAX_PX = 1280;

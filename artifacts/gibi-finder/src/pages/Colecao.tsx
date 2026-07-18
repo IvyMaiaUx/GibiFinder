@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { BookOpen, Trash2, Compass, Clock, BookOpenCheck, Star, CheckCircle2 } from "lucide-react";
 import { useLocation } from "wouter";
-import { cn } from "@/lib/utils";
+import { cn, isAdultProviderId } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { useAuth } from "@/hooks/use-auth";
 import { getLocalCompleted, saveLocalCompleted, type CompletedReadingItem } from "@/lib/user-history";
@@ -34,6 +34,13 @@ export default function Colecao() {
   const [shelfItems, setShelfItems] = useState<ReadingProgress[]>([]);
   const [favoriteItems, setFavoriteItems] = useState<FavoriteItem[]>([]);
   const [completedItems, setCompletedItems] = useState<CompletedReadingItem[]>([]);
+  const [isNsfw, setIsNsfw] = useState(() => document.documentElement.classList.contains("nsfw"));
+
+  useEffect(() => {
+    const onNsfw = () => setIsNsfw(document.documentElement.classList.contains("nsfw"));
+    window.addEventListener("nsfw-change", onNsfw);
+    return () => window.removeEventListener("nsfw-change", onNsfw);
+  }, []);
 
   // Load reading progress list from "gibi-finder:progress"
   const loadShelf = () => {
@@ -174,6 +181,11 @@ export default function Colecao() {
     });
   };
 
+  // +18 items stay hidden unless the +18 mode is active (and vice-versa).
+  const visibleShelf = shelfItems.filter(i => isAdultProviderId(i.providerId) === isNsfw);
+  const visibleCompleted = completedItems.filter(i => isAdultProviderId(i.providerId) === isNsfw);
+  const visibleFavorites = favoriteItems.filter(i => isAdultProviderId(i.providerId) === isNsfw);
+
   return (
     <Layout>
       <div className="max-w-6xl mx-auto space-y-8 pb-16 select-none">
@@ -202,7 +214,7 @@ export default function Colecao() {
             )}
           >
             <BookOpen className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={3} />
-            LENDO ({shelfItems.length})
+            LENDO ({visibleShelf.length})
           </button>
           <button
             onClick={() => setActiveTab("completed")}
@@ -214,7 +226,7 @@ export default function Colecao() {
             )}
           >
             <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={3} />
-            JÁ LIDOS ({completedItems.length})
+            JÁ LIDOS ({visibleCompleted.length})
           </button>
           <button
             onClick={() => setActiveTab("favorites")}
@@ -226,13 +238,13 @@ export default function Colecao() {
             )}
           >
             <Star className="w-5 h-5 sm:w-6 sm:h-6 fill-current" strokeWidth={3} />
-            FAVORITOS ({favoriteItems.length})
+            FAVORITOS ({visibleFavorites.length})
           </button>
         </div>
 
         {activeTab === "progress" ? (
           /* Reading progress tab content */
-          shelfItems.length === 0 ? (
+          visibleShelf.length === 0 ? (
             <div className="py-20 text-center border-4 border-dashed border-black bg-white rounded-xl max-w-lg mx-auto p-8 comic-shadow">
               <BookOpen className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <h3 className="font-display text-2xl mb-2 uppercase">Nenhuma Leitura Iniciada</h3>
@@ -250,7 +262,7 @@ export default function Colecao() {
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
-              {shelfItems.map((item) => {
+              {visibleShelf.map((item) => {
                 const imgKey = `${item.providerId}-${item.gibiId}`;
                 return (
                   <div
@@ -309,7 +321,7 @@ export default function Colecao() {
             </div>
           )
         ) : activeTab === "completed" ? (
-          completedItems.length === 0 ? (
+          visibleCompleted.length === 0 ? (
             <div className="py-20 text-center border-4 border-dashed border-black bg-white rounded-xl max-w-lg mx-auto p-8 comic-shadow">
               <CheckCircle2 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <h3 className="font-display text-2xl mb-2 uppercase">Nenhum Capítulo Concluído</h3>
@@ -322,7 +334,7 @@ export default function Colecao() {
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
-              {completedItems.map((item) => {
+              {visibleCompleted.map((item) => {
                 const imgKey = `done-${item.providerId}-${item.mangaId}-${item.chapterId}`;
                 return (
                   <div
@@ -377,7 +389,7 @@ export default function Colecao() {
           )
         ) : (
           /* Favorites list tab content */
-          favoriteItems.length === 0 ? (
+          visibleFavorites.length === 0 ? (
             <div className="py-20 text-center border-4 border-dashed border-black bg-white rounded-xl max-w-lg mx-auto p-8 comic-shadow">
               <Star className="w-16 h-16 text-gray-300 mx-auto mb-4 animate-pulse" />
               <h3 className="font-display text-2xl mb-2 uppercase">Nenhum Favorito</h3>
@@ -392,7 +404,7 @@ export default function Colecao() {
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
-              {favoriteItems.map((item) => {
+              {visibleFavorites.map((item) => {
                 const imgKey = `fav-${item.providerId}-${item.mangaId}`;
                 return (
                   <div

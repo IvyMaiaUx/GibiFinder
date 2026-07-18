@@ -234,7 +234,9 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   const readChapter = async (chapter: Chapter, resumePage?: number) => {
     setSelectedChapter(chapter);
     setLoadingPages(true);
-    setPages([]);
+    // Note: keep the previous pages mounted while the next chapter loads — clearing
+    // them here unmounts the reader modal (pages.length === 0), which drops native
+    // fullscreen when switching chapters.
     setError(null);
 
     try {

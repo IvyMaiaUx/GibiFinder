@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Link, useLocation } from "wouter";
 import { Search, ChevronRight, FileX, Trash2, RotateCcw, BookOpen, Clock } from "lucide-react";
-import { formatComicDate, cn } from "@/lib/utils";
+import { formatComicDate, cn, isAdultProviderId } from "@/lib/utils";
 import type { LocalHistoryItem } from "@/hooks/use-local-history";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -36,6 +36,13 @@ export default function History() {
 
   const [filter, setFilter] = useState("");
   const [filterInput, setFilterInput] = useState("");
+  const [isNsfw, setIsNsfw] = useState(() => document.documentElement.classList.contains("nsfw"));
+
+  useEffect(() => {
+    const onNsfw = () => setIsNsfw(document.documentElement.classList.contains("nsfw"));
+    window.addEventListener("nsfw-change", onNsfw);
+    return () => window.removeEventListener("nsfw-change", onNsfw);
+  }, []);
 
   // Load local history, or synced account history when logged in.
   const loadHistories = async () => {
@@ -116,13 +123,15 @@ export default function History() {
       )
     : searchItems;
 
+  // +18 items stay hidden unless the +18 mode is on (and vice-versa).
+  const visibleReading = readingItems.filter(i => isAdultProviderId(i.providerId) === isNsfw);
   const filteredReading = filter
-    ? readingItems.filter(
+    ? visibleReading.filter(
         (i) =>
           i.title.toLowerCase().includes(filter.toLowerCase()) ||
           (i.chapterTitle && i.chapterTitle.toLowerCase().includes(filter.toLowerCase()))
       )
-    : readingItems;
+    : visibleReading;
 
   return (
     <Layout>
@@ -135,7 +144,7 @@ export default function History() {
               ARQUIVOS DO DETETIVE
             </h1>
             <p className="font-sans font-bold text-gray-500 mt-2 text-sm uppercase">
-              {user ? "Histórico sincronizado na sua conta" : "Histórico salvo neste navegador"} • {activeTab === "search" ? `${searchItems.length} buscas` : `${readingItems.length} capítulos lidos`}
+              {user ? "Histórico sincronizado na sua conta" : "Histórico salvo neste navegador"} • {activeTab === "search" ? `${searchItems.length} buscas` : `${visibleReading.length} capítulos lidos`}
             </p>
           </div>
 
