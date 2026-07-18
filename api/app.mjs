@@ -55752,20 +55752,25 @@ var SlimeReadProvider = class {
     return terms.every((term) => normalizedTitle.includes(term));
   }
   async search(query, nsfw) {
-    try {
-      const pages = await Promise.all([
-        this.fetchHtml("/").catch(() => ""),
-        this.fetchHtml("/populares").catch(() => ""),
-        this.fetchHtml("/atualizacoes").catch(() => "")
-      ]);
-      const allResults = pages.flatMap(
-        (html) => html ? [...this.extractSpotlight(html), ...this.extractMangaLinks(html)] : []
-      );
+    const dedupe = (results) => {
       const unique2 = /* @__PURE__ */ new Map();
-      for (const result of allResults) {
-        if (!unique2.has(result.id)) unique2.set(result.id, result);
+      for (const result of results) if (!unique2.has(result.id)) unique2.set(result.id, result);
+      return Array.from(unique2.values());
+    };
+    try {
+      const html = await this.fetchHtml(`/buscar/resultados?q=${encodeURIComponent(query)}`);
+      let results = dedupe([...this.extractSpotlight(html), ...this.extractMangaLinks(html)]);
+      if (results.length === 0) {
+        const pages = await Promise.all([
+          this.fetchHtml("/").catch(() => ""),
+          this.fetchHtml("/populares").catch(() => ""),
+          this.fetchHtml("/atualizacoes").catch(() => "")
+        ]);
+        results = dedupe(pages.flatMap(
+          (page) => page ? [...this.extractSpotlight(page), ...this.extractMangaLinks(page)] : []
+        )).filter((result) => this.titleMatchesQuery(result.title, query));
       }
-      return Array.from(unique2.values()).filter((result) => this.titleMatchesQuery(result.title, query)).filter((result) => nsfw || !(result.genres || []).some((genre) => this.isAdultText(genre))).slice(0, 40);
+      return results.filter((result) => nsfw || !(result.genres || []).some((genre) => this.isAdultText(genre))).slice(0, 40);
     } catch (err) {
       console.error(`SlimeReadProvider [${this.id}] search failed:`, err);
       return [];

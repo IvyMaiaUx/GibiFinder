@@ -156,23 +156,30 @@ export class SlimeReadProvider implements Provider {
   }
 
   async search(query: string, nsfw?: boolean): Promise<SearchResult[]> {
-    try {
-      // The site has no open search endpoint, so widen the pool by scanning the
-      // home, popular and updates pages before matching the query.
-      const pages = await Promise.all([
-        this.fetchHtml("/").catch(() => ""),
-        this.fetchHtml("/populares").catch(() => ""),
-        this.fetchHtml("/atualizacoes").catch(() => ""),
-      ]);
-      const allResults = pages.flatMap(html =>
-        html ? [...this.extractSpotlight(html), ...this.extractMangaLinks(html)] : []
-      );
+    const dedupe = (results: SearchResult[]) => {
       const unique = new Map<string, SearchResult>();
-      for (const result of allResults) {
-        if (!unique.has(result.id)) unique.set(result.id, result);
+      for (const result of results) if (!unique.has(result.id)) unique.set(result.id, result);
+      return Array.from(unique.values());
+    };
+    try {
+      // Real server-side search page: /buscar/resultados?q=<term>
+      const html = await this.fetchHtml(`/buscar/resultados?q=${encodeURIComponent(query)}`);
+      let results = dedupe([...this.extractSpotlight(html), ...this.extractMangaLinks(html)]);
+
+      // Fallback: if the results page yielded nothing, scan the browse pages
+      // and match the query against their titles.
+      if (results.length === 0) {
+        const pages = await Promise.all([
+          this.fetchHtml("/").catch(() => ""),
+          this.fetchHtml("/populares").catch(() => ""),
+          this.fetchHtml("/atualizacoes").catch(() => ""),
+        ]);
+        results = dedupe(pages.flatMap(page =>
+          page ? [...this.extractSpotlight(page), ...this.extractMangaLinks(page)] : []
+        )).filter(result => this.titleMatchesQuery(result.title, query));
       }
-      return Array.from(unique.values())
-        .filter(result => this.titleMatchesQuery(result.title, query))
+
+      return results
         .filter(result => nsfw || !(result.genres || []).some(genre => this.isAdultText(genre)))
         .slice(0, 40);
     } catch (err) {
