@@ -376,6 +376,7 @@ export class WordPressComicProvider implements Provider {
     try {
       let html = "";
       let postContent = "";
+      let postLink = "";
       if (chapterId.startsWith("url:")) {
         html = await this.fetchHtml(chapterId.replace(/^url:/, ""));
       } else if (chapterId.startsWith("page:")) {
@@ -384,6 +385,7 @@ export class WordPressComicProvider implements Provider {
       } else {
         const post = await this.getPost(chapterId);
         postContent = post?.content?.rendered || "";
+        postLink = post?.link || "";
         const readPage = post ? await this.findReadPage(post).catch(() => null) : null;
         if (readPage?.id.startsWith("page:")) {
           const page = await this.getPageById(readPage.id.replace(/^page:/, ""));
@@ -400,8 +402,11 @@ export class WordPressComicProvider implements Provider {
         return images.map((url, index) => ({ url, pageNumber: index + 1 }));
       }
 
-      // No online reader — look for a download (in the reader page and the post).
-      const searchIn = `${html}\n${postContent}`;
+      // No online reader — the download link is often theme-rendered on the live
+      // post page (not in the REST content), so fetch that too.
+      let liveHtml = "";
+      if (postLink) liveHtml = await this.fetchHtml(postLink).catch(() => "");
+      const searchIn = `${html}\n${postContent}\n${liveHtml}`;
       // PDF / Drive file → readable via the pdf.js reader.
       const pdfMatch =
         searchIn.match(/href=["']([^"']+\.pdf(?:\?[^"']*)?)["']/i) ||

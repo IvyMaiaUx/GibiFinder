@@ -55953,6 +55953,7 @@ var WordPressComicProvider = class {
     try {
       let html = "";
       let postContent = "";
+      let postLink = "";
       if (chapterId.startsWith("url:")) {
         html = await this.fetchHtml(chapterId.replace(/^url:/, ""));
       } else if (chapterId.startsWith("page:")) {
@@ -55961,6 +55962,7 @@ var WordPressComicProvider = class {
       } else {
         const post2 = await this.getPost(chapterId);
         postContent = post2?.content?.rendered || "";
+        postLink = post2?.link || "";
         const readPage = post2 ? await this.findReadPage(post2).catch(() => null) : null;
         if (readPage?.id.startsWith("page:")) {
           const page = await this.getPageById(readPage.id.replace(/^page:/, ""));
@@ -55975,8 +55977,11 @@ var WordPressComicProvider = class {
       if (images.length > 0) {
         return images.map((url, index2) => ({ url, pageNumber: index2 + 1 }));
       }
+      let liveHtml = "";
+      if (postLink) liveHtml = await this.fetchHtml(postLink).catch(() => "");
       const searchIn = `${html}
-${postContent}`;
+${postContent}
+${liveHtml}`;
       const pdfMatch = searchIn.match(/href=["']([^"']+\.pdf(?:\?[^"']*)?)["']/i) || searchIn.match(/href=["'](https:\/\/drive\.google\.com\/file\/d\/[^"']+)["']/i) || searchIn.match(/href=["'](https:\/\/drive\.google\.com\/[^"']*[?&]id=[^"']+)["']/i);
       if (pdfMatch?.[1]) {
         return [{ url: `pdf:${this.decodeHtml(pdfMatch[1])}`, pageNumber: 1 }];
