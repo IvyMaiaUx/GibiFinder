@@ -56076,7 +56076,7 @@ var CuratedComicsProvider = class {
     const dynamicItems = await this.getDynamicCatalog();
     const allItems = [...STATIC_ITEMS, ...dynamicItems];
     const sorted = listType === "latest" ? [...allItems].reverse() : allItems;
-    return sorted.slice(0, 40).map((item) => this.toSearchResult(item));
+    return sorted.slice(0, 400).map((item) => this.toSearchResult(item));
   }
 };
 

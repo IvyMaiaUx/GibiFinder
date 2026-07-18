@@ -36,7 +36,7 @@ const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read
 const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
 
 // Preferred genre rows, in display order (only shown if there are enough items).
-const FEATURED_GENRES = ["Ação", "Aventura", "Comédia", "Romance", "Terror", "Nacional", "Super-Herói", "Shounen", "Seinen", "Fantasia", "Infantil"];
+const FEATURED_GENRES = ["Nacional", "Infantil", "Biblioteca", "Ação", "Aventura", "Comédia", "Romance", "Terror", "Super-Herói", "Shounen", "Seinen", "Fantasia"];
 const MIN_ROW_ITEMS = 4;
 
 const isAdultItem = (item: UnifiedCatalogItem) => {
@@ -218,9 +218,16 @@ export default function Explore() {
   const uniqueItems = Array.from(byId.values());
 
   const genreRows: RowData[] = [];
+  const usedInGenreRows = new Set<string>();
   for (const genre of FEATURED_GENRES) {
-    const items = uniqueItems.filter(i => i.genres?.some(g => norm(g) === norm(genre)));
-    if (items.length >= MIN_ROW_ITEMS) genreRows.push({ key: `g-${genre}`, title: genre, items: items.slice(0, 20) });
+    // Each title lands in at most one genre row, so the same manga doesn't repeat
+    // across several categories.
+    const items = uniqueItems.filter(i => !usedInGenreRows.has(i.id) && i.genres?.some(g => norm(g) === norm(genre)));
+    if (items.length >= MIN_ROW_ITEMS) {
+      const rowItems = items.slice(0, 20);
+      rowItems.forEach(i => usedInGenreRows.add(i.id));
+      genreRows.push({ key: `g-${genre}`, title: genre, items: rowItems });
+    }
   }
 
   void favVersion; // re-render favorites on toggle

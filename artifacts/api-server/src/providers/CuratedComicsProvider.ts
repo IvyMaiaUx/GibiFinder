@@ -341,6 +341,8 @@ export class CuratedComicsProvider implements Provider {
     const sorted = listType === "latest"
       ? [...allItems].reverse()
       : allItems;
-    return sorted.slice(0, 40).map(item => this.toSearchResult(item));
+    // Surface a large slice of the library so the Explore catalog can build rich
+    // rows from it (the full set is still browsable via search).
+    return sorted.slice(0, 400).map(item => this.toSearchResult(item));
   }
 }

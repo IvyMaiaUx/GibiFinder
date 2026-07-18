@@ -1360,18 +1360,27 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
             )}
           </div>
 
-          {/* Floating Fullscreen Button in the bottom right */}
-          <button
-            onClick={toggleFullscreen}
-            className="fixed bottom-6 right-6 z-[110] bg-black/80 hover:bg-black text-white p-3 border-2 border-white/20 rounded-full transition-all hover:scale-105"
-            title="Alternar Tela Cheia"
-          >
-            {isFullscreen ? (
-              <Minimize className="w-5 h-5" strokeWidth={3} />
-            ) : (
-              <Maximize className="w-5 h-5" strokeWidth={3} />
-            )}
-          </button>
+          {/* Floating controls (bottom right) — always visible, incl. fullscreen */}
+          <div className="fixed bottom-6 right-6 z-[110] flex items-center gap-2">
+            <button
+              onClick={toggleFullscreen}
+              className="bg-black/80 hover:bg-black text-white p-3 border-2 border-white/20 rounded-full transition-all hover:scale-105"
+              title="Alternar Tela Cheia"
+            >
+              {isFullscreen ? <Minimize className="w-5 h-5" strokeWidth={3} /> : <Maximize className="w-5 h-5" strokeWidth={3} />}
+            </button>
+            <button
+              onClick={() => {
+                try { if (document.fullscreenElement) document.exitFullscreen?.(); } catch { /* noop */ }
+                setIsFullscreen(false);
+                setShowReader(false);
+              }}
+              className="bg-primary hover:bg-red-600 text-white p-3 border-2 border-white rounded-full transition-all hover:scale-105"
+              title="Fechar Leitor"
+            >
+              <X className="w-5 h-5" strokeWidth={3} />
+            </button>
+          </div>
 
           {/* Synopsis Popup Modal */}
           {showInfo && (

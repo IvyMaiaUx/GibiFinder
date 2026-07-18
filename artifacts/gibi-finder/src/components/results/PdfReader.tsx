@@ -92,6 +92,12 @@ export function PdfReader({
     }
   };
 
+  const handleClose = () => {
+    try { if (document.fullscreenElement) document.exitFullscreen?.(); } catch { /* noop */ }
+    setIsFullscreen(false);
+    onClose();
+  };
+
   // Persist reading progress (page within the PDF).
   const persist = useCallback(
     (page: number, total: number) => {
@@ -246,7 +252,7 @@ export function PdfReader({
                 </button>
               </div>
             )}
-            <button onClick={onClose} className="bg-primary hover:bg-red-600 text-white p-1.5 sm:p-2 border-2 border-white rounded" title="Fechar">
+            <button onClick={handleClose} className="bg-primary hover:bg-red-600 text-white p-1.5 sm:p-2 border-2 border-white rounded" title="Fechar">
               <X className="w-4 h-4 sm:w-5 sm:h-5" strokeWidth={3} />
             </button>
           </div>
@@ -319,14 +325,23 @@ export function PdfReader({
         )}
       </div>
 
-      {/* Fullscreen toggle */}
-      <button
-        onClick={toggleFullscreen}
-        className="fixed bottom-6 right-6 z-[110] bg-black/80 hover:bg-black text-white p-3 border-2 border-white/20 rounded-full"
-        title="Tela cheia"
-      >
-        {isFullscreen ? <Minimize className="w-5 h-5" strokeWidth={3} /> : <Maximize className="w-5 h-5" strokeWidth={3} />}
-      </button>
+      {/* Floating controls — always visible, incl. in fullscreen */}
+      <div className="fixed bottom-6 right-6 z-[110] flex items-center gap-2">
+        <button
+          onClick={toggleFullscreen}
+          className="bg-black/80 hover:bg-black text-white p-3 border-2 border-white/20 rounded-full"
+          title="Tela cheia"
+        >
+          {isFullscreen ? <Minimize className="w-5 h-5" strokeWidth={3} /> : <Maximize className="w-5 h-5" strokeWidth={3} />}
+        </button>
+        <button
+          onClick={handleClose}
+          className="bg-primary hover:bg-red-600 text-white p-3 border-2 border-white rounded-full"
+          title="Fechar Leitor"
+        >
+          <X className="w-5 h-5" strokeWidth={3} />
+        </button>
+      </div>
     </div>
   );
 }
