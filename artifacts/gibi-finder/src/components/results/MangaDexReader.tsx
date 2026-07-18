@@ -288,8 +288,14 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     return null;
   };
 
+  // Only pages explicitly marked "external:" open the "abrir fonte" screen.
+  // Raw image URLs from providers (https://.../page.jpg) must render as images,
+  // NOT be mistaken for external links.
   const isExternalLink = (pageUrl?: string) =>
-    !!pageUrl && pageUrl.startsWith("http") && !getEmbedUrl(pageUrl);
+    !!pageUrl && pageUrl.startsWith("external:");
+
+  const externalHref = (pageUrl?: string) =>
+    pageUrl?.startsWith("external:") ? pageUrl.slice("external:".length) : pageUrl;
 
   const autoResumeReader = async (source: { providerId: string; id: string; title: string }, prog: any) => {
     setSelectedSource(source);
@@ -1211,7 +1217,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                   Este título abre um catálogo em outro site. Clique abaixo para continuar.
                 </p>
                 <a
-                  href={pages[currentPage]?.url}
+                  href={externalHref(pages[currentPage]?.url)}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-2 bg-primary text-white font-display px-6 py-3 border-2 border-black hover:bg-yellow-400 hover:text-black transition-colors"

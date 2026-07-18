@@ -324,7 +324,7 @@ export class CuratedComicsProvider implements Provider {
       const chapter = item.chapters.find(ch => ch.id === chapterId);
       if (!chapter) continue;
       if (chapter.readerKind === "external") {
-        return [{ url: chapter.readerUrl, pageNumber: 1 }];
+        return [{ url: `external:${chapter.readerUrl}`, pageNumber: 1 }];
       }
       if (chapter.readerKind === "pdf") {
         // Rendered client-side with pdf.js (page-by-page, resumable).
