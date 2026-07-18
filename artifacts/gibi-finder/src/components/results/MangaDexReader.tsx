@@ -14,7 +14,9 @@ import {
   Play,
   Maximize,
   Minimize,
-  Info
+  Info,
+  ZoomIn,
+  ZoomOut
 } from "lucide-react";
 import { cn, proxyPdfUrl } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
@@ -87,6 +89,13 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // heights are correct before we scroll.
   const [resumeTargetPage, setResumeTargetPage] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // In-reader zoom (pinch + double-tap). Native pinch-zoom is unreliable inside a
+  // fixed fullscreen overlay and is disabled outright in installed PWAs, so we
+  // drive it ourselves via a CSS `zoom` on the page content. State lives here;
+  // the gesture effects are declared below, after the reader state they read.
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -163,6 +172,57 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   const [showReader, setShowReader] = useState(false);
   const [readerMode, setReaderMode] = useState<"page" | "scroll">("scroll");
   const [error, setError] = useState<string | null>(null);
+
+  // Reset zoom whenever the chapter or layout mode changes.
+  useEffect(() => { setZoom(1); }, [selectedChapter?.id, readerMode]);
+
+  // Pinch-to-zoom + double-tap-to-zoom on the reading area. Attached natively so
+  // we can preventDefault the pinch (a passive React handler cannot). Reads the
+  // live zoom from a ref so the listeners never re-attach mid-gesture.
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    let pinchStartDist = 0;
+    let pinchStartZoom = 1;
+    let lastTap = 0;
+    const dist = (t: TouchList) =>
+      Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const clamp = (v: number) => Math.min(4, Math.max(1, v));
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        pinchStartDist = dist(e.touches);
+        pinchStartZoom = zoomRef.current;
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && pinchStartDist > 0) {
+        e.preventDefault();
+        setZoom(clamp(pinchStartZoom * (dist(e.touches) / pinchStartDist)));
+      }
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) pinchStartDist = 0;
+      // Double-tap toggles between fit (1x) and 2.5x.
+      if (e.changedTouches.length === 1 && e.touches.length === 0) {
+        const now = Date.now();
+        if (now - lastTap < 300) {
+          setZoom(zoomRef.current > 1 ? 1 : 2.5);
+          lastTap = 0;
+        } else {
+          lastTap = now;
+        }
+      }
+    };
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd, { passive: false });
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [showReader, readerMode]);
   const [lastReadProgress, setLastReadProgress] = useState<any>(null);
   const [showInfo, setShowInfo] = useState(false);
 
@@ -1272,7 +1332,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
           )}
 
           {/* Reader Body */}
-          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overscroll-contain flex justify-center p-0 sm:p-4">
+          <div ref={scrollContainerRef} className="flex-1 overflow-auto overscroll-contain flex justify-center p-0 sm:p-4">
             {getEmbedUrl(pages[currentPage]?.url) ? (
               <div className="w-full max-w-5xl h-full min-h-[70vh] border-4 border-white/20 bg-zinc-900 rounded-lg overflow-hidden">
                 <iframe
@@ -1299,7 +1359,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               </div>
             ) : readerMode === "scroll" ? (
               /* Continuous Scroll Mode */
-              <div className="max-w-2xl w-full space-y-1 sm:space-y-4 flex flex-col items-center">
+              <div className="max-w-2xl w-full space-y-1 sm:space-y-4 flex flex-col items-center" style={{ zoom }}>
                 {pages.map((p, idx) => (
                   <div
                     key={idx}
@@ -1369,9 +1429,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                   }}
                 >
                   <SafeImage
-                    src={pages[currentPage]?.url} 
-                    alt={`Página ${pages[currentPage]?.pageNumber}`} 
+                    src={pages[currentPage]?.url}
+                    alt={`Página ${pages[currentPage]?.pageNumber}`}
                     className="max-h-[75vh] max-w-full object-contain border-4 border-white/20 select-none pointer-events-none"
+                    style={{ zoom }}
                   />
                   
                   {/* Left Edge Overlay Hint */}
@@ -1434,6 +1495,34 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
           {/* Floating controls (bottom right) — always visible, incl. fullscreen */}
           <div className="fixed bottom-6 right-6 z-[110] flex items-center gap-2">
+            {/* Zoom controls — only for image chapters (not embeds / external / PDF) */}
+            {!getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && !pages[currentPage]?.url?.startsWith("pdf:") && (
+              <div className="flex items-center gap-1 bg-black/80 border-2 border-white/20 rounded-full p-1">
+                <button
+                  onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))}
+                  className="text-white p-2 rounded-full hover:bg-white/10 disabled:opacity-30"
+                  disabled={zoom <= 1}
+                  title="Diminuir zoom"
+                >
+                  <ZoomOut className="w-5 h-5" strokeWidth={3} />
+                </button>
+                <button
+                  onClick={() => setZoom(1)}
+                  className="text-white font-sans font-bold text-xs w-11 text-center tabular-nums"
+                  title="Restaurar zoom"
+                >
+                  {Math.round(zoom * 100)}%
+                </button>
+                <button
+                  onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))}
+                  className="text-white p-2 rounded-full hover:bg-white/10 disabled:opacity-30"
+                  disabled={zoom >= 4}
+                  title="Aumentar zoom"
+                >
+                  <ZoomIn className="w-5 h-5" strokeWidth={3} />
+                </button>
+              </div>
+            )}
             <button
               onClick={toggleFullscreen}
               className="bg-black/80 hover:bg-black text-white p-3 border-2 border-white/20 rounded-full transition-all hover:scale-105"
