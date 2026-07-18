@@ -66,7 +66,7 @@ export class ProviderManager {
   ];
   private static activeStates: Map<string, boolean> = new Map([
     ["mangadex", true],
-    ["comicextra", true],
+    ["comicextra", false],
     ["mangaplus", true],
     ["mangafire", true],
     ["mugiwaras", true],
@@ -554,7 +554,7 @@ export class ProviderManager {
           logger.error({ err: err }, `Error loading catalog from ${p.name}:`);
           return [];
         }),
-        8000,
+        12000,
         []
       )
     );

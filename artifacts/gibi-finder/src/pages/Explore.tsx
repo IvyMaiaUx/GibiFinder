@@ -41,6 +41,14 @@ const FEATURED_GENRES = ["Ação", "Aventura", "Comédia", "Romance", "Drama", "
 // Source/type markers — not real genres, kept out of the genre rows (they have
 // their own type tabs: Mangás / HQs / Gibis).
 const EXCLUDED_GENRES = new Set(["biblioteca", "nacional", "drive", "hq", "catalogo", "sharepoint", "infantil"]);
+// Franchise/character rows (mostly for HQs, where genre tags are sparse).
+const FRANCHISES = [
+  "Batman", "Superman", "Homem-Aranha", "Spider-Man", "X-Men", "Vingadores", "Avengers",
+  "The Boys", "Mulher-Maravilha", "Homem de Ferro", "Thor", "Hulk", "Flash",
+  "Lanterna Verde", "Demolidor", "Wolverine", "Venom", "Deadpool", "Liga da Justiça",
+  "Capitão América", "Pantera Negra", "Coringa", "Turma da Mônica",
+];
+const MIN_FRANCHISE_ITEMS = 2;
 const MIN_ROW_ITEMS = 4;
 
 const HQ_PROVIDER_IDS = ["comicextra", "jon-domingues", "batcave", "multiverso-hq", "mega-hq", "hq-desejo"];
@@ -170,6 +178,12 @@ export default function Explore() {
   const [latest, setLatest] = useState<UnifiedCatalogItem[]>([]);
   const [typeFilter, setTypeFilter] = useState<"all" | "manga" | "hq" | "gibi">("all");
   const [viewAllGenre, setViewAllGenre] = useState<string | null>(null);
+  const [viewAllKind, setViewAllKind] = useState<"genre" | "franchise">("genre");
+  const openViewAll = (value: string, kind: "genre" | "franchise") => {
+    setViewAllKind(kind);
+    setViewAllGenre(value);
+    window.scrollTo({ top: 0 });
+  };
   const [viewAllItems, setViewAllItems] = useState<UnifiedCatalogItem[]>([]);
   const [viewAllLoading, setViewAllLoading] = useState(false);
   const [viewAllPage, setViewAllPage] = useState(1);
@@ -235,13 +249,16 @@ export default function Explore() {
     let cancelled = false;
     setViewAllPage(1);
     setViewAllLoading(true);
-    fetch(`${BASE}/api/providers/by-genre?genre=${encodeURIComponent(viewAllGenre)}&nsfw=${isNsfw}`)
+    const endpoint = viewAllKind === "franchise"
+      ? `${BASE}/api/providers/search?query=${encodeURIComponent(viewAllGenre)}&nsfw=${isNsfw}`
+      : `${BASE}/api/providers/by-genre?genre=${encodeURIComponent(viewAllGenre)}&nsfw=${isNsfw}`;
+    fetch(endpoint)
       .then(r => (r.ok ? r.json() : []))
       .then((data: UnifiedCatalogItem[]) => { if (!cancelled) setViewAllItems(Array.isArray(data) ? data : []); })
       .catch(() => { if (!cancelled) setViewAllItems([]); })
       .finally(() => { if (!cancelled) setViewAllLoading(false); });
     return () => { cancelled = true; };
-  }, [viewAllGenre, isNsfw]);
+  }, [viewAllGenre, viewAllKind, isNsfw]);
 
   const openItem = (item: UnifiedCatalogItem) => {
     const src = item.sources?.[0];
@@ -328,6 +345,14 @@ export default function Explore() {
   const allGenres = [...FEATURED_GENRES, ...extraGenres];
 
   const itemsInGenre = (genre: string) => uniqueItems.filter(i => (i.genres || []).some(g => norm(g) === norm(genre)));
+  const itemsInFranchise = (f: string) => uniqueItems.filter(i => norm(i.title).includes(norm(f)));
+
+  // Franchise/character rows (Batman, Homem-Aranha, The Boys, ...).
+  const franchiseRows: RowData[] = [];
+  for (const f of FRANCHISES) {
+    const items = itemsInFranchise(f);
+    if (items.length >= MIN_FRANCHISE_ITEMS) franchiseRows.push({ key: `f-${f}`, title: f, items: items.slice(0, 20) });
+  }
 
   const genreRows: RowData[] = [];
   const usedInGenreRows = new Set<string>();
@@ -345,7 +370,7 @@ export default function Explore() {
   // Merge instant local matches with the on-demand fetched set for "Ver tudo".
   const viewAllList = (() => {
     if (!viewAllGenre) return [] as UnifiedCatalogItem[];
-    const base = itemsInGenre(viewAllGenre);
+    const base = viewAllKind === "franchise" ? itemsInFranchise(viewAllGenre) : itemsInGenre(viewAllGenre);
     const seenT = new Set(base.map(i => (i.title || "").toLowerCase().trim()));
     const extra = viewAllItems.filter(i => {
       const t = (i.title || "").toLowerCase().trim();
@@ -472,18 +497,22 @@ export default function Explore() {
           </div>
         ) : (
           <div className="space-y-8">
-            {/* Continue reading */}
-            {continueItems.length > 0 && (
-              <Row title="▶ Continue lendo">
-                {continueItems.map(item => (
-                  <ContinueCard
-                    key={`${item.providerId}-${item.mangaId}`}
-                    item={item}
-                    onClick={() => setLocation(`/gibi/online?providerId=${item.providerId}&id=${encodeURIComponent(item.mangaId)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&resume=true`)}
-                  />
-                ))}
-              </Row>
-            )}
+            {/* Continue reading (+18 items only in +18 mode) */}
+            {(() => {
+              const visibleContinue = continueItems.filter(i => ADULT_PROVIDERS.includes(i.providerId) === isNsfw);
+              if (visibleContinue.length === 0) return null;
+              return (
+                <Row title="▶ Continue lendo">
+                  {visibleContinue.map(item => (
+                    <ContinueCard
+                      key={`${item.providerId}-${item.mangaId}`}
+                      item={item}
+                      onClick={() => setLocation(`/gibi/online?providerId=${item.providerId}&id=${encodeURIComponent(item.mangaId)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&resume=true`)}
+                    />
+                  ))}
+                </Row>
+              );
+            })()}
 
             {suggestions.length >= MIN_ROW_ITEMS && (
               <Row title="✨ Sugestões pra você">
@@ -518,8 +547,19 @@ export default function Explore() {
               </Row>
             )}
 
+            {franchiseRows.map(row => (
+              <Row key={row.key} title={row.title} onSeeAll={() => openViewAll(row.title, "franchise")}>
+                {row.items.map(item => {
+                  const src = item.sources?.[0];
+                  return (
+                    <CatalogCard key={`${row.key}-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} />
+                  );
+                })}
+              </Row>
+            ))}
+
             {genreRows.map(row => (
-              <Row key={row.key} title={row.title} onSeeAll={() => { setViewAllGenre(row.title); window.scrollTo({ top: 0 }); }}>
+              <Row key={row.key} title={row.title} onSeeAll={() => openViewAll(row.title, "genre")}>
                 {row.items.map(item => {
                   const src = item.sources?.[0];
                   return (

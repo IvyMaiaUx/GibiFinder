@@ -56439,7 +56439,7 @@ var CuratedComicsProvider = class {
     return [];
   }
   async getCatalog(listType) {
-    const dynamicItems = this.cachedOrWarm();
+    const dynamicItems = await this.getDynamicCatalog();
     const allItems = [...STATIC_ITEMS, ...dynamicItems];
     const sorted = listType === "latest" ? [...allItems].reverse() : allItems;
     return sorted.slice(0, 400).map((item) => this.toSearchResult(item));
@@ -56513,7 +56513,7 @@ var ProviderManager = class {
   ];
   static activeStates = /* @__PURE__ */ new Map([
     ["mangadex", true],
-    ["comicextra", true],
+    ["comicextra", false],
     ["mangaplus", true],
     ["mangafire", true],
     ["mugiwaras", true],
@@ -56896,7 +56896,7 @@ var ProviderManager = class {
           logger.error({ err }, `Error loading catalog from ${p.name}:`);
           return [];
         }),
-        8e3,
+        12e3,
         []
       )
     );

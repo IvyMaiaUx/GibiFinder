@@ -359,7 +359,9 @@ export class CuratedComicsProvider implements Provider {
   }
 
   async getCatalog(listType: "popular" | "latest"): Promise<SearchResult[]> {
-    const dynamicItems = this.cachedOrWarm();
+    // Block on the crawl (fast, ~5s, and usually already pre-warmed) so the gibi
+    // library reliably shows in the catalog instead of only the static items.
+    const dynamicItems = await this.getDynamicCatalog();
     const allItems = [...STATIC_ITEMS, ...dynamicItems];
     const sorted = listType === "latest"
       ? [...allItems].reverse()
