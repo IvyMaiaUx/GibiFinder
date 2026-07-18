@@ -54275,11 +54275,17 @@ var MangaDexProvider = class _MangaDexProvider {
       const tagId = tagMap[en];
       if (!tagId) return [];
       const ratingQuery = nsfw ? "contentRating[]=erotica&contentRating[]=pornographic" : "contentRating[]=safe&contentRating[]=suggestive";
-      const url = `https://api.mangadex.org/manga?limit=100&includes[]=cover_art&includedTags[]=${tagId}&${ratingQuery}&order[followedCount]=desc`;
-      const res = await fetch(url);
-      if (!res.ok) return [];
-      const data = await res.json();
-      return (data.data || []).map((item) => this.toResult(item));
+      const results = [];
+      for (let offset = 0; offset < 300; offset += 100) {
+        const url = `https://api.mangadex.org/manga?limit=100&offset=${offset}&includes[]=cover_art&includedTags[]=${tagId}&${ratingQuery}&order[followedCount]=desc`;
+        const res = await fetch(url);
+        if (!res.ok) break;
+        const data = await res.json();
+        const items = data.data || [];
+        results.push(...items.map((item) => this.toResult(item)));
+        if (items.length < 100) break;
+      }
+      return results;
     } catch (err) {
       logger.warn({ err }, "MangaDex getByGenre failed");
       return [];

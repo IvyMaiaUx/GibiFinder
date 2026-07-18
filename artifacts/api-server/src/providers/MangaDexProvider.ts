@@ -292,11 +292,18 @@ export class MangaDexProvider implements Provider {
       const ratingQuery = nsfw
         ? "contentRating[]=erotica&contentRating[]=pornographic"
         : "contentRating[]=safe&contentRating[]=suggestive";
-      const url = `https://api.mangadex.org/manga?limit=100&includes[]=cover_art&includedTags[]=${tagId}&${ratingQuery}&order[followedCount]=desc`;
-      const res = await fetch(url);
-      if (!res.ok) return [];
-      const data = await res.json() as any;
-      return (data.data || []).map((item: any) => this.toResult(item));
+      // MangaDex caps at 100 per request — paginate up to 300 per genre.
+      const results: SearchResult[] = [];
+      for (let offset = 0; offset < 300; offset += 100) {
+        const url = `https://api.mangadex.org/manga?limit=100&offset=${offset}&includes[]=cover_art&includedTags[]=${tagId}&${ratingQuery}&order[followedCount]=desc`;
+        const res = await fetch(url);
+        if (!res.ok) break;
+        const data = await res.json() as any;
+        const items = data.data || [];
+        results.push(...items.map((item: any) => this.toResult(item)));
+        if (items.length < 100) break;
+      }
+      return results;
     } catch (err) {
       logger.warn({ err }, "MangaDex getByGenre failed");
       return [];
