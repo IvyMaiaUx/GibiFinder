@@ -253,20 +253,15 @@ export class SlimeReadProvider implements Provider {
 
   async getCatalog(listType: "popular" | "latest", nsfw?: boolean): Promise<SearchResult[]> {
     const base = listType === "latest" ? "/atualizacoes" : "/populares";
+    // Fetch a fixed set of browse pages in PARALLEL (sequential paging blew the
+    // provider timeout) to surface many more titles quickly.
+    const paths = [base, `${base}?page=2`, `${base}?page=3`, "/catalogo", "/catalogo?page=2", "/catalogo?page=3"];
+    const htmls = await Promise.all(paths.map(p => this.fetchHtml(p).catch(() => "")));
     const unique = new Map<string, SearchResult>();
-    // Paginate the browse pages (+ /catalogo) to surface many more titles.
-    const sources = [base, "/catalogo"];
-    for (const src of sources) {
-      for (let page = 1; page <= 5 && unique.size < 200; page++) {
-        const path = page === 1 ? src : `${src}?page=${page}`;
-        const html = await this.fetchHtml(path).catch(() => "");
-        if (!html) break;
-        const items = [...this.extractSpotlight(html), ...this.extractMangaLinks(html)];
-        let added = 0;
-        for (const it of items) {
-          if (!unique.has(it.id)) { unique.set(it.id, it); added++; }
-        }
-        if (added === 0) break; // no new titles on this page — stop paginating
+    for (const html of htmls) {
+      if (!html) continue;
+      for (const it of [...this.extractSpotlight(html), ...this.extractMangaLinks(html)]) {
+        if (!unique.has(it.id)) unique.set(it.id, it);
       }
     }
     return Array.from(unique.values())
