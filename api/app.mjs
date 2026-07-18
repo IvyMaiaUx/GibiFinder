@@ -56255,7 +56255,10 @@ var STATIC_ITEMS = [
   }
 ];
 var GOOGLE_SITES_URL = "https://sites.google.com/educacao.quintana.sp.gov.br/biblioteca-virtual/hist%C3%B3rias-em-quadrinhos";
-var DRIVE_FOLDER_ID = "1Etdsik4rGHDhNv5g4_8J_DDTuuvvlunN";
+var DRIVE_FOLDER_IDS = [
+  "1Etdsik4rGHDhNv5g4_8J_DDTuuvvlunN",
+  "1JPCtkMZrAoN1XujYbPrO1PjEhR43VgwM"
+];
 function normalizeText(value) {
   return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 }
@@ -56360,7 +56363,7 @@ var CuratedComicsProvider = class {
     if (!hasDriveKey()) return [];
     const items = [];
     const seenFiles = /* @__PURE__ */ new Set();
-    const seenFolders = /* @__PURE__ */ new Set([DRIVE_FOLDER_ID]);
+    const seenFolders = new Set(DRIVE_FOLDER_IDS);
     const CONCURRENCY = 8;
     const MAX_ITEMS = 2500;
     const MAX_FOLDERS = 400;
@@ -56411,7 +56414,7 @@ var CuratedComicsProvider = class {
       return childFolders;
     };
     try {
-      let frontier = [DRIVE_FOLDER_ID];
+      let frontier = [...DRIVE_FOLDER_IDS];
       while (frontier.length > 0 && foldersVisited < MAX_FOLDERS && items.length < MAX_ITEMS) {
         const batch = frontier.slice(0, CONCURRENCY);
         frontier = frontier.slice(CONCURRENCY);

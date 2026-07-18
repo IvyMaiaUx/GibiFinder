@@ -59,7 +59,11 @@ const STATIC_ITEMS: CuratedItem[] = [
 const GOOGLE_SITES_URL =
   "https://sites.google.com/educacao.quintana.sp.gov.br/biblioteca-virtual/hist%C3%B3rias-em-quadrinhos";
 
-const DRIVE_FOLDER_ID = "1Etdsik4rGHDhNv5g4_8J_DDTuuvvlunN";
+// Root Google Drive folders to crawl (each is walked recursively into subfolders).
+const DRIVE_FOLDER_IDS = [
+  "1Etdsik4rGHDhNv5g4_8J_DDTuuvvlunN",
+  "1JPCtkMZrAoN1XujYbPrO1PjEhR43VgwM",
+];
 
 const SHAREPOINT_URL =
   "https://liveuel-my.sharepoint.com/:f:/g/personal/desireebt_1310_live_uel_br/Eg-xTek0aHVGmknAwok3WNsBn5MY46O7QX862ZwlntLPJg?e=NTwbC6";
@@ -195,7 +199,7 @@ export class CuratedComicsProvider implements Provider {
 
     const items: CuratedItem[] = [];
     const seenFiles = new Set<string>();
-    const seenFolders = new Set<string>([DRIVE_FOLDER_ID]);
+    const seenFolders = new Set<string>(DRIVE_FOLDER_IDS);
     const CONCURRENCY = 8;
     // We only read file metadata (id/name), never download PDFs, so a large
     // library is cheap to crawl — the caps just bound worst-case fan-out.
@@ -257,7 +261,7 @@ export class CuratedComicsProvider implements Provider {
       // Breadth-first walk with bounded concurrency so the ~dozens of subfolders
       // are crawled in parallel and the whole thing finishes within the request
       // timeout instead of one slow sequential chain.
-      let frontier: string[] = [DRIVE_FOLDER_ID];
+      let frontier: string[] = [...DRIVE_FOLDER_IDS];
       while (frontier.length > 0 && foldersVisited < MAX_FOLDERS && items.length < MAX_ITEMS) {
         const batch = frontier.slice(0, CONCURRENCY);
         frontier = frontier.slice(CONCURRENCY);
