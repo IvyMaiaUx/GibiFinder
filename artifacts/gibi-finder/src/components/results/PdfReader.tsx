@@ -210,7 +210,7 @@ export function PdfReader({
   const previewFallback = drivePreviewUrl(rawUrl);
 
   return (
-    <div ref={rootRef} className="fixed inset-0 z-[100] bg-black/95 flex flex-col">
+    <div ref={rootRef} className="fixed inset-0 z-[100] bg-black/95 flex flex-col select-none" style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}>
       {/* Header */}
       {!isFullscreen && (
         <div className="bg-black border-b-4 border-white/20 p-3 sm:p-4 text-white flex items-center justify-between gap-3 select-none">

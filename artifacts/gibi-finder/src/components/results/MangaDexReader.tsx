@@ -115,6 +115,15 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // Reset zoom whenever the chapter or layout mode changes.
   useEffect(() => { setZoom(1); }, [selectedChapter?.id, readerMode]);
 
+  // Lock the page body while the reader is open so only the reader's own
+  // container scrolls (steadier on iOS, where body scroll reveals Safari's bar).
+  useEffect(() => {
+    if (!showReader) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [showReader]);
+
   // Pinch-to-zoom + double-tap-to-zoom on the reading area. Attached natively so
   // we can preventDefault the pinch (a passive React handler cannot). Reads the
   // live zoom from a ref so the listeners never re-attach mid-gesture.
@@ -1135,7 +1144,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
       {/* ==================== COMMON READER MODAL OVERLAY (images/iframe) ==================== */}
       {showReader && pages.length > 0 && selectedChapter && !pages[0]?.url?.startsWith("pdf:") && (
-        <div ref={readerRef} className="fixed inset-0 z-[100] bg-black/95 flex flex-col">
+        <div ref={readerRef} className="fixed inset-0 z-[100] bg-black/95 flex flex-col select-none" style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}>
           {/* Header controls */}
           {!isFullscreen && (
             <div className="bg-black border-b-4 border-white/20 p-3 sm:p-4 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 select-none animate-in fade-in slide-in-from-top duration-200">
