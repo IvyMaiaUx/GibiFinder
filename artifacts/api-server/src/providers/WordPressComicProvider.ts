@@ -40,13 +40,13 @@ export class WordPressComicProvider implements Provider {
   private decodeHtml(value = ""): string {
     return value
       .replace(/&amp;/g, "&")
-      .replace(/&#038;/g, "&")
       .replace(/&quot;/g, "\"")
-      .replace(/&#039;/g, "'")
-      .replace(/&#8211;/g, "-")
-      .replace(/&#8212;/g, "-")
       .replace(/&lt;/g, "<")
       .replace(/&gt;/g, ">")
+      .replace(/&nbsp;/g, " ")
+      // Decode any numeric HTML entity (e.g. &#8230; -> …, &#8211; -> –)
+      .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+      .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
       .replace(/\s+/g, " ")
       .trim();
   }

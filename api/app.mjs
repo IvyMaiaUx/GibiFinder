@@ -29439,6 +29439,7 @@ __export(gemini_exports, {
   fetchWikipediaImage: () => fetchWikipediaImage,
   geminiAvailable: () => geminiAvailable,
   genAI: () => genAI,
+  generateSynopsis: () => generateSynopsis,
   getModel: () => getModel,
   identifyFromCover: () => identifyFromCover,
   identifyFromImages: () => identifyFromImages,
@@ -29514,7 +29515,7 @@ async function withKeyRotation(fn) {
 function geminiAvailable() {
   return clients.length > 0;
 }
-async function translateWithGroq(clean, prompt) {
+async function groqChat(prompt, temperature = 0.2) {
   const key = process.env["GROQ_API_KEY"];
   if (!key) return null;
   try {
@@ -29523,19 +29524,18 @@ async function translateWithGroq(clean, prompt) {
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: process.env["GROQ_MODEL"] || "llama-3.3-70b-versatile",
-        temperature: 0.2,
+        temperature,
         messages: [{ role: "user", content: prompt }]
       })
     });
     if (!res.ok) {
-      logger.warn({ msg: "Groq translate failed", status: res.status });
+      logger.warn({ msg: "Groq call failed", status: res.status });
       return null;
     }
     const data = await res.json();
-    const out = data.choices?.[0]?.message?.content?.trim();
-    return out || clean;
+    return data.choices?.[0]?.message?.content?.trim() || null;
   } catch (err) {
-    logger.warn({ msg: "Groq translate error", err: err instanceof Error ? err.message : String(err) });
+    logger.warn({ msg: "Groq call error", err: err instanceof Error ? err.message : String(err) });
     return null;
   }
 }
@@ -29546,8 +29546,8 @@ async function translateToPortuguese(text) {
 
 Texto:
 ${clean}`;
-  const viaGroq = await translateWithGroq(clean, prompt);
-  if (viaGroq !== null) return viaGroq;
+  const viaGroq = await groqChat(prompt);
+  if (viaGroq) return viaGroq;
   if (clients.length === 0) return clean;
   try {
     return await withKeyRotation(async () => {
@@ -29559,6 +29559,23 @@ ${clean}`;
   } catch (err) {
     logger.warn({ msg: "Gemini translate failed", err: err instanceof Error ? err.message : String(err) });
     return clean;
+  }
+}
+async function generateSynopsis(title) {
+  const t = (title || "").trim();
+  if (!t) return "";
+  const prompt = `Voc\xEA \xE9 especialista em quadrinhos (HQs, mang\xE1s e gibis). Escreva uma sinopse curta e envolvente, de 2 a 3 frases, em portugu\xEAs do Brasil, para a obra intitulada "${t}". Foque no enredo/premissa. Se n\xE3o conhecer com certeza, escreva uma descri\xE7\xE3o plaus\xEDvel de acordo com o personagem ou g\xEAnero. Responda SOMENTE com a sinopse \u2014 sem t\xEDtulo, sem aspas, sem a palavra "Sinopse".`;
+  const viaGroq = await groqChat(prompt, 0.5);
+  if (viaGroq) return viaGroq;
+  if (clients.length === 0) return "";
+  try {
+    return await withKeyRotation(async () => {
+      const model = getModel();
+      const result = await model.generateContent(prompt);
+      return result.response.text().trim();
+    });
+  } catch {
+    return "";
   }
 }
 async function identifyFromCover(base64Image) {
@@ -55664,7 +55681,7 @@ var WordPressComicProvider = class {
     return `${this.baseUrl}/wp-json/wp/v2/${path2.replace(/^\/+/, "")}`;
   }
   decodeHtml(value = "") {
-    return value.replace(/&amp;/g, "&").replace(/&#038;/g, "&").replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&#8211;/g, "-").replace(/&#8212;/g, "-").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
+    return value.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10))).replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/\s+/g, " ").trim();
   }
   stripHtml(value = "") {
     return this.decodeHtml(value.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "));
@@ -57737,6 +57754,7 @@ var pdfProxy_default = router5;
 var import_express6 = __toESM(require_express2(), 1);
 init_gemini();
 var router6 = (0, import_express6.Router)();
+var synopsisCache = /* @__PURE__ */ new Map();
 var cache = /* @__PURE__ */ new Map();
 var MAX_CACHE = 3e3;
 router6.post("/translate", async (req, res) => {
@@ -57760,6 +57778,31 @@ router6.post("/translate", async (req, res) => {
   } catch (err) {
     req.log.error({ err, action: "translate" }, "translation failed");
     res.status(500).json({ text, error: "translate_failed" });
+  }
+});
+router6.get("/synopsis", async (req, res) => {
+  const title = typeof req.query.title === "string" ? req.query.title.trim() : "";
+  if (!title) {
+    res.json({ text: "" });
+    return;
+  }
+  const key = title.toLowerCase();
+  if (synopsisCache.has(key)) {
+    res.json({ text: synopsisCache.get(key), cached: true });
+    return;
+  }
+  try {
+    const text = await generateSynopsis(title);
+    if (text) {
+      if (synopsisCache.size >= MAX_CACHE) {
+        const oldest = synopsisCache.keys().next().value;
+        if (oldest !== void 0) synopsisCache.delete(oldest);
+      }
+      synopsisCache.set(key, text);
+    }
+    res.json({ text });
+  } catch {
+    res.status(500).json({ text: "", error: "synopsis_failed" });
   }
 });
 var translate_default = router6;

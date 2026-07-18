@@ -105,7 +105,8 @@ export function geminiAvailable(): boolean {
 // Translate text to Brazilian Portuguese. Prefers Groq (fast/free) when
 // GROQ_API_KEY is set, falls back to Gemini, and returns the input unchanged if
 // neither is available or on error.
-async function translateWithGroq(clean: string, prompt: string): Promise<string | null> {
+// Generic Groq chat call — returns the assistant text, or null if unavailable/failed.
+async function groqChat(prompt: string, temperature = 0.2): Promise<string | null> {
   const key = process.env["GROQ_API_KEY"];
   if (!key) return null;
   try {
@@ -114,19 +115,18 @@ async function translateWithGroq(clean: string, prompt: string): Promise<string 
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: process.env["GROQ_MODEL"] || "llama-3.3-70b-versatile",
-        temperature: 0.2,
+        temperature,
         messages: [{ role: "user", content: prompt }],
       }),
     });
     if (!res.ok) {
-      logger.warn({ msg: "Groq translate failed", status: res.status });
+      logger.warn({ msg: "Groq call failed", status: res.status });
       return null;
     }
     const data = await res.json() as { choices?: { message?: { content?: string } }[] };
-    const out = data.choices?.[0]?.message?.content?.trim();
-    return out || clean;
+    return data.choices?.[0]?.message?.content?.trim() || null;
   } catch (err) {
-    logger.warn({ msg: "Groq translate error", err: err instanceof Error ? err.message : String(err) });
+    logger.warn({ msg: "Groq call error", err: err instanceof Error ? err.message : String(err) });
     return null;
   }
 }
@@ -136,8 +136,8 @@ export async function translateToPortuguese(text: string): Promise<string> {
   if (!clean) return clean;
   const prompt = `Traduza o texto a seguir para português do Brasil. Se já estiver em português, devolva-o sem mudanças. Responda SOMENTE com o texto traduzido — sem aspas, sem comentários, sem markdown.\n\nTexto:\n${clean}`;
 
-  const viaGroq = await translateWithGroq(clean, prompt);
-  if (viaGroq !== null) return viaGroq;
+  const viaGroq = await groqChat(prompt);
+  if (viaGroq) return viaGroq;
 
   if (clients.length === 0) return clean;
   try {
@@ -150,6 +150,28 @@ export async function translateToPortuguese(text: string): Promise<string> {
   } catch (err) {
     logger.warn({ msg: "Gemini translate failed", err: err instanceof Error ? err.message : String(err) });
     return clean;
+  }
+}
+
+// Generate a short PT-BR synopsis from a title (for items whose source has no
+// real synopsis). Returns "" if no AI is available.
+export async function generateSynopsis(title: string): Promise<string> {
+  const t = (title || "").trim();
+  if (!t) return "";
+  const prompt = `Você é especialista em quadrinhos (HQs, mangás e gibis). Escreva uma sinopse curta e envolvente, de 2 a 3 frases, em português do Brasil, para a obra intitulada "${t}". Foque no enredo/premissa. Se não conhecer com certeza, escreva uma descrição plausível de acordo com o personagem ou gênero. Responda SOMENTE com a sinopse — sem título, sem aspas, sem a palavra "Sinopse".`;
+
+  const viaGroq = await groqChat(prompt, 0.5);
+  if (viaGroq) return viaGroq;
+
+  if (clients.length === 0) return "";
+  try {
+    return await withKeyRotation(async () => {
+      const model = getModel();
+      const result = await model.generateContent(prompt);
+      return result.response.text().trim();
+    });
+  } catch {
+    return "";
   }
 }
 

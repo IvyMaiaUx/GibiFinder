@@ -7,7 +7,7 @@ import { FeedbackActions } from "@/components/results/FeedbackActions";
 import { MangaDexReader } from "@/components/results/MangaDexReader";
 import { Link2, AlertCircle, Loader2, Star, BookOpen, ExternalLink, ShoppingCart, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { cn, translateToPt } from "@/lib/utils";
+import { cn, translateToPt, cleanSynopsis, getGeneratedSynopsis } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -225,24 +225,29 @@ export default function ResultDetail() {
         }
       : undefined;
 
-  // Translate the synopsis to Portuguese (cached; skips text already in PT).
-  const rawSinopse = ((resultData as any)?.sinopse || (resultData as any)?.descricao) as string | undefined;
+  // Synopsis: drop junk (nav/credits), translate real ones to PT, and generate
+  // one via AI when the source has none — so there's always a real synopsis.
+  const cleanSin = cleanSynopsis((resultData as any)?.sinopse || (resultData as any)?.descricao);
+  const sinTitle = ((resultData as any)?.titulo || (resultData as any)?.revista || initialTitle || "").trim();
   useEffect(() => {
     setPtSinopse(null);
-    if (!rawSinopse) return;
     let active = true;
-    translateToPt(rawSinopse).then(t => { if (active && t && t !== rawSinopse) setPtSinopse(t); });
-    return () => { active = false; };
-  }, [rawSinopse]);
-
-  // ComicCard renders `descricao`; online results carry `sinopse`. Fill both with
-  // the translated (or original) text so the synopsis always shows in Portuguese.
-  const displayResult = resultData
-    ? {
-        ...(resultData as any),
-        sinopse: ptSinopse || (resultData as any).sinopse,
-        descricao: ptSinopse || (resultData as any).descricao || (resultData as any).sinopse,
+    (async () => {
+      if (cleanSin) {
+        const t = await translateToPt(cleanSin);
+        if (active) setPtSinopse(t);
+      } else if (sinTitle) {
+        const gen = await getGeneratedSynopsis(sinTitle);
+        if (active && gen) setPtSinopse(gen);
       }
+    })();
+    return () => { active = false; };
+  }, [cleanSin, sinTitle]);
+
+  const finalSinopse = ptSinopse || cleanSin;
+  // ComicCard renders `descricao`; online results carry `sinopse`. Fill both.
+  const displayResult = resultData
+    ? { ...(resultData as any), sinopse: finalSinopse, descricao: finalSinopse }
     : resultData;
 
   return (

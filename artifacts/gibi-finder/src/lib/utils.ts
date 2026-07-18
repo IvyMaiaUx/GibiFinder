@@ -121,6 +121,40 @@ export async function translateToPt(text: string | undefined | null): Promise<st
   }
 }
 
+/**
+ * Drops junk descriptions (page navigation, pure credits blocks, placeholders)
+ * that some providers return, so we can fall back to an AI-generated synopsis.
+ */
+export function cleanSynopsis(text?: string | null): string {
+  const t = (text || "").trim();
+  if (t.length < 15) return "";
+  const junk = /ler online|edi[çc][aã]o (anterior|pr[oó]xima)|pr[oó]xima edi[çc][aã]o|↑|◄|►|▲|voltar ao topo|\btopo\b|carregado via|dispon[ií]vel no portal|nenhuma (descri|sinopse)|importad[ao] (de|da)|\bdownloads?\b/i;
+  if (junk.test(t)) return "";
+  if (/^\s*(escritor|autor|arte por|desenho|roteiro|data de venda)\s*:/i.test(t)) return "";
+  return t;
+}
+
+/** Fetches an AI-generated pt-BR synopsis for a title (cached in localStorage). */
+export async function getGeneratedSynopsis(title: string): Promise<string> {
+  const t = (title || "").trim();
+  if (!t) return "";
+  const cacheKey = `gibi-finder:syn:${hashStr(t.toLowerCase())}`;
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) return cached;
+  } catch { /* ignore */ }
+  try {
+    const res = await fetch(`${BASE}/api/synopsis?title=${encodeURIComponent(t)}`);
+    if (!res.ok) return "";
+    const data = await res.json() as { text?: string };
+    const out = (data.text || "").trim();
+    if (out) { try { localStorage.setItem(cacheKey, out); } catch { /* ignore */ } }
+    return out;
+  } catch {
+    return "";
+  }
+}
+
 export const ADULT_PROVIDER_IDS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai"];
 
 /** Whether a provider id belongs to the +18 catalog. */
