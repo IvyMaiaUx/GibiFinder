@@ -171,6 +171,24 @@ router.get("/providers/catalog", async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/providers/by-genre - Fetch many titles for one genre (on demand)
+router.get("/providers/by-genre", async (req: Request, res: Response) => {
+  const genre = (req.query.genre as string) || "";
+  const nsfw = req.query.nsfw === "true";
+  if (!genre.trim()) {
+    res.status(400).json({ error: "missing_genre" });
+    return;
+  }
+  try {
+    const items = await ProviderManager.getByGenre(genre, nsfw);
+    await injectRatings(items);
+    res.json(items);
+  } catch (err) {
+    logger.error({ err }, "by-genre failed");
+    res.status(500).json({ error: "by_genre_failed" });
+  }
+});
+
 // GET /api/providers/statistics - Fetch statistics/ratings for a manga/HQ
 router.get("/providers/statistics", async (req: Request, res: Response) => {
   const providerId = req.query.providerId as string;

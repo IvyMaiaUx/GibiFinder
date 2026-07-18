@@ -622,4 +622,57 @@ export class ProviderManager {
 
     return nsfw ? allResults.filter(result => result.isAdult) : allResults.filter(result => !result.isAdult);
   }
+
+  // Fetch a large set of titles for a single genre, on demand. Providers with a
+  // real genre filter (MangaDex) use it; others contribute their catalog matches.
+  static async getByGenre(genre: string, nsfw?: boolean): Promise<UnifiedSearchResult[]> {
+    const activeProviders = Array.from(this.providers.values()).filter(
+      p => this.activeStates.get(p.id) === true
+    );
+    const normGenre = this.normalizeText(genre);
+    const promises = activeProviders.map(p =>
+      this.withTimeout(
+        (p.getByGenre
+          ? p.getByGenre(genre, nsfw)
+          : p.getCatalog("popular", nsfw).then(items =>
+              items.filter(it => (it.genres || []).some(g => this.normalizeText(g) === normGenre))
+            )
+        ).catch(() => []),
+        9000,
+        []
+      )
+    );
+    const flat = (await Promise.all(promises)).flat();
+
+    const groups: Map<string, UnifiedSearchResult> = new Map();
+    for (const result of flat) {
+      if (!result || !result.title) continue;
+      const norm = this.normalizeTitle(result.title);
+      if (!norm) continue;
+      const existing = groups.get(norm);
+      if (existing) {
+        if (!existing.sources.some(s => s.providerId === result.providerId && s.id === result.id)) {
+          existing.sources.push({ providerId: result.providerId, id: result.id, title: result.title, releaseDate: result.releaseDate });
+        }
+        if (!existing.coverUrl && result.coverUrl) existing.coverUrl = result.coverUrl;
+        if (!existing.description && result.description) existing.description = result.description;
+        if (result.genres) existing.genres = Array.from(new Set([...(existing.genres || []), ...result.genres]));
+      } else {
+        groups.set(norm, {
+          id: `${norm}_group`,
+          title: result.title,
+          coverUrl: result.coverUrl,
+          description: result.description,
+          genres: result.genres,
+          isAdult: this.isAdultResult(result),
+          releaseDate: result.releaseDate,
+          sources: [{ providerId: result.providerId, id: result.id, title: result.title, releaseDate: result.releaseDate }],
+        });
+      }
+    }
+    const all = Array.from(groups.values()).map(r => ({ ...r, isAdult: this.isAdultResult(r) }));
+    return nsfw
+      ? all.filter(r => r.isAdult)
+      : all.map(r => this.stripAdultSources(r)).filter((r): r is UnifiedSearchResult => r !== null);
+  }
 }

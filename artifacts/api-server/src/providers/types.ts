@@ -42,6 +42,7 @@ export interface Provider {
   getChapters(id: string): Promise<Chapter[]>;
   getPages(chapterId: string): Promise<Page[]>;
   getCatalog(listType: "popular" | "latest", nsfw?: boolean): Promise<SearchResult[]>;
+  getByGenre?(genre: string, nsfw?: boolean): Promise<SearchResult[]>;
 }
 
 export interface UnifiedSearchResult {

@@ -153,6 +153,8 @@ export default function Explore() {
   const [popular, setPopular] = useState<UnifiedCatalogItem[]>([]);
   const [latest, setLatest] = useState<UnifiedCatalogItem[]>([]);
   const [viewAllGenre, setViewAllGenre] = useState<string | null>(null);
+  const [viewAllItems, setViewAllItems] = useState<UnifiedCatalogItem[]>([]);
+  const [viewAllLoading, setViewAllLoading] = useState(false);
   const [continueItems, setContinueItems] = useState<{ providerId: string; mangaId: string; title: string; coverUrl?: string; chapterNum?: string; updatedAt: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -206,6 +208,20 @@ export default function Explore() {
   }, []);
 
   useEffect(() => { loadCatalog(isNsfw); }, [isNsfw, loadCatalog]);
+
+  // On "Ver tudo": fetch a large set for that genre on demand (keeps the initial
+  // catalog light). Local matches show instantly; fetched ones merge in.
+  useEffect(() => {
+    if (!viewAllGenre) { setViewAllItems([]); return; }
+    let cancelled = false;
+    setViewAllLoading(true);
+    fetch(`${BASE}/api/providers/by-genre?genre=${encodeURIComponent(viewAllGenre)}&nsfw=${isNsfw}`)
+      .then(r => (r.ok ? r.json() : []))
+      .then((data: UnifiedCatalogItem[]) => { if (!cancelled) setViewAllItems(Array.isArray(data) ? data : []); })
+      .catch(() => { if (!cancelled) setViewAllItems([]); })
+      .finally(() => { if (!cancelled) setViewAllLoading(false); });
+    return () => { cancelled = true; };
+  }, [viewAllGenre, isNsfw]);
 
   const openItem = (item: UnifiedCatalogItem) => {
     const src = item.sources?.[0];
@@ -305,6 +321,21 @@ export default function Explore() {
     }
   }
 
+  // Merge instant local matches with the on-demand fetched set for "Ver tudo".
+  const viewAllList = (() => {
+    if (!viewAllGenre) return [] as UnifiedCatalogItem[];
+    const base = itemsInGenre(viewAllGenre);
+    const seenT = new Set(base.map(i => (i.title || "").toLowerCase().trim()));
+    const extra = viewAllItems.filter(i => {
+      const t = (i.title || "").toLowerCase().trim();
+      if (!t || seenT.has(t)) return false;
+      if (!isNsfw && isAdultItem(i)) return false;
+      seenT.add(t);
+      return true;
+    });
+    return [...base, ...extra];
+  })();
+
   void favVersion; // re-render favorites on toggle
 
   return (
@@ -362,9 +393,11 @@ export default function Explore() {
                 <ChevronLeft className="w-4 h-4" strokeWidth={3} /> Voltar
               </button>
               <h2 className="font-display text-2xl sm:text-3xl text-black uppercase">{viewAllGenre}</h2>
+              <span className="font-sans text-xs font-bold text-gray-500">{viewAllList.length} títulos</span>
+              {viewAllLoading && <Loader2 className="w-5 h-5 animate-spin text-primary" />}
             </div>
             <div className="flex flex-wrap gap-3 sm:gap-4 justify-center sm:justify-start">
-              {itemsInGenre(viewAllGenre).map(item => {
+              {viewAllList.map(item => {
                 const src = item.sources?.[0];
                 return (
                   <CatalogCard key={`all-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} />

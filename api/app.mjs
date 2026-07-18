@@ -54018,7 +54018,39 @@ init_logger();
 
 // src/providers/MangaDexProvider.ts
 init_logger();
-var MangaDexProvider = class {
+var GENRE_EN_PT = {
+  "Action": "A\xE7\xE3o",
+  "Adventure": "Aventura",
+  "Comedy": "Com\xE9dia",
+  "Drama": "Drama",
+  "Fantasy": "Fantasia",
+  "Horror": "Horror",
+  "Mystery": "Mist\xE9rio",
+  "Romance": "Romance",
+  "Sci-Fi": "Sci-Fi",
+  "Slice of Life": "Slice of Life",
+  "Sports": "Esportes",
+  "Supernatural": "Sobrenatural",
+  "Thriller": "Thriller",
+  "Historical": "Hist\xF3rico",
+  "Isekai": "Isekai",
+  "Military": "Militar",
+  "Psychological": "Psicol\xF3gico",
+  "School Life": "Vida Escolar",
+  "Martial Arts": "Artes Marciais",
+  "Magic": "Magia",
+  "Crime": "Crime",
+  "Monsters": "Monstros",
+  "Hentai": "Hentai",
+  "Ecchi": "Ecchi",
+  "Doujinshi": "Doujinshi",
+  "Erotica": "Er\xF3tico"
+};
+var mdNorm = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+var GENRE_PT_EN = Object.fromEntries(
+  Object.entries(GENRE_EN_PT).map(([en, pt]) => [mdNorm(pt), en])
+);
+var MangaDexProvider = class _MangaDexProvider {
   id = "mangadex";
   name = "MangaDex";
   language = "multi";
@@ -54200,6 +54232,56 @@ var MangaDexProvider = class {
       });
     } catch (err) {
       logger.error({ err }, "MangaDex catalog failed:");
+      return [];
+    }
+  }
+  toResult(item) {
+    const id = item.id;
+    const titleMap = item.attributes?.title || {};
+    const title = titleMap.en || titleMap.ja || Object.values(titleMap)[0] || "Sem t\xEDtulo";
+    const descMap = item.attributes?.description || {};
+    const description = descMap.en || descMap["pt-br"] || Object.values(descMap)[0] || "";
+    const coverRel = item.relationships?.find((r) => r.type === "cover_art");
+    const coverFileName = coverRel?.attributes?.fileName;
+    const coverUrl = coverFileName ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.256.jpg` : void 0;
+    const genres = this.extractGenres(item);
+    const cr = item.attributes?.contentRating;
+    if ((cr === "erotica" || cr === "pornographic") && !genres.includes("Adulto")) genres.push("Adulto");
+    return { id, title, description, coverUrl, genres, providerId: this.id, releaseDate: this.getReleaseDate(item) };
+  }
+  static tagMap = null;
+  async getTagMap() {
+    if (_MangaDexProvider.tagMap) return _MangaDexProvider.tagMap;
+    try {
+      const res = await fetch("https://api.mangadex.org/manga/tag");
+      if (!res.ok) return {};
+      const data = await res.json();
+      const map = {};
+      for (const t of data.data || []) {
+        const name = (t.attributes?.name?.en || "").toLowerCase();
+        if (name) map[name] = t.id;
+      }
+      _MangaDexProvider.tagMap = map;
+      return map;
+    } catch {
+      return {};
+    }
+  }
+  // Fetch many titles for a genre using MangaDex's tag filter.
+  async getByGenre(genre, nsfw) {
+    try {
+      const en = (GENRE_PT_EN[mdNorm(genre)] || genre).toLowerCase();
+      const tagMap = await this.getTagMap();
+      const tagId = tagMap[en];
+      if (!tagId) return [];
+      const ratingQuery = nsfw ? "contentRating[]=erotica&contentRating[]=pornographic" : "contentRating[]=safe&contentRating[]=suggestive";
+      const url = `https://api.mangadex.org/manga?limit=100&includes[]=cover_art&includedTags[]=${tagId}&${ratingQuery}&order[followedCount]=desc`;
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.data || []).map((item) => this.toResult(item));
+    } catch (err) {
+      logger.warn({ err }, "MangaDex getByGenre failed");
       return [];
     }
   }
@@ -56821,6 +56903,52 @@ var ProviderManager = class {
     }));
     return nsfw ? allResults.filter((result) => result.isAdult) : allResults.filter((result) => !result.isAdult);
   }
+  // Fetch a large set of titles for a single genre, on demand. Providers with a
+  // real genre filter (MangaDex) use it; others contribute their catalog matches.
+  static async getByGenre(genre, nsfw) {
+    const activeProviders = Array.from(this.providers.values()).filter(
+      (p) => this.activeStates.get(p.id) === true
+    );
+    const normGenre = this.normalizeText(genre);
+    const promises = activeProviders.map(
+      (p) => this.withTimeout(
+        (p.getByGenre ? p.getByGenre(genre, nsfw) : p.getCatalog("popular", nsfw).then(
+          (items) => items.filter((it) => (it.genres || []).some((g) => this.normalizeText(g) === normGenre))
+        )).catch(() => []),
+        9e3,
+        []
+      )
+    );
+    const flat = (await Promise.all(promises)).flat();
+    const groups = /* @__PURE__ */ new Map();
+    for (const result of flat) {
+      if (!result || !result.title) continue;
+      const norm = this.normalizeTitle(result.title);
+      if (!norm) continue;
+      const existing = groups.get(norm);
+      if (existing) {
+        if (!existing.sources.some((s) => s.providerId === result.providerId && s.id === result.id)) {
+          existing.sources.push({ providerId: result.providerId, id: result.id, title: result.title, releaseDate: result.releaseDate });
+        }
+        if (!existing.coverUrl && result.coverUrl) existing.coverUrl = result.coverUrl;
+        if (!existing.description && result.description) existing.description = result.description;
+        if (result.genres) existing.genres = Array.from(/* @__PURE__ */ new Set([...existing.genres || [], ...result.genres]));
+      } else {
+        groups.set(norm, {
+          id: `${norm}_group`,
+          title: result.title,
+          coverUrl: result.coverUrl,
+          description: result.description,
+          genres: result.genres,
+          isAdult: this.isAdultResult(result),
+          releaseDate: result.releaseDate,
+          sources: [{ providerId: result.providerId, id: result.id, title: result.title, releaseDate: result.releaseDate }]
+        });
+      }
+    }
+    const all = Array.from(groups.values()).map((r) => ({ ...r, isAdult: this.isAdultResult(r) }));
+    return nsfw ? all.filter((r) => r.isAdult) : all.map((r) => this.stripAdultSources(r)).filter((r) => r !== null);
+  }
 };
 
 // src/routes/providers.ts
@@ -56961,6 +57089,22 @@ router3.get("/providers/catalog", async (req, res) => {
       message: err instanceof Error ? err.message : String(err),
       stack: err instanceof Error ? err.stack : void 0
     });
+  }
+});
+router3.get("/providers/by-genre", async (req, res) => {
+  const genre = req.query.genre || "";
+  const nsfw = req.query.nsfw === "true";
+  if (!genre.trim()) {
+    res.status(400).json({ error: "missing_genre" });
+    return;
+  }
+  try {
+    const items = await ProviderManager.getByGenre(genre, nsfw);
+    await injectRatings(items);
+    res.json(items);
+  } catch (err) {
+    logger.error({ err }, "by-genre failed");
+    res.status(500).json({ error: "by_genre_failed" });
   }
 });
 router3.get("/providers/statistics", async (req, res) => {

@@ -1,6 +1,21 @@
 import { Provider, SearchResult, MangaDetails, Chapter, Page } from "./types";
 import { logger } from "../lib/logger";
 
+const GENRE_EN_PT: Record<string, string> = {
+  "Action": "Ação", "Adventure": "Aventura", "Comedy": "Comédia", "Drama": "Drama",
+  "Fantasy": "Fantasia", "Horror": "Horror", "Mystery": "Mistério", "Romance": "Romance",
+  "Sci-Fi": "Sci-Fi", "Slice of Life": "Slice of Life", "Sports": "Esportes",
+  "Supernatural": "Sobrenatural", "Thriller": "Thriller", "Historical": "Histórico",
+  "Isekai": "Isekai", "Military": "Militar", "Psychological": "Psicológico",
+  "School Life": "Vida Escolar", "Martial Arts": "Artes Marciais", "Magic": "Magia",
+  "Crime": "Crime", "Monsters": "Monstros", "Hentai": "Hentai", "Ecchi": "Ecchi",
+  "Doujinshi": "Doujinshi", "Erotica": "Erótico"
+};
+const mdNorm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+const GENRE_PT_EN: Record<string, string> = Object.fromEntries(
+  Object.entries(GENRE_EN_PT).map(([en, pt]) => [mdNorm(pt), en])
+);
+
 export class MangaDexProvider implements Provider {
   id = "mangadex";
   name = "MangaDex";
@@ -229,6 +244,61 @@ export class MangaDexProvider implements Provider {
       });
     } catch (err) {
       logger.error({ err: err }, "MangaDex catalog failed:");
+      return [];
+    }
+  }
+
+  private toResult(item: any): SearchResult {
+    const id = item.id;
+    const titleMap = item.attributes?.title || {};
+    const title = (titleMap.en || titleMap.ja || (Object.values(titleMap)[0] as string) || "Sem título") as string;
+    const descMap = item.attributes?.description || {};
+    const description = (descMap.en || descMap["pt-br"] || (Object.values(descMap)[0] as string) || "") as string;
+    const coverRel = item.relationships?.find((r: any) => r.type === "cover_art");
+    const coverFileName = coverRel?.attributes?.fileName;
+    const coverUrl = coverFileName ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.256.jpg` : undefined;
+    const genres = this.extractGenres(item);
+    const cr = item.attributes?.contentRating;
+    if ((cr === "erotica" || cr === "pornographic") && !genres.includes("Adulto")) genres.push("Adulto");
+    return { id, title, description, coverUrl, genres, providerId: this.id, releaseDate: this.getReleaseDate(item) };
+  }
+
+  private static tagMap: Record<string, string> | null = null;
+  private async getTagMap(): Promise<Record<string, string>> {
+    if (MangaDexProvider.tagMap) return MangaDexProvider.tagMap;
+    try {
+      const res = await fetch("https://api.mangadex.org/manga/tag");
+      if (!res.ok) return {};
+      const data = await res.json() as any;
+      const map: Record<string, string> = {};
+      for (const t of data.data || []) {
+        const name = (t.attributes?.name?.en || "").toLowerCase();
+        if (name) map[name] = t.id;
+      }
+      MangaDexProvider.tagMap = map;
+      return map;
+    } catch {
+      return {};
+    }
+  }
+
+  // Fetch many titles for a genre using MangaDex's tag filter.
+  async getByGenre(genre: string, nsfw?: boolean): Promise<SearchResult[]> {
+    try {
+      const en = (GENRE_PT_EN[mdNorm(genre)] || genre).toLowerCase();
+      const tagMap = await this.getTagMap();
+      const tagId = tagMap[en];
+      if (!tagId) return [];
+      const ratingQuery = nsfw
+        ? "contentRating[]=erotica&contentRating[]=pornographic"
+        : "contentRating[]=safe&contentRating[]=suggestive";
+      const url = `https://api.mangadex.org/manga?limit=100&includes[]=cover_art&includedTags[]=${tagId}&${ratingQuery}&order[followedCount]=desc`;
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const data = await res.json() as any;
+      return (data.data || []).map((item: any) => this.toResult(item));
+    } catch (err) {
+      logger.warn({ err }, "MangaDex getByGenre failed");
       return [];
     }
   }
