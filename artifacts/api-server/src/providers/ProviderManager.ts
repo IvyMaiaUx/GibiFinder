@@ -413,6 +413,15 @@ export class ProviderManager {
   }
 
   // Searches all active providers simultaneously and unifies results
+  // Resolve with `fallback` if `promise` doesn't settle within `ms`, so one slow
+  // provider can't hold up the whole aggregated search/catalog.
+  private static withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms)),
+    ]);
+  }
+
   static async search(query: string, nsfw?: boolean): Promise<UnifiedSearchResult[]> {
     return (await this.searchWithMetadata(query, nsfw)).results;
   }
@@ -421,11 +430,15 @@ export class ProviderManager {
     const activeProviders = Array.from(this.providers.values()).filter(
       p => this.activeStates.get(p.id) === true
     );
-    const searchPromises = activeProviders.map(p => 
-      p.search(query, nsfw).catch(err => {
-        console.error(`Error searching provider ${p.name}:`, err);
-        return [];
-      })
+    const searchPromises = activeProviders.map(p =>
+      this.withTimeout(
+        p.search(query, nsfw).catch(err => {
+          console.error(`Error searching provider ${p.name}:`, err);
+          return [];
+        }),
+        7000,
+        []
+      )
     );
 
     const resultsArray = await Promise.all(searchPromises);
@@ -534,11 +547,15 @@ export class ProviderManager {
       p => this.activeStates.get(p.id) === true
     );
 
-    const catalogPromises = activeProviders.map(p => 
-      p.getCatalog(listType, nsfw).catch(err => {
-        console.error(`Error loading catalog from ${p.name}:`, err);
-        return [];
-      })
+    const catalogPromises = activeProviders.map(p =>
+      this.withTimeout(
+        p.getCatalog(listType, nsfw).catch(err => {
+          console.error(`Error loading catalog from ${p.name}:`, err);
+          return [];
+        }),
+        8000,
+        []
+      )
     );
 
     const resultsArray = await Promise.all(catalogPromises);

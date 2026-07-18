@@ -56440,6 +56440,14 @@ var ProviderManager = class {
     return hasDistinctiveTerm && coverage >= 0.67;
   }
   // Searches all active providers simultaneously and unifies results
+  // Resolve with `fallback` if `promise` doesn't settle within `ms`, so one slow
+  // provider can't hold up the whole aggregated search/catalog.
+  static withTimeout(promise, ms, fallback) {
+    return Promise.race([
+      promise,
+      new Promise((resolve) => setTimeout(() => resolve(fallback), ms))
+    ]);
+  }
   static async search(query, nsfw) {
     return (await this.searchWithMetadata(query, nsfw)).results;
   }
@@ -56448,10 +56456,14 @@ var ProviderManager = class {
       (p) => this.activeStates.get(p.id) === true
     );
     const searchPromises = activeProviders.map(
-      (p) => p.search(query, nsfw).catch((err) => {
-        console.error(`Error searching provider ${p.name}:`, err);
-        return [];
-      })
+      (p) => this.withTimeout(
+        p.search(query, nsfw).catch((err) => {
+          console.error(`Error searching provider ${p.name}:`, err);
+          return [];
+        }),
+        7e3,
+        []
+      )
     );
     const resultsArray = await Promise.all(searchPromises);
     const flatResults = resultsArray.flat();
@@ -56539,10 +56551,14 @@ var ProviderManager = class {
       (p) => this.activeStates.get(p.id) === true
     );
     const catalogPromises = activeProviders.map(
-      (p) => p.getCatalog(listType, nsfw).catch((err) => {
-        console.error(`Error loading catalog from ${p.name}:`, err);
-        return [];
-      })
+      (p) => this.withTimeout(
+        p.getCatalog(listType, nsfw).catch((err) => {
+          console.error(`Error loading catalog from ${p.name}:`, err);
+          return [];
+        }),
+        8e3,
+        []
+      )
     );
     const resultsArray = await Promise.all(catalogPromises);
     const flatResults = resultsArray.flat();
