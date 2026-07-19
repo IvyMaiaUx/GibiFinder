@@ -67,13 +67,16 @@ router.get("/providers", (req: Request, res: Response) => {
 router.get("/providers/search", async (req: Request, res: Response) => {
   const query = req.query.query as string;
   const nsfw = req.query.nsfw === "true";
+  const providers = typeof req.query.providers === "string" && req.query.providers
+    ? req.query.providers.split(",").map(p => p.trim()).filter(Boolean)
+    : undefined;
   if (!query) {
     res.status(400).json({ error: "missing_query", message: "O parâmetro de busca 'query' é obrigatório." });
     return;
   }
 
   try {
-    const { results, hiddenAdultCount, adultQuery } = await ProviderManager.searchWithMetadata(query, nsfw);
+    const { results, hiddenAdultCount, adultQuery } = await ProviderManager.searchWithMetadata(query, nsfw, providers);
     res.setHeader("X-Adult-Results-Hidden", String(hiddenAdultCount));
     res.setHeader("X-Adult-Query", adultQuery ? "true" : "false");
     await injectRatings(results);

@@ -57037,12 +57037,13 @@ var ProviderManager = class {
       new Promise((resolve) => setTimeout(() => resolve(fallback), ms))
     ]);
   }
-  static async search(query, nsfw) {
-    return (await this.searchWithMetadata(query, nsfw)).results;
+  static async search(query, nsfw, providerIds) {
+    return (await this.searchWithMetadata(query, nsfw, providerIds)).results;
   }
-  static async searchWithMetadata(query, nsfw) {
+  static async searchWithMetadata(query, nsfw, providerIds) {
+    const scope = providerIds && providerIds.length ? new Set(providerIds) : null;
     const activeProviders = Array.from(this.providers.values()).filter(
-      (p) => this.activeStates.get(p.id) === true
+      (p) => this.activeStates.get(p.id) === true && (!scope || scope.has(p.id))
     );
     const searchPromises = activeProviders.map(
       (p) => this.withTimeout(
@@ -57311,12 +57312,13 @@ router3.get("/providers", (req, res) => {
 router3.get("/providers/search", async (req, res) => {
   const query = req.query.query;
   const nsfw = req.query.nsfw === "true";
+  const providers = typeof req.query.providers === "string" && req.query.providers ? req.query.providers.split(",").map((p) => p.trim()).filter(Boolean) : void 0;
   if (!query) {
     res.status(400).json({ error: "missing_query", message: "O par\xE2metro de busca 'query' \xE9 obrigat\xF3rio." });
     return;
   }
   try {
-    const { results, hiddenAdultCount, adultQuery } = await ProviderManager.searchWithMetadata(query, nsfw);
+    const { results, hiddenAdultCount, adultQuery } = await ProviderManager.searchWithMetadata(query, nsfw, providers);
     res.setHeader("X-Adult-Results-Hidden", String(hiddenAdultCount));
     res.setHeader("X-Adult-Query", adultQuery ? "true" : "false");
     await injectRatings(results);

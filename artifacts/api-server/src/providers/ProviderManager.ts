@@ -426,13 +426,16 @@ export class ProviderManager {
     ]);
   }
 
-  static async search(query: string, nsfw?: boolean): Promise<UnifiedSearchResult[]> {
-    return (await this.searchWithMetadata(query, nsfw)).results;
+  static async search(query: string, nsfw?: boolean, providerIds?: string[]): Promise<UnifiedSearchResult[]> {
+    return (await this.searchWithMetadata(query, nsfw, providerIds)).results;
   }
 
-  static async searchWithMetadata(query: string, nsfw?: boolean): Promise<{ results: UnifiedSearchResult[]; hiddenAdultCount: number; adultQuery: boolean }> {
+  static async searchWithMetadata(query: string, nsfw?: boolean, providerIds?: string[]): Promise<{ results: UnifiedSearchResult[]; hiddenAdultCount: number; adultQuery: boolean }> {
+    // Optional provider scoping: e.g. HQ/Gibi rows only need the curated library,
+    // so we skip the slow manga providers and the search returns almost instantly.
+    const scope = providerIds && providerIds.length ? new Set(providerIds) : null;
     const activeProviders = Array.from(this.providers.values()).filter(
-      p => this.activeStates.get(p.id) === true
+      p => this.activeStates.get(p.id) === true && (!scope || scope.has(p.id))
     );
     const searchPromises = activeProviders.map(p =>
       this.withTimeout(

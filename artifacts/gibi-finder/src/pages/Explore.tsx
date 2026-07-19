@@ -283,8 +283,15 @@ export default function Explore() {
     setCuratedRows([]);
     setCuratedLoading(true);
 
+    // Scope each row's search to the providers that actually hold HQ/Gibi content
+    // (skip the slow manga providers), so the searches hit the cached curated
+    // library and return almost instantly — letting us fire them all in parallel.
+    const scope = typeFilter === "hq"
+      ? [...HQ_PROVIDER_IDS, ...GIBI_PROVIDER_IDS].join(",")
+      : GIBI_PROVIDER_IDS.join(",");
+
     const fetchSeries = (term: string) =>
-      fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(term)}&nsfw=${isNsfw}`)
+      fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(term)}&nsfw=${isNsfw}&providers=${encodeURIComponent(scope)}`)
         .then(r => (r.ok ? r.json() : []))
         .then((items: UnifiedCatalogItem[]) => ({
           key: `c-${term}`,
@@ -296,9 +303,8 @@ export default function Explore() {
         .catch(() => ({ key: `c-${term}`, title: term, items: [] as UnifiedCatalogItem[] }));
 
     (async () => {
-      // Batches of 3 so each search gets full provider responses instead of
-      // 14 parallel searches overwhelming the backend (rows appear as they load).
-      const BATCH = 3;
+      // Bigger batches now that each search is cheap (scoped). Rows still stream in.
+      const BATCH = 8;
       for (let i = 0; i < series.length && !cancelled; i += BATCH) {
         const rows = await Promise.all(series.slice(i, i + BATCH).map(fetchSeries));
         if (cancelled) return;
