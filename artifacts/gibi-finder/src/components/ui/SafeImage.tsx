@@ -6,9 +6,11 @@ interface SafeImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   src?: string;
   alt: string;
   className?: string;
+  /** Fired when a real src was given but every load attempt failed (broken cover). */
+  onBroken?: () => void;
 }
 
-export function SafeImage({ src, alt, className, onLoad, ...props }: SafeImageProps) {
+export function SafeImage({ src, alt, className, onLoad, onBroken, ...props }: SafeImageProps) {
   const [currentSrc, setCurrentSrc] = useState<string | undefined>(undefined);
   const [retryStage, setRetryStage] = useState<0 | 1 | 2>(0); // 0: proxied, 1: original direct, 2: failed placeholder
 
@@ -32,6 +34,7 @@ export function SafeImage({ src, alt, className, onLoad, ...props }: SafeImagePr
       // Stage 2 also failed. Go to Stage 3 (placeholder)
       bumpStat("failed");
       setRetryStage(2);
+      if (src) onBroken?.(); // had a URL but it never loaded → broken cover
     }
   };
 
