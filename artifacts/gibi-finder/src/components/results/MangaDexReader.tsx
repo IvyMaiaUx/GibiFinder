@@ -16,11 +16,14 @@ import {
   ZoomIn,
   ZoomOut,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  Settings
 } from "lucide-react";
 import { cn, proxyPdfUrl, proxyCoverUrl } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { useReaderZoom } from "@/components/reader/useReaderZoom";
+import { useReaderSettings } from "@/components/reader/useReaderSettings";
+import { ReaderSettingsPanel } from "@/components/reader/ReaderSettingsPanel";
 import { useAuth } from "@/hooks/use-auth";
 import { getLocalProgress, saveReadingState, markChapterCompleted } from "@/lib/user-history";
 import { markSourceEmpty, markSourceHasChapters } from "@/lib/empty-sources";
@@ -113,10 +116,19 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   const [readerMode, setReaderMode] = useState<"page" | "scroll">("scroll");
   const [error, setError] = useState<string | null>(null);
 
-  // In-reader zoom (pinch + double-tap) — extracted into a reusable hook (Phase 1).
+  // Reader preferences (global + per-work overrides) — Phase 4, Priority 1.
+  const workId = selectedResult?.id || mangaTitle || undefined;
+  const { settings } = useReaderSettings(workId);
+  const [showSettings, setShowSettings] = useState(false);
+
+  // In-reader zoom (pinch + double-tap) — extracted into a reusable hook (Phase 1),
+  // now driven by the user's zoom settings.
   const { zoom, setZoom } = useReaderZoom(scrollContainerRef, {
     enabled: showReader,
-    resetKey: `${selectedChapter?.id}-${readerMode}`,
+    // When "remember zoom" is on, keep a stable key so zoom persists across pages.
+    resetKey: settings.rememberZoom ? "keep" : `${selectedChapter?.id}-${readerMode}`,
+    max: settings.maxZoom,
+    doubleTap: settings.doubleTapZoom,
   });
 
   // Lock the page body while the reader is open so only the reader's own
@@ -132,10 +144,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // fade it out after a few seconds so the reading area is unobstructed. A tap
   // brings it back. `isFullscreen === true` means chrome hidden (immersive).
   useEffect(() => {
-    if (!showReader || isFullscreen) return;
-    const t = setTimeout(() => setIsFullscreen(true), 3800);
+    if (!showReader || isFullscreen || !settings.autoHideMs) return;
+    const t = setTimeout(() => setIsFullscreen(true), settings.autoHideMs);
     return () => clearTimeout(t);
-  }, [showReader, isFullscreen]);
+  }, [showReader, isFullscreen, settings.autoHideMs]);
 
   const toggleChrome = useCallback(() => setIsFullscreen(prev => !prev), []);
 
@@ -638,8 +650,8 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // Virtualization window for cascade mode: only pages within this range mount
   // their <img> (decode + memory); the rest render as height-reserved spacers so
   // the scroll position and page tracking stay correct with no reflow/flicker.
-  const V_BEHIND = 4;
-  const V_AHEAD = 7;
+  const V_BEHIND = settings.memorySaver ? 2 : 4;
+  const V_AHEAD = settings.memorySaver ? Math.min(settings.preloadAhead, 4) : settings.preloadAhead;
   const vWinStart = Math.max(0, currentPage - V_BEHIND);
   const vWinEnd = Math.min(pages.length - 1, currentPage + V_AHEAD);
   const vMeasured = Object.values(pageHeightsRef.current);
@@ -1334,6 +1346,15 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                     </button>
                   )}
 
+                  {/* Settings Button */}
+                  <button
+                    onClick={() => setShowSettings(true)}
+                    className="bg-zinc-800 border-2 border-white/20 p-1.5 sm:p-2 text-white rounded hover:bg-zinc-700 transition-colors"
+                    title="Configurações do leitor"
+                  >
+                    <Settings className="w-4 h-4 sm:w-5 sm:h-5" strokeWidth={2.5} />
+                  </button>
+
                   {/* Close Button (in the header, next to the chapter selector) */}
                   <button
                     onClick={() => setShowReader(false)}
@@ -1400,9 +1421,11 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                               if (h && h > 40) pageHeightsRef.current[idx] = h;
                             }}
                           />
-                          <div className="absolute bottom-2 right-2 bg-black/60 text-white font-sans text-xs px-2 py-1">
-                            Pág. {p.pageNumber}
-                          </div>
+                          {settings.showPageNumber && (
+                            <div className="absolute bottom-2 right-2 bg-black/60 text-white font-sans text-xs px-2 py-1">
+                              Pág. {p.pageNumber}
+                            </div>
+                          )}
                         </>
                       ) : (
                         // Height-reserved placeholder keeps scroll position stable.
@@ -1489,9 +1512,19 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
             )}
           </div>
 
+          {/* Thin reading-progress bar at the very top (chrome-independent). */}
+          {settings.showProgress && !getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && pages.length > 1 && (
+            <div className="fixed top-0 inset-x-0 z-[111] h-1 bg-white/10">
+              <div
+                className="h-full bg-primary transition-[width] duration-200"
+                style={{ width: `${((currentPage + 1) / pages.length) * 100}%` }}
+              />
+            </div>
+          )}
+
           {/* Bottom bar (chrome) — page scrubber + chapter nav + zoom. Part of the
               auto-hiding interface; a tap on the reading area brings it back. */}
-          {!isFullscreen && !getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && (
+          {settings.showBottomBar && !isFullscreen && !getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && (
             <div className="fixed bottom-0 inset-x-0 z-[110] bg-black/85 backdrop-blur-sm border-t-2 border-white/10 px-3 sm:px-5 py-2.5 flex items-center gap-2 sm:gap-3 select-none animate-in fade-in slide-in-from-bottom duration-200">
               <button
                 onClick={() => prevChapter && readChapter(prevChapter)}
@@ -1547,6 +1580,16 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               </div>
             </div>
           )}
+
+          {/* Reader settings drawer */}
+          <ReaderSettingsPanel
+            open={showSettings}
+            onClose={() => setShowSettings(false)}
+            workId={workId}
+            workTitle={selectedResult?.title || mangaTitle}
+            readingMode={readerMode}
+            onSetReadingMode={setReaderMode}
+          />
         </div>
       )}
     </div>

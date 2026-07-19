@@ -7,6 +7,8 @@ interface UseReaderZoomOptions {
   resetKey?: string;
   /** Maximum zoom factor (default 4x). */
   max?: number;
+  /** Enable double-tap-to-zoom (default true). */
+  doubleTap?: boolean;
 }
 
 /**
@@ -22,7 +24,7 @@ interface UseReaderZoomOptions {
  */
 export function useReaderZoom(
   scrollRef: RefObject<HTMLElement | null>,
-  { enabled, resetKey, max = 4 }: UseReaderZoomOptions,
+  { enabled, resetKey, max = 4, doubleTap = true }: UseReaderZoomOptions,
 ) {
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1);
@@ -61,10 +63,10 @@ export function useReaderZoom(
     };
     const onTouchEnd = (e: TouchEvent) => {
       if (e.touches.length < 2) pinchStartDist = 0;
-      if (e.changedTouches.length === 1 && e.touches.length === 0) {
+      if (doubleTap && e.changedTouches.length === 1 && e.touches.length === 0) {
         const now = Date.now();
         if (now - lastTap < 300) {
-          setZoom(zoomRef.current > 1 ? 1 : 2.5);
+          setZoom(zoomRef.current > 1 ? 1 : Math.min(2.5, max));
           lastTap = 0;
         } else {
           lastTap = now;
@@ -80,7 +82,7 @@ export function useReaderZoom(
       el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("touchend", onTouchEnd);
     };
-  }, [enabled, resetKey, scrollRef, max]);
+  }, [enabled, resetKey, scrollRef, max, doubleTap]);
 
   return { zoom, setZoom };
 }
