@@ -186,11 +186,11 @@ const MANGA_PROVIDER_IDS = ["mangadex", "mangaplus", "mangafire", "mugiwaras", "
 function itemType(item: any): "gibi" | "hq" | "manga" {
   const provs: string[] = (item?.sources || []).map((s: any) => s?.providerId);
   const genres: string[] = (item?.genres || []).map((x: string) => (x || "").toLowerCase());
+  // A gibi title hint always wins, regardless of provider.
+  const t = (item?.title || "").toLowerCase();
+  if (GIBI_TITLE_HINTS.some(k => t.includes(k))) return "gibi";
   const isBiblioteca = provs.includes("biblioteca-br");
   if (isBiblioteca) {
-    // A gibi title hint always wins (fixes Turma da Mônica mistagged as HQ).
-    const t = (item?.title || "").toLowerCase();
-    if (GIBI_TITLE_HINTS.some(k => t.includes(k))) return "gibi";
     if (genres.includes("hq")) return "hq";
     if (genres.some(g => g.includes("gibi") || g.includes("nacional"))) return "gibi";
     return "hq";

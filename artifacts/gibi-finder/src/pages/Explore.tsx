@@ -68,11 +68,11 @@ const GIBI_TITLE_HINTS = ["monica", "cebolinha", "magali", "cascao", "cascão", 
 const typeOf = (item: UnifiedCatalogItem): "manga" | "hq" | "gibi" => {
   const provs = (item.sources || []).map(s => s.providerId);
   const genres = (item.genres || []).map(g => g.toLowerCase());
+  // A gibi title hint always wins, regardless of provider — fixes Turma da
+  // Mônica / Disney showing in the HQ tab even when served by an HQ provider.
+  const t = (item.title || "").toLowerCase();
+  if (GIBI_TITLE_HINTS.some(k => t.includes(k))) return "gibi";
   if (provs.some(p => GIBI_PROVIDER_IDS.includes(p))) {
-    // biblioteca-br is a mixed library. A gibi title hint always wins (fixes
-    // Turma da Mônica mistagged as HQ); otherwise trust the crawl's genre tag.
-    const t = (item.title || "").toLowerCase();
-    if (GIBI_TITLE_HINTS.some(k => t.includes(k))) return "gibi";
     return genres.includes("hq") ? "hq" : "gibi";
   }
   if (provs.some(p => HQ_PROVIDER_IDS.includes(p))) return "hq";
@@ -82,10 +82,9 @@ const typeOf = (item: UnifiedCatalogItem): "manga" | "hq" | "gibi" => {
 // "Continue lendo" items come from local progress and carry no genres, so we
 // classify them by provider + the same Brazilian-gibi title hint.
 const typeOfContinue = (item: { providerId: string; title?: string }): "manga" | "hq" | "gibi" => {
-  if (GIBI_PROVIDER_IDS.includes(item.providerId)) {
-    const t = (item.title || "").toLowerCase();
-    return GIBI_TITLE_HINTS.some(k => t.includes(k)) ? "gibi" : "hq";
-  }
+  const t = (item.title || "").toLowerCase();
+  if (GIBI_TITLE_HINTS.some(k => t.includes(k))) return "gibi";
+  if (GIBI_PROVIDER_IDS.includes(item.providerId)) return "hq";
   if (HQ_PROVIDER_IDS.includes(item.providerId)) return "hq";
   return "manga";
 };
