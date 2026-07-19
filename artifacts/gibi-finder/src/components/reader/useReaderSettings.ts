@@ -12,6 +12,7 @@ import { useSyncExternalStore, useCallback } from "react";
 export type ReadingMode = "scroll" | "page" | "double" | "webtoon";
 export type ReadingDirection = "ltr" | "rtl";
 export type FitMode = "width" | "height" | "auto";
+export type DoublePageMode = "never" | "always" | "auto";
 export type ImageQuality = "auto" | "high" | "original";
 export type ReaderTheme = "dark" | "amoled" | "light";
 
@@ -19,6 +20,7 @@ export interface ReaderSettings {
   readingMode: ReadingMode;
   direction: ReadingDirection;
   fitMode: FitMode;
+  doublePage: DoublePageMode;
   // Zoom
   rememberZoom: boolean;
   maxZoom: number;
@@ -42,6 +44,7 @@ export const READER_SETTINGS_DEFAULTS: ReaderSettings = {
   readingMode: "scroll",
   direction: "ltr",
   fitMode: "width",
+  doublePage: "auto",
   rememberZoom: false,
   maxZoom: 4,
   doubleTapZoom: true,

@@ -130,8 +130,19 @@ export function ReaderSettingsPanel({
                 options={[
                   { label: "Scroll", value: "scroll" },
                   { label: "Página", value: "page" },
-                  { label: "Dupla", value: "double", disabled: true },
                   { label: "Webtoon", value: "webtoon", disabled: true },
+                ]}
+              />
+            </Row>
+            <Row label="Página dupla">
+              <Segmented
+                value={settings.doublePage}
+                onChange={(v) => set("doublePage", v)}
+                disabled={readingMode !== "page"}
+                options={[
+                  { label: "Nunca", value: "never" },
+                  { label: "Auto", value: "auto" },
+                  { label: "Sempre", value: "always" },
                 ]}
               />
             </Row>

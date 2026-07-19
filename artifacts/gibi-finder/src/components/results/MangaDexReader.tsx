@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from "react";
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -88,6 +88,17 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // Virtualization: measured height of each page (keeps off-window spacers the
   // right size so scroll position never jumps).
   const pageHeightsRef = useRef<Record<number, number>>({});
+  // Smart double-page: aspect ratio (w/h) of each page, learned on load, so we can
+  // detect spreads/covers/panoramas and pair only genuine portrait pages.
+  const pageAspectRef = useRef<Record<number, number>>({});
+  const [aspectVersion, setAspectVersion] = useState(0);
+  const recordAspect = (idx: number, img: HTMLImageElement) => {
+    const a = img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 0;
+    if (a && Math.abs((pageAspectRef.current[idx] ?? 0) - a) > 0.01) {
+      pageAspectRef.current[idx] = a;
+      setAspectVersion(v => v + 1);
+    }
+  };
   // Preloader: pages fetched ahead for the next chapter, keyed by chapter id, so
   // advancing is instant and no loading spinner shows.
   const prefetchedPagesRef = useRef<Record<string, Page[]>>({});
@@ -150,6 +161,17 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   }, [showReader, isFullscreen, settings.autoHideMs]);
 
   const toggleChrome = useCallback(() => setIsFullscreen(prev => !prev), []);
+
+  // Track whether the screen is big enough for side-by-side pages (tablets/desktop).
+  const [isLargeScreen, setIsLargeScreen] = useState(
+    typeof window !== "undefined" && window.innerWidth >= 820,
+  );
+  useEffect(() => {
+    const onResize = () => setIsLargeScreen(window.innerWidth >= 820);
+    window.addEventListener("resize", onResize);
+    onResize();
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   const [lastReadProgress, setLastReadProgress] = useState<any>(null);
   const [showInfo, setShowInfo] = useState(false);
@@ -659,6 +681,39 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     ? Math.round(vMeasured.reduce((a, b) => a + b, 0) / vMeasured.length)
     : Math.round((scrollContainerRef.current?.clientWidth || 700) * 1.4);
 
+  // ---- Smart double-page (page mode, big screens, not zoomed) ----
+  // A page counts as a "spread" (panorama / wide scan / cover) when it is wider
+  // than tall; those are shown solo, and only genuine portrait pages get paired.
+  const doubleActive = readerMode === "page" && settings.doublePage !== "never" && isLargeScreen && zoom === 1;
+  const isWidePage = useCallback(
+    (idx: number) => (pageAspectRef.current[idx] ?? 0) > 1.15,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [aspectVersion],
+  );
+  const spreads = useMemo<number[][] | null>(() => {
+    if (!doubleActive || pages.length === 0) return null;
+    const groups: number[][] = [];
+    let i = 0;
+    while (i < pages.length) {
+      if (i === 0) { groups.push([0]); i = 1; continue; }           // cover solo
+      if (isWidePage(i)) { groups.push([i]); i += 1; continue; }    // spread solo
+      if (i + 1 < pages.length && !isWidePage(i + 1)) { groups.push([i, i + 1]); i += 2; }
+      else { groups.push([i]); i += 1; }
+    }
+    return groups;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doubleActive, pages.length, isWidePage, settings.doublePage]);
+  const currentGroup = spreads ? (spreads.find(g => g.includes(currentPage)) ?? [currentPage]) : null;
+  const rtl = settings.direction === "rtl";
+
+  // Keep the current page aligned to the start of its spread so the scrubber and
+  // navigation stay consistent when double-page turns on or regroups.
+  useEffect(() => {
+    if (doubleActive && currentGroup && currentPage !== currentGroup[0]) {
+      setCurrentPage(currentGroup[0]);
+    }
+  }, [doubleActive, currentGroup, currentPage]);
+
   // Preloader: once near the end of the chapter, prefetch the next chapter's page
   // list and warm its first images so advancing never shows a loading spinner.
   useEffect(() => {
@@ -688,24 +743,35 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     return () => { cancelled = true; };
   }, [showReader, currentPage, pages.length, nextChapter]);
 
-  // Page navigation shared by keyboard, swipe and the bottom bar.
+  // Page navigation shared by keyboard, swipe and the bottom bar. In double-page
+  // mode it advances a whole spread at a time.
   const goToNextPage = useCallback(() => {
     if (readerMode === "page") {
-      if (currentPage < pages.length - 1) setCurrentPage(currentPage + 1);
+      if (spreads) {
+        const gi = spreads.findIndex(g => g.includes(currentPage));
+        const next = gi > -1 ? spreads[gi + 1] : null;
+        if (next) setCurrentPage(next[0]);
+        else if (nextChapter) readChapter(nextChapter);
+      } else if (currentPage < pages.length - 1) setCurrentPage(currentPage + 1);
       else if (nextChapter) readChapter(nextChapter);
     } else {
       scrollContainerRef.current?.scrollBy({ top: scrollContainerRef.current.clientHeight * 0.9, behavior: "smooth" });
     }
-  }, [readerMode, currentPage, pages.length, nextChapter]);
+  }, [readerMode, currentPage, pages.length, nextChapter, spreads]);
 
   const goToPrevPage = useCallback(() => {
     if (readerMode === "page") {
-      if (currentPage > 0) setCurrentPage(currentPage - 1);
+      if (spreads) {
+        const gi = spreads.findIndex(g => g.includes(currentPage));
+        const prev = gi > 0 ? spreads[gi - 1] : null;
+        if (prev) setCurrentPage(prev[0]);
+        else if (prevChapter) readChapter(prevChapter);
+      } else if (currentPage > 0) setCurrentPage(currentPage - 1);
       else if (prevChapter) readChapter(prevChapter);
     } else {
       scrollContainerRef.current?.scrollBy({ top: -scrollContainerRef.current.clientHeight * 0.9, behavior: "smooth" });
     }
-  }, [readerMode, currentPage, prevChapter]);
+  }, [readerMode, currentPage, prevChapter, spreads]);
 
   // Keyboard shortcuts: ← → ↑ ↓ Space Home End Esc.
   useEffect(() => {
@@ -1416,9 +1482,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                             className="w-full h-auto select-none pointer-events-none"
                             // In-window pages load eagerly (the window is the preloader),
                             // so the next pages are ready before the reader reaches them.
-                            onLoad={() => {
+                            onLoad={(e) => {
                               const h = pageRefs.current[idx]?.offsetHeight;
                               if (h && h > 40) pageHeightsRef.current[idx] = h;
+                              recordAspect(idx, e.currentTarget as HTMLImageElement);
                             }}
                           />
                           {settings.showPageNumber && (
@@ -1461,10 +1528,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                 </div>
               </div>
             ) : (
-              /* Page by Page Mode */
-              <div className="max-w-xl w-full h-full flex flex-col justify-between items-center gap-4">
+              /* Page by Page Mode (single or smart double-page) */
+              <div className={cn("w-full h-full flex flex-col justify-between items-center gap-4", doubleActive ? "max-w-6xl" : "max-w-xl")}>
                 <div
-                  className="flex-1 flex items-center justify-center w-full relative group cursor-pointer"
+                  className="flex-1 flex items-center justify-center w-full gap-0.5 relative group cursor-pointer"
                   onClick={(e) => {
                     // Three tap zones: left = previous, right = next, centre = toggle UI.
                     const rect = e.currentTarget.getBoundingClientRect();
@@ -1491,13 +1558,23 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                     }
                   }}
                 >
-                  <SafeImage
-                    src={pages[currentPage]?.url}
-                    alt={`Página ${pages[currentPage]?.pageNumber}`}
-                    className="max-h-[75vh] max-w-full object-contain border-4 border-white/20 select-none pointer-events-none"
-                    style={{ zoom }}
-                  />
-                  
+                  {(doubleActive && currentGroup
+                    ? (rtl ? [...currentGroup].reverse() : currentGroup)
+                    : [currentPage]
+                  ).map((pi) => (
+                    <SafeImage
+                      key={pi}
+                      src={pages[pi]?.url}
+                      alt={`Página ${pages[pi]?.pageNumber}`}
+                      className={cn(
+                        "object-contain border-4 border-white/20 select-none pointer-events-none",
+                        doubleActive && currentGroup && currentGroup.length === 2 ? "max-h-[85vh] max-w-[50%]" : "max-h-[85vh] max-w-full",
+                      )}
+                      style={{ zoom }}
+                      onLoad={(e) => recordAspect(pi, e.currentTarget as HTMLImageElement)}
+                    />
+                  ))}
+
                   {/* Left Edge Overlay Hint */}
                   <div className="absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-black/20 to-transparent opacity-0 group-hover:opacity-100 flex items-center pl-2 transition-opacity">
                     <ChevronLeft className="w-12 h-12 text-white drop-shadow-md" />
