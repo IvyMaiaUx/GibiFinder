@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -12,11 +12,11 @@ import {
   Globe,
   Database,
   Play,
-  Maximize,
-  Minimize,
   Info,
   ZoomIn,
-  ZoomOut
+  ZoomOut,
+  ChevronsLeft,
+  ChevronsRight
 } from "lucide-react";
 import { cn, proxyPdfUrl, proxyCoverUrl } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
@@ -88,6 +88,8 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // Preloader: pages fetched ahead for the next chapter, keyed by chapter id, so
   // advancing is instant and no loading spinner shows.
   const prefetchedPagesRef = useRef<Record<string, Page[]>>({});
+  // Swipe tracking for page mode.
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   // Guards the intersection observer from clobbering the saved page while we
   // are auto-scrolling back to it on resume.
   const resumingRef = useRef(false);
@@ -96,10 +98,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // heights are correct before we scroll.
   const [resumeTargetPage, setResumeTargetPage] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  // CSS-only immersive mode (hide the header). The reader is already a full-screen
+  // CSS-only immersive mode (hide the chrome). The reader is already a full-screen
   // fixed overlay, so we deliberately avoid the native Fullscreen API: on mobile it
   // exits on scroll/overscroll and locks orientation, which caused repeated bugs.
-  const toggleFullscreen = () => setIsFullscreen(prev => !prev);
+  // Chrome visibility is `!isFullscreen`; toggleChrome (declared below) flips it.
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null);
   const [langFilter, setLangFilter] = useState<"pt" | "en" | "all">("all");
@@ -125,6 +127,17 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = prev; };
   }, [showReader]);
+
+  // Auto-hide the interface: whenever the chrome (header/bottom bar) is showing,
+  // fade it out after a few seconds so the reading area is unobstructed. A tap
+  // brings it back. `isFullscreen === true` means chrome hidden (immersive).
+  useEffect(() => {
+    if (!showReader || isFullscreen) return;
+    const t = setTimeout(() => setIsFullscreen(true), 3800);
+    return () => clearTimeout(t);
+  }, [showReader, isFullscreen]);
+
+  const toggleChrome = useCallback(() => setIsFullscreen(prev => !prev), []);
 
   const [lastReadProgress, setLastReadProgress] = useState<any>(null);
   const [showInfo, setShowInfo] = useState(false);
@@ -662,6 +675,69 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     })();
     return () => { cancelled = true; };
   }, [showReader, currentPage, pages.length, nextChapter]);
+
+  // Page navigation shared by keyboard, swipe and the bottom bar.
+  const goToNextPage = useCallback(() => {
+    if (readerMode === "page") {
+      if (currentPage < pages.length - 1) setCurrentPage(currentPage + 1);
+      else if (nextChapter) readChapter(nextChapter);
+    } else {
+      scrollContainerRef.current?.scrollBy({ top: scrollContainerRef.current.clientHeight * 0.9, behavior: "smooth" });
+    }
+  }, [readerMode, currentPage, pages.length, nextChapter]);
+
+  const goToPrevPage = useCallback(() => {
+    if (readerMode === "page") {
+      if (currentPage > 0) setCurrentPage(currentPage - 1);
+      else if (prevChapter) readChapter(prevChapter);
+    } else {
+      scrollContainerRef.current?.scrollBy({ top: -scrollContainerRef.current.clientHeight * 0.9, behavior: "smooth" });
+    }
+  }, [readerMode, currentPage, prevChapter]);
+
+  // Keyboard shortcuts: ← → ↑ ↓ Space Home End Esc.
+  useEffect(() => {
+    if (!showReader || pages.length === 0) return;
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+      const container = scrollContainerRef.current;
+      switch (e.key) {
+        case "ArrowRight":
+        case "ArrowDown":
+        case " ":
+          e.preventDefault(); goToNextPage(); break;
+        case "ArrowLeft":
+        case "ArrowUp":
+          e.preventDefault(); goToPrevPage(); break;
+        case "Home":
+          e.preventDefault();
+          if (readerMode === "page") setCurrentPage(0);
+          else container?.scrollTo({ top: 0, behavior: "smooth" });
+          break;
+        case "End":
+          e.preventDefault();
+          if (readerMode === "page") setCurrentPage(pages.length - 1);
+          else container?.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+          break;
+        case "Escape":
+          setShowReader(false); break;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showReader, pages.length, readerMode, goToNextPage, goToPrevPage]);
+
+  // Jump to a page from the bottom scrubber.
+  const goToPage = useCallback((idx: number) => {
+    const clamped = Math.max(0, Math.min(idx, pages.length - 1));
+    setCurrentPage(clamped);
+    if (readerMode === "scroll") {
+      resumingRef.current = true;
+      pageRefs.current[clamped]?.scrollIntoView({ behavior: "auto", block: "start" });
+      window.setTimeout(() => { resumingRef.current = false; }, 200);
+    }
+  }, [pages.length, readerMode]);
 
   return (
     <div className="bg-white border-4 border-black p-6 rounded-xl comic-shadow relative overflow-hidden">
@@ -1308,6 +1384,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                     <div
                       key={idx}
                       ref={(el) => { pageRefs.current[idx] = el; }}
+                      onClick={toggleChrome}
                       className="relative w-full border-0 sm:border-4 border-white/10 bg-zinc-900"
                     >
                       {inWindow ? (
@@ -1363,25 +1440,31 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
             ) : (
               /* Page by Page Mode */
               <div className="max-w-xl w-full h-full flex flex-col justify-between items-center gap-4">
-                <div 
+                <div
                   className="flex-1 flex items-center justify-center w-full relative group cursor-pointer"
                   onClick={(e) => {
+                    // Three tap zones: left = previous, right = next, centre = toggle UI.
                     const rect = e.currentTarget.getBoundingClientRect();
                     const x = e.clientX - rect.left;
-                    if (x > rect.width / 2) {
-                      if (currentPage < pages.length - 1) {
-                        setCurrentPage(currentPage + 1);
-                      } else if (nextChapter) {
-                        // Switch to next chapter if on last page and clicked right half
-                        readChapter(nextChapter);
-                      }
-                    } else {
-                      if (currentPage > 0) {
-                        setCurrentPage(currentPage - 1);
-                      } else if (prevChapter) {
-                        // Switch to prev chapter if on first page and clicked left half
-                        readChapter(prevChapter);
-                      }
+                    if (x < rect.width * 0.33) goToPrevPage();
+                    else if (x > rect.width * 0.67) goToNextPage();
+                    else toggleChrome();
+                  }}
+                  onTouchStart={(e) => {
+                    swipeStartRef.current = e.touches.length === 1
+                      ? { x: e.touches[0].clientX, y: e.touches[0].clientY }
+                      : null;
+                  }}
+                  onTouchEnd={(e) => {
+                    const s = swipeStartRef.current;
+                    swipeStartRef.current = null;
+                    if (!s || zoom !== 1) return; // when zoomed, let the user pan
+                    const t = e.changedTouches[0];
+                    const dx = t.clientX - s.x;
+                    const dy = t.clientY - s.y;
+                    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+                      if (dx < 0) goToNextPage();
+                      else goToPrevPage();
                     }
                   }}
                 >
@@ -1402,100 +1485,50 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                   </div>
                 </div>
 
-                {/* Page Navigation Controls */}
-                {!isFullscreen && (
-                  <div className="flex flex-col items-center gap-2 select-none w-full">
-                    <div className="flex items-center gap-6 bg-zinc-900 px-6 py-3 rounded-full border-2 border-white/20 animate-in fade-in slide-in-from-bottom duration-200">
-                      <button
-                        disabled={currentPage === 0 && !prevChapter}
-                        onClick={() => {
-                          if (currentPage > 0) {
-                            setCurrentPage(currentPage - 1);
-                          } else if (prevChapter) {
-                            readChapter(prevChapter);
-                          }
-                        }}
-                        className="text-white hover:text-secondary disabled:opacity-30 disabled:hover:text-white"
-                      >
-                        <ChevronLeft className="w-8 h-8" strokeWidth={3} />
-                      </button>
-                      <span className="font-display text-xl text-white">
-                        Pág. {pages[currentPage]?.pageNumber} / {pages.length}
-                      </span>
-                      <button
-                        disabled={currentPage === pages.length - 1 && !nextChapter}
-                        onClick={() => {
-                          if (currentPage < pages.length - 1) {
-                            setCurrentPage(currentPage + 1);
-                          } else if (nextChapter) {
-                            readChapter(nextChapter);
-                          }
-                        }}
-                        className="text-white hover:text-secondary disabled:opacity-30 disabled:hover:text-white"
-                      >
-                        <ChevronRight className="w-8 h-8" strokeWidth={3} />
-                      </button>
-                    </div>
-                    {currentPage === pages.length - 1 && nextChapter && (
-                      <button
-                        onClick={() => readChapter(nextChapter)}
-                        className="bg-primary hover:bg-yellow-500 text-black text-xs px-4 py-2 border-2 border-black rounded font-display tracking-wide uppercase transition-all shadow-[2px_2px_0_rgba(255,255,255,0.2)]"
-                      >
-                        SEGUINTE: CAP. {nextChapter.chapterNum} ➔
-                      </button>
-                    )}
-                  </div>
-                )}
               </div>
             )}
           </div>
 
-          {/* Floating controls (bottom right) — always visible, incl. fullscreen */}
-          <div className="fixed bottom-6 right-6 z-[110] flex items-center gap-2">
-            {/* Zoom controls — only for image chapters (not embeds / external / PDF) */}
-            {!getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && !pages[currentPage]?.url?.startsWith("pdf:") && (
-              <div className="flex items-center gap-1 bg-black/80 border-2 border-white/20 rounded-full p-1">
-                <button
-                  onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))}
-                  className="text-white p-2 rounded-full hover:bg-white/10 disabled:opacity-30"
-                  disabled={zoom <= 1}
-                  title="Diminuir zoom"
-                >
-                  <ZoomOut className="w-5 h-5" strokeWidth={3} />
-                </button>
-                <button
-                  onClick={() => setZoom(1)}
-                  className="text-white font-sans font-bold text-xs w-11 text-center tabular-nums"
-                  title="Restaurar zoom"
-                >
-                  {Math.round(zoom * 100)}%
-                </button>
-                <button
-                  onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))}
-                  className="text-white p-2 rounded-full hover:bg-white/10 disabled:opacity-30"
-                  disabled={zoom >= 4}
-                  title="Aumentar zoom"
-                >
-                  <ZoomIn className="w-5 h-5" strokeWidth={3} />
-                </button>
-              </div>
-            )}
-            <button
-              onClick={toggleFullscreen}
-              className="bg-black/80 hover:bg-black text-white p-3 border-2 border-white/20 rounded-full transition-all hover:scale-105"
-              title="Alternar Tela Cheia"
-            >
-              {isFullscreen ? <Minimize className="w-5 h-5" strokeWidth={3} /> : <Maximize className="w-5 h-5" strokeWidth={3} />}
-            </button>
-            {/* Close — floating, so the reader can be closed while in fullscreen too */}
-            <button
-              onClick={() => { setIsFullscreen(false); setShowReader(false); }}
-              className="bg-primary hover:bg-red-600 text-white p-3 border-2 border-white rounded-full transition-all hover:scale-105"
-              title="Fechar Leitor"
-            >
-              <X className="w-5 h-5" strokeWidth={3} />
-            </button>
-          </div>
+          {/* Bottom bar (chrome) — page scrubber + chapter nav + zoom. Part of the
+              auto-hiding interface; a tap on the reading area brings it back. */}
+          {!isFullscreen && !getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && (
+            <div className="fixed bottom-0 inset-x-0 z-[110] bg-black/85 backdrop-blur-sm border-t-2 border-white/10 px-3 sm:px-5 py-2.5 flex items-center gap-2 sm:gap-3 select-none animate-in fade-in slide-in-from-bottom duration-200">
+              <button
+                onClick={() => prevChapter && readChapter(prevChapter)}
+                disabled={!prevChapter}
+                className="text-white/80 hover:text-white disabled:opacity-20 shrink-0 p-1"
+                title="Capítulo anterior"
+              >
+                <ChevronsLeft className="w-5 h-5" strokeWidth={3} />
+              </button>
+              <span className="text-white font-sans font-bold text-2xs sm:text-xs tabular-nums w-7 sm:w-8 text-right shrink-0">{currentPage + 1}</span>
+              <input
+                type="range"
+                min={0}
+                max={Math.max(0, pages.length - 1)}
+                value={currentPage}
+                onChange={(e) => goToPage(Number(e.target.value))}
+                className="flex-1 h-1.5 accent-primary cursor-pointer"
+                aria-label="Navegar pelas páginas"
+              />
+              <span className="text-white/50 font-sans font-bold text-2xs sm:text-xs tabular-nums w-7 sm:w-8 shrink-0">{pages.length}</span>
+              {!pages[currentPage]?.url?.startsWith("pdf:") && (
+                <div className="hidden xs:flex items-center gap-0.5 shrink-0 border-l border-white/10 pl-2 ml-1">
+                  <button onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} disabled={zoom <= 1} className="text-white/80 hover:text-white disabled:opacity-20 p-1" title="Menos zoom"><ZoomOut className="w-4 h-4" strokeWidth={3} /></button>
+                  <button onClick={() => setZoom(1)} className="text-white text-3xs font-bold tabular-nums w-9 text-center" title="Restaurar zoom">{Math.round(zoom * 100)}%</button>
+                  <button onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))} disabled={zoom >= 4} className="text-white/80 hover:text-white disabled:opacity-20 p-1" title="Mais zoom"><ZoomIn className="w-4 h-4" strokeWidth={3} /></button>
+                </div>
+              )}
+              <button
+                onClick={() => nextChapter && readChapter(nextChapter)}
+                disabled={!nextChapter}
+                className="text-white/80 hover:text-white disabled:opacity-20 shrink-0 p-1"
+                title="Próximo capítulo"
+              >
+                <ChevronsRight className="w-5 h-5" strokeWidth={3} />
+              </button>
+            </div>
+          )}
 
           {/* Synopsis Popup Modal */}
           {showInfo && (
