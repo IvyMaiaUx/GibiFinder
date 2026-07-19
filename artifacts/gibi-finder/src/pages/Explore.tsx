@@ -68,6 +68,9 @@ const GIBI_TITLE_HINTS = ["monica", "mônica", "cebolinha", "magali", "cascao", 
 const typeOf = (item: UnifiedCatalogItem): "manga" | "hq" | "gibi" => {
   const provs = (item.sources || []).map(s => s.providerId);
   const genres = (item.genres || []).map(g => g.toLowerCase());
+  // Manual admin reclassification wins over everything.
+  const forced = (item as unknown as { forcedType?: string }).forcedType;
+  if (forced === "hq" || forced === "gibi" || forced === "manga") return forced;
   // A gibi title hint always wins, regardless of provider — fixes Turma da
   // Mônica / Disney showing in the HQ tab even when served by an HQ provider.
   const t = (item.title || "").toLowerCase();

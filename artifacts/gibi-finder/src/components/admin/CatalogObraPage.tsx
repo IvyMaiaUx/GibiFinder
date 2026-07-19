@@ -23,7 +23,7 @@ const TABS: { key: ObraTab; label: string; icon: typeof Info; ready: boolean }[]
   { key: "logs", label: "Logs", icon: ScrollText, ready: false },
 ];
 
-export interface ObraSavePatch { title?: string | null; description?: string | null; coverUrl?: string | null }
+export interface ObraSavePatch { title?: string | null; description?: string | null; coverUrl?: string | null; itemType?: string | null }
 
 interface Props {
   item: any;
@@ -174,7 +174,14 @@ export function CatalogObraPage({ item, override, type, onBack, onSave, onToggle
                   <input value={title} onChange={e => setTitle(e.target.value)} className={inp} />
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div><span className={lbl}>Tipo</span><p className="font-sans font-bold">{type === "gibi" ? "Gibi" : type === "manga" ? "Mangá" : "HQ"}</p></div>
+                  <div>
+                    <label className={lbl}>Tipo</label>
+                    <select value={type} disabled={saving} onChange={e => doSave({ itemType: e.target.value })} className={inp}>
+                      <option value="hq">HQ</option>
+                      <option value="gibi">Gibi</option>
+                      <option value="manga">Mangá</option>
+                    </select>
+                  </div>
                   <div><span className={lbl}>Slug</span><p className="font-mono text-xs break-all">{slug}</p></div>
                 </div>
                 <div>
@@ -186,7 +193,7 @@ export function CatalogObraPage({ item, override, type, onBack, onSave, onToggle
                 <button disabled={saving || title === curTitle} onClick={() => doSave({ title: title.trim() || null })} className={saveBtn}>
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Salvar título
                 </button>
-                <p className="text-2xs font-bold text-gray-400">Tipo, tags, +18, provider principal e banner precisam de novos campos no banco — chegam na próxima fase.</p>
+                <p className="text-2xs font-bold text-gray-400">Trocar o Tipo salva na hora e vale no site. Tags, +18, provider principal e banner chegam na próxima fase.</p>
               </div>
               <QualityCard q={q} />
             </div>

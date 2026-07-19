@@ -19,6 +19,8 @@ export interface CatalogOverride {
   coverUrl?: string;
   description?: string;
   title?: string;
+  /** Manual reclassification: "hq" | "gibi" | "manga" (overrides auto typeOf). */
+  itemType?: string;
 }
 
 export function overrideKey(providerId: string, itemId: string): string {
@@ -46,6 +48,7 @@ export async function getOverrides(force = false): Promise<Map<string, CatalogOv
         coverUrl: (r.cover_url as string) || undefined,
         description: (r.description as string) || undefined,
         title: (r.title as string) || undefined,
+        itemType: (r.item_type as string) || undefined,
       });
     }
     cache = map;
@@ -68,6 +71,7 @@ export async function upsertOverride(o: {
   coverUrl?: string | null;
   description?: string | null;
   title?: string | null;
+  itemType?: string | null;
 }): Promise<void> {
   if (!supabase) throw new Error("supabase_unavailable");
   const id = overrideKey(o.providerId, o.itemId);
@@ -79,6 +83,7 @@ export async function upsertOverride(o: {
     cover_url: o.coverUrl ?? null,
     description: o.description ?? null,
     title: o.title ?? null,
+    item_type: o.itemType ?? null,
     updated_at: new Date().toISOString(),
   });
   if (error) throw new Error(error.message);
@@ -117,6 +122,9 @@ export function applyOverrides<
       if (ov.coverUrl) item.coverUrl = ov.coverUrl;
       if (ov.description) item.description = ov.description;
       if (ov.title) item.title = ov.title;
+      // Manual reclassification travels as a dedicated field the client's typeOf
+      // reads first — no genre pollution, so it never shows up as a tag.
+      if (ov.itemType) (item as unknown as Record<string, unknown>).forcedType = ov.itemType;
     }
     out.push(item);
   }

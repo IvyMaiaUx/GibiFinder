@@ -183,7 +183,8 @@ const MANGA_PROVIDER_IDS = ["mangadex", "mangaplus", "mangafire", "mugiwaras", "
 // Mirrors the app's Explore typeOf: a biblioteca-br item is HQ when tagged "hq",
 // otherwise it's a Gibi (with a title-hint fallback for untagged items). Items
 // from the manga aggregators are classified Mangá.
-function itemType(item: any): "gibi" | "hq" | "manga" {
+function itemType(item: any, override?: any): "gibi" | "hq" | "manga" {
+  if (override?.itemType === "hq" || override?.itemType === "gibi" || override?.itemType === "manga") return override.itemType;
   const provs: string[] = (item?.sources || []).map((s: any) => s?.providerId);
   const genres: string[] = (item?.genres || []).map((x: string) => (x || "").toLowerCase());
   // A gibi title hint always wins, regardless of provider.
@@ -297,6 +298,7 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
         coverUrl: patch.coverUrl ?? cur.coverUrl ?? null,
         description: patch.description ?? cur.description ?? null,
         title: patch.title ?? cur.title ?? null,
+        itemType: patch.itemType ?? cur.itemType ?? null,
       });
       toast({ title: "Salvo!" });
       await loadOverrides();
@@ -332,7 +334,7 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
     const ov = overrides[keyOf(it)];
     const title = (ov?.title || it.title || "").toLowerCase();
     if (nq && !title.includes(nq)) return false;
-    if (fType !== "all" && itemType(it) !== fType) return false;
+    if (fType !== "all" && itemType(it, ov) !== fType) return false;
     if (fProv !== "all" && it.sources?.[0]?.providerId !== fProv) return false;
     if (fStatus === "hidden" && !ov?.hidden) return false;
     if (fStatus === "edited" && !(ov && !ov.hidden)) return false;
@@ -348,9 +350,9 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
     filtered = [...filtered].sort((a, b) => dupeKey(overrides[keyOf(a)]?.title || a.title).localeCompare(dupeKey(overrides[keyOf(b)]?.title || b.title)));
   }
 
-  const nHq = items.filter(it => itemType(it) === "hq").length;
-  const nGibi = items.filter(it => itemType(it) === "gibi").length;
-  const nManga = items.filter(it => itemType(it) === "manga").length;
+  const nHq = items.filter(it => itemType(it, overrides[keyOf(it)]) === "hq").length;
+  const nGibi = items.filter(it => itemType(it, overrides[keyOf(it)]) === "gibi").length;
+  const nManga = items.filter(it => itemType(it, overrides[keyOf(it)]) === "manga").length;
   const nHidden = items.filter(it => overrides[keyOf(it)]?.hidden).length;
   const nEdited = items.filter(it => { const o = overrides[keyOf(it)]; return o && !o.hidden; }).length;
   // Curation queue counts (Modo Curadoria)
@@ -369,7 +371,7 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
       <CatalogObraPage
         item={selected}
         override={ov}
-        type={itemType(selected)}
+        type={itemType(selected, ov)}
         onBack={() => setSelected(null)}
         onSave={async (patch) => { await save(selected, patch); }}
         onToggleHide={async () => { await save(selected, { hidden: !ov?.hidden }); }}
@@ -521,7 +523,7 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
                       const prov = item.sources?.[0]?.providerId;
                       const nSources = item.sources?.length || 0;
                       const qs = scoreItem(item, ov);
-                      const t = itemType(item);
+                      const t = itemType(item, ov);
                       return (
                         <tr key={k || i} className={`hover:bg-secondary/10 cursor-pointer ${ov?.hidden ? "opacity-50" : ""}`} onClick={() => setSelected(item)}>
                           <td className="py-1.5 px-2">

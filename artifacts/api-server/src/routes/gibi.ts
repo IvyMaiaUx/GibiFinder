@@ -405,11 +405,12 @@ router.get("/admin/catalog-overrides", async (req: Request, res: Response) => {
 //   body: { providerId, itemId, hidden?, coverUrl?, description?, title? }
 router.put("/admin/catalog-overrides", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
-  const { providerId, itemId, hidden, coverUrl, description, title } = req.body || {};
+  const { providerId, itemId, hidden, coverUrl, description, title, itemType } = req.body || {};
   if (!providerId || !itemId) {
     res.status(400).json({ error: "missing_params", message: "providerId e itemId são obrigatórios" });
     return;
   }
+  const validType = ["hq", "gibi", "manga"].includes(String(itemType)) ? String(itemType) : null;
   try {
     await upsertOverride({
       providerId: String(providerId),
@@ -418,6 +419,7 @@ router.put("/admin/catalog-overrides", async (req: Request, res: Response) => {
       coverUrl: typeof coverUrl === "string" ? coverUrl.trim() || null : null,
       description: typeof description === "string" ? description.trim() || null : null,
       title: typeof title === "string" ? title.trim() || null : null,
+      itemType: validType,
     });
     res.json({ ok: true });
   } catch (err) {
