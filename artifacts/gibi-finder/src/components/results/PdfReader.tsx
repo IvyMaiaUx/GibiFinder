@@ -166,7 +166,10 @@ export function PdfReader({
       const el = scrollRef.current;
       const w = el?.clientWidth ?? 700;
       const h = el?.clientHeight ?? 900;
-      const pad = immersion !== "clean" ? 0 : 24;
+      // Full-bleed whenever the chrome is hidden (clean auto-hide, cinema or
+      // immersion) so the page uses the whole screen on mobile.
+      const fullBleed = immersion !== "clean" || isFullscreen;
+      const pad = fullBleed ? 0 : 24;
       setPageWidth(Math.min(Math.max(w - pad, 260), 1400));
       setPageHeight(Math.max(h - pad, 300));
     };
@@ -330,7 +333,7 @@ export function PdfReader({
   const fitHeight = settings.fitMode === "height";
   const pageProps = fitHeight ? { height: pageHeight } : { width: pageWidth };
   const placeholderH = fitHeight ? pageHeight : Math.round(pageWidth * 1.4);
-  const bodyPad = immersion !== "clean" ? "p-0" : "p-3 sm:p-4";
+  const bodyPad = (immersion !== "clean" || isFullscreen) ? "p-0" : "p-3 sm:p-4";
 
   // Themed chrome styles.
   const barStyle: CSSProperties = {
