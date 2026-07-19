@@ -57581,6 +57581,89 @@ var ProviderManager = class {
   }
 };
 
+// src/lib/synopsisScraper.ts
+init_logger();
+var BASE = "https://zonafantasmanet.wordpress.com";
+var HEADERS2 = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8"
+};
+function decodeHtml2(value = "") {
+  return value.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").replace(/&#8230;/g, "\u2026").replace(/&#8211;/g, "\u2013").replace(/&#8217;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10))).replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/\s+/g, " ").trim();
+}
+function stripHtml2(value = "") {
+  return decodeHtml2(
+    value.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ")
+  );
+}
+function normalize(value = "") {
+  return value.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+function titleTokens(title) {
+  const cleaned = normalize(title).replace(/\bler\s+(?:online\s+)?/g, " ").replace(/#/g, " ");
+  const issueMatch = cleaned.match(/\b(\d{1,4})\b/);
+  const issue = issueMatch ? String(parseInt(issueMatch[1], 10)) : null;
+  const words = cleaned.replace(/\d+/g, " ").split(/[^a-z]+/).filter((w) => w.length > 2);
+  return { words, issue };
+}
+function pickBestLink(html, title) {
+  const { words, issue } = titleTokens(title);
+  const links = /* @__PURE__ */ new Set();
+  for (const m of html.matchAll(
+    /href="(https:\/\/zonafantasmanet\.wordpress\.com\/20\d{2}\/\d{2}\/\d{2}\/[^"#]+?)"/gi
+  )) {
+    links.add(m[1].replace(/\/$/, ""));
+  }
+  let fallback = null;
+  for (const link of links) {
+    const slug = normalize(link.split("/").pop() || "");
+    const slugTokens = slug.split("-");
+    const allWords = words.every((w) => slugTokens.includes(w));
+    if (!allWords) continue;
+    if (!issue) return link;
+    if (slugTokens.includes(issue)) return link;
+    fallback = fallback || link;
+  }
+  return issue ? null : fallback;
+}
+function extractSynopsis(html) {
+  const patterns = [
+    /sinopse\s*<\/(?:strong|b|span)>\s*:?\s*([\s\S]*?)<\/(?:td|p|div|li|section)>/i,
+    /sinopse\s*:\s*(?:<\/(?:strong|b|span)>)?\s*([\s\S]*?)<\/(?:td|p|div|li|section)>/i
+  ];
+  for (const re of patterns) {
+    const m = html.match(re);
+    if (m) {
+      const text = stripHtml2(m[1]);
+      if (text.length >= 40) return text.slice(0, 1200);
+    }
+  }
+  return "";
+}
+async function fetchText(url) {
+  const res = await fetch(url, { headers: HEADERS2 });
+  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
+  return await res.text();
+}
+async function scrapeComicSynopsis(title) {
+  const clean = title.trim();
+  if (!clean) return "";
+  try {
+    const { words, issue } = titleTokens(clean);
+    if (words.length === 0) return "";
+    const query = [...words, issue].filter(Boolean).join(" ");
+    const searchHtml = await fetchText(`${BASE}/?s=${encodeURIComponent(query)}`);
+    const link = pickBestLink(searchHtml, clean);
+    if (!link) return "";
+    const postHtml = await fetchText(link);
+    return extractSynopsis(postHtml);
+  } catch (err) {
+    logger.warn({ err, title }, "synopsis scrape failed");
+    return "";
+  }
+}
+
 // src/routes/providers.ts
 var router3 = (0, import_express3.Router)();
 async function injectRatings(results) {
@@ -58196,6 +58279,50 @@ router3.post("/admin/catalog/rebuild", async (req, res) => {
     res.status(500).json({ error: "rebuild_failed", message: err instanceof Error ? err.message : String(err) });
   }
 });
+router3.post("/admin/catalog/autofill-synopsis", async (req, res) => {
+  if (!requireAdmin2(req, res)) return;
+  const limit = Math.min(Math.max(Number(req.body?.limit) || 12, 1), 25);
+  try {
+    const items = await ProviderManager.getFullCatalog(false);
+    const overrides = await getOverrides();
+    const lacksSynopsis = (it) => {
+      const s = it.sources?.[0];
+      if (!s) return false;
+      const ov = overrides.get(overrideKey(s.providerId, s.id));
+      return String(ov?.description || it.description || "").trim().length < 60;
+    };
+    const missing = items.filter(lacksSynopsis);
+    const shuffled = [...missing].sort(() => Math.random() - 0.5).slice(0, limit);
+    let filled = 0;
+    const results = [];
+    const CONC = 4;
+    for (let i = 0; i < shuffled.length; i += CONC) {
+      await Promise.all(shuffled.slice(i, i + CONC).map(async (it) => {
+        const s = it.sources[0];
+        const syn = (await scrapeComicSynopsis(it.title).catch(() => "")).trim();
+        if (syn.length >= 40) {
+          const cur = overrides.get(overrideKey(s.providerId, s.id));
+          await upsertOverride({
+            providerId: s.providerId,
+            itemId: s.id,
+            hidden: cur?.hidden ?? false,
+            coverUrl: cur?.coverUrl ?? null,
+            description: syn,
+            title: cur?.title ?? null
+          });
+          filled++;
+          results.push({ title: it.title, ok: true });
+        } else {
+          results.push({ title: it.title, ok: false });
+        }
+      }));
+    }
+    res.json({ totalMissing: missing.length, scanned: shuffled.length, filled, remaining: Math.max(0, missing.length - filled), results });
+  } catch (err) {
+    logger.error({ err }, "autofill synopsis failed");
+    res.status(500).json({ error: "autofill_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
 var providers_default = router3;
 
 // src/routes/imageProxy.ts
@@ -58345,91 +58472,6 @@ var pdfProxy_default = router5;
 // src/routes/translate.ts
 var import_express6 = __toESM(require_express2(), 1);
 init_gemini();
-
-// src/lib/synopsisScraper.ts
-init_logger();
-var BASE = "https://zonafantasmanet.wordpress.com";
-var HEADERS2 = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-  "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8"
-};
-function decodeHtml2(value = "") {
-  return value.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").replace(/&#8230;/g, "\u2026").replace(/&#8211;/g, "\u2013").replace(/&#8217;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10))).replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/\s+/g, " ").trim();
-}
-function stripHtml2(value = "") {
-  return decodeHtml2(
-    value.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ")
-  );
-}
-function normalize(value = "") {
-  return value.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-}
-function titleTokens(title) {
-  const cleaned = normalize(title).replace(/\bler\s+(?:online\s+)?/g, " ").replace(/#/g, " ");
-  const issueMatch = cleaned.match(/\b(\d{1,4})\b/);
-  const issue = issueMatch ? String(parseInt(issueMatch[1], 10)) : null;
-  const words = cleaned.replace(/\d+/g, " ").split(/[^a-z]+/).filter((w) => w.length > 2);
-  return { words, issue };
-}
-function pickBestLink(html, title) {
-  const { words, issue } = titleTokens(title);
-  const links = /* @__PURE__ */ new Set();
-  for (const m of html.matchAll(
-    /href="(https:\/\/zonafantasmanet\.wordpress\.com\/20\d{2}\/\d{2}\/\d{2}\/[^"#]+?)"/gi
-  )) {
-    links.add(m[1].replace(/\/$/, ""));
-  }
-  let fallback = null;
-  for (const link of links) {
-    const slug = normalize(link.split("/").pop() || "");
-    const slugTokens = slug.split("-");
-    const allWords = words.every((w) => slugTokens.includes(w));
-    if (!allWords) continue;
-    if (!issue) return link;
-    if (slugTokens.includes(issue)) return link;
-    fallback = fallback || link;
-  }
-  return issue ? null : fallback;
-}
-function extractSynopsis(html) {
-  const patterns = [
-    /sinopse\s*<\/(?:strong|b|span)>\s*:?\s*([\s\S]*?)<\/(?:td|p|div|li|section)>/i,
-    /sinopse\s*:\s*(?:<\/(?:strong|b|span)>)?\s*([\s\S]*?)<\/(?:td|p|div|li|section)>/i
-  ];
-  for (const re of patterns) {
-    const m = html.match(re);
-    if (m) {
-      const text = stripHtml2(m[1]);
-      if (text.length >= 40) return text.slice(0, 1200);
-    }
-  }
-  return "";
-}
-async function fetchText(url) {
-  const res = await fetch(url, { headers: HEADERS2 });
-  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
-  return await res.text();
-}
-async function scrapeComicSynopsis(title) {
-  const clean = title.trim();
-  if (!clean) return "";
-  try {
-    const { words, issue } = titleTokens(clean);
-    if (words.length === 0) return "";
-    const query = [...words, issue].filter(Boolean).join(" ");
-    const searchHtml = await fetchText(`${BASE}/?s=${encodeURIComponent(query)}`);
-    const link = pickBestLink(searchHtml, clean);
-    if (!link) return "";
-    const postHtml = await fetchText(link);
-    return extractSynopsis(postHtml);
-  } catch (err) {
-    logger.warn({ err, title }, "synopsis scrape failed");
-    return "";
-  }
-}
-
-// src/routes/translate.ts
 var router6 = (0, import_express6.Router)();
 var synopsisCache = /* @__PURE__ */ new Map();
 var cache2 = /* @__PURE__ */ new Map();

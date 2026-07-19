@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, EyeOff, MessageSquare, Bug, Lightbulb, Archive, Trophy, AlertTriangle, User, RefreshCw, ChevronLeft, ChevronRight, Search, RotateCcw } from "lucide-react";
+import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, EyeOff, MessageSquare, Bug, Lightbulb, Archive, Trophy, AlertTriangle, User, RefreshCw, ChevronLeft, ChevronRight, Search, RotateCcw, Sparkles } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { useToast } from "@/hooks/use-toast";
 import { SafeImage } from "@/components/ui/SafeImage";
@@ -9,6 +9,7 @@ import { ProviderInspectorPanel } from "@/pages/ProviderInspector";
 import { AdminShell, type AdminModule } from "@/components/admin/AdminShell";
 import { AdminDashboard, type DashboardStats } from "@/components/admin/AdminDashboard";
 import { AdminPlaceholder } from "@/components/admin/AdminPlaceholder";
+import { AdminEngines } from "@/components/admin/AdminEngines";
 import { scoreItem, qualityColor } from "@/components/admin/quality";
 import { CatalogObraPage } from "@/components/admin/CatalogObraPage";
 
@@ -238,6 +239,19 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
   // as rows render. Treated as "sem capa" for curation.
   const [brokenCovers, setBrokenCovers] = useState<Set<string>>(new Set());
   const markBroken = (k: string) => setBrokenCovers(prev => prev.has(k) ? prev : new Set(prev).add(k));
+  const [filling, setFilling] = useState(false);
+
+  const autofillSynopsis = async () => {
+    setFilling(true);
+    try {
+      const data = await adminRequest("/api/admin/catalog/autofill-synopsis", adminKey, "POST", { limit: 12 });
+      toast({ title: `Sinopses: +${data.filled} de ${data.scanned}`, description: `Faltam ~${data.remaining}. Clique de novo para continuar.` });
+      onReload();
+      await loadOverrides();
+    } catch (e) {
+      toast({ title: "Erro ao completar sinopses", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    } finally { setFilling(false); }
+  };
   // filters
   const [q, setQ] = useState("");
   const [fType, setFType] = useState<"all" | "hq" | "gibi" | "manga">("all");
@@ -360,7 +374,11 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
         <span className="border-4 border-black bg-white px-3 py-1.5 font-display text-sm">GIBI {nGibi}</span>
         <span className="border-4 border-black bg-white px-3 py-1.5 font-display text-sm">EDITADOS {nEdited}</span>
         <span className="border-4 border-black bg-white px-3 py-1.5 font-display text-sm">ESCONDIDOS {nHidden}</span>
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex flex-wrap gap-2">
+          <button onClick={autofillSynopsis} disabled={filling || loading} title="Preenche sinopses reais em lote (fonte externa, 12 por vez)"
+            className="border-4 border-black px-3 py-1.5 font-display text-sm bg-white hover:bg-secondary flex items-center gap-2 disabled:opacity-50">
+            <Sparkles className={`w-4 h-4 ${filling ? "animate-pulse" : ""}`} /> {filling ? "COMPLETANDO…" : "COMPLETAR SINOPSES"}
+          </button>
           <button onClick={() => { onReload(); loadOverrides(); }} disabled={loading || rebuilding}
             className="border-4 border-black px-3 py-1.5 font-display text-sm bg-white hover:bg-muted flex items-center gap-2 disabled:opacity-50">
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> ATUALIZAR
@@ -1233,11 +1251,7 @@ export default function Admin() {
         )}
 
       {tab === "engines" && (
-        <AdminPlaceholder
-          title="Engines"
-          description="O coração técnico: motores de scraping reutilizáveis (Madara, WordPress Comic, ComicExtra, Generic HTML, API JSON). Cada engine serve vários providers, com seletores, parser e helpers versionados — criar um provider novo vira só apontar a URL para a engine certa."
-          sections={["Sites por engine", "Seletores", "Parser", "Helpers", "Compatibilidade", "Logs", "Criar provider"]}
-        />
+        <AdminEngines providers={providers} onGoProviders={() => setTab("providers")} />
       )}
 
       {tab === "system" && (

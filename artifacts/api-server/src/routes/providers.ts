@@ -1,8 +1,9 @@
 import { Router, Request, Response } from "express";
 import { logger } from "../lib/logger";
 import { ProviderManager } from "../providers/ProviderManager";
-import { getOverrides, applyOverrides, overrideKey } from "../lib/catalogOverrides";
+import { getOverrides, applyOverrides, overrideKey, upsertOverride } from "../lib/catalogOverrides";
 import { hasDriveKey } from "../lib/driveKeys";
+import { scrapeComicSynopsis } from "../lib/synopsisScraper";
 
 const router = Router();
 
@@ -726,6 +727,56 @@ router.post("/admin/catalog/rebuild", async (req: Request, res: Response) => {
   } catch (err) {
     logger.error({ err }, "admin catalog rebuild failed");
     res.status(500).json({ error: "rebuild_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// POST /api/admin/catalog/autofill-synopsis — fill missing synopses in batches by
+// scraping a real pt-BR source. Picks a random slice of items lacking a synopsis
+// so repeated calls make progress instead of getting stuck on titles the source
+// doesn't cover. body: { limit?: number }
+router.post("/admin/catalog/autofill-synopsis", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  const limit = Math.min(Math.max(Number(req.body?.limit) || 12, 1), 25);
+  try {
+    const items = await ProviderManager.getFullCatalog(false);
+    const overrides = await getOverrides();
+    const lacksSynopsis = (it: (typeof items)[number]) => {
+      const s = it.sources?.[0];
+      if (!s) return false;
+      const ov = overrides.get(overrideKey(s.providerId, s.id));
+      return String(ov?.description || it.description || "").trim().length < 60;
+    };
+    const missing = items.filter(lacksSynopsis);
+    // Random slice so we don't retry the same unfindable titles every call.
+    const shuffled = [...missing].sort(() => Math.random() - 0.5).slice(0, limit);
+
+    let filled = 0;
+    const results: { title: string; ok: boolean }[] = [];
+    const CONC = 4;
+    for (let i = 0; i < shuffled.length; i += CONC) {
+      await Promise.all(shuffled.slice(i, i + CONC).map(async (it) => {
+        const s = it.sources![0];
+        const syn = (await scrapeComicSynopsis(it.title).catch(() => "")).trim();
+        if (syn.length >= 40) {
+          const cur = overrides.get(overrideKey(s.providerId, s.id));
+          await upsertOverride({
+            providerId: s.providerId, itemId: s.id,
+            hidden: cur?.hidden ?? false,
+            coverUrl: cur?.coverUrl ?? null,
+            description: syn,
+            title: cur?.title ?? null,
+          });
+          filled++;
+          results.push({ title: it.title, ok: true });
+        } else {
+          results.push({ title: it.title, ok: false });
+        }
+      }));
+    }
+    res.json({ totalMissing: missing.length, scanned: shuffled.length, filled, remaining: Math.max(0, missing.length - filled), results });
+  } catch (err) {
+    logger.error({ err }, "autofill synopsis failed");
+    res.status(500).json({ error: "autofill_failed", message: err instanceof Error ? err.message : String(err) });
   }
 });
 
