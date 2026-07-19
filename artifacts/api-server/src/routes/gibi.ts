@@ -4,6 +4,7 @@ import { identifyFromImages, searchByText, searchByCharacter } from "../lib/gemi
 import { fetchFandomContext } from "../lib/fandom";
 import { supabase } from "../lib/supabase";
 import { nextDriveKey } from "../lib/driveKeys";
+import { listOverrides, upsertOverride, deleteOverride } from "../lib/catalogOverrides";
 import { randomUUID, createHash } from "crypto";
 
 const router: IRouter = Router();
@@ -386,6 +387,52 @@ router.put("/admin/review/:id", async (req: Request, res: Response) => {
 // GET /api/admin/verify — check if admin key is valid
 router.get("/admin/verify", (req: Request, res: Response) => {
   res.json({ valid: isAdmin(req) });
+});
+
+// ---- Catalog overrides (admin curation of live catalog/provider items) ----
+// GET /api/admin/catalog-overrides — list all overrides
+router.get("/admin/catalog-overrides", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    res.json(await listOverrides());
+  } catch (err) {
+    res.status(500).json({ error: "list_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// PUT /api/admin/catalog-overrides — upsert one override
+//   body: { providerId, itemId, hidden?, coverUrl?, description?, title? }
+router.put("/admin/catalog-overrides", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  const { providerId, itemId, hidden, coverUrl, description, title } = req.body || {};
+  if (!providerId || !itemId) {
+    res.status(400).json({ error: "missing_params", message: "providerId e itemId são obrigatórios" });
+    return;
+  }
+  try {
+    await upsertOverride({
+      providerId: String(providerId),
+      itemId: String(itemId),
+      hidden: !!hidden,
+      coverUrl: typeof coverUrl === "string" ? coverUrl.trim() || null : null,
+      description: typeof description === "string" ? description.trim() || null : null,
+      title: typeof title === "string" ? title.trim() || null : null,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "save_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// DELETE /api/admin/catalog-overrides/:id — remove an override (id = providerId:itemId)
+router.delete("/admin/catalog-overrides/:id", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    await deleteOverride(String(req.params.id));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "delete_failed", message: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 // GET /api/admin/test-drive — test Drive API key connectivity

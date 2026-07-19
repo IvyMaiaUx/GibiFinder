@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { logger } from "../lib/logger";
 import { ProviderManager } from "../providers/ProviderManager";
+import { getOverrides, applyOverrides, overrideKey } from "../lib/catalogOverrides";
 
 const router = Router();
 
@@ -79,8 +80,9 @@ router.get("/providers/search", async (req: Request, res: Response) => {
     const { results, hiddenAdultCount, adultQuery } = await ProviderManager.searchWithMetadata(query, nsfw, providers);
     res.setHeader("X-Adult-Results-Hidden", String(hiddenAdultCount));
     res.setHeader("X-Adult-Query", adultQuery ? "true" : "false");
-    await injectRatings(results);
-    res.json(results);
+    const curated = applyOverrides(results, await getOverrides());
+    await injectRatings(curated);
+    res.json(curated);
   } catch (err) {
     res.status(500).json({ error: "search_failed", message: err instanceof Error ? err.message : String(err) });
   }
@@ -97,7 +99,13 @@ router.get("/providers/details", async (req: Request, res: Response) => {
   }
 
   try {
-    const details = await ProviderManager.getDetails(providerId, id);
+    const details = await ProviderManager.getDetails(providerId, id) as unknown as Record<string, unknown>;
+    const ov = (await getOverrides()).get(overrideKey(providerId, id));
+    if (ov) {
+      if (ov.coverUrl) details.coverUrl = ov.coverUrl;
+      if (ov.description) details.description = ov.description;
+      if (ov.title) details.title = ov.title;
+    }
     res.json(details);
   } catch (err) {
     res.status(500).json({ error: "details_failed", message: err instanceof Error ? err.message : String(err) });
@@ -162,7 +170,7 @@ router.get("/providers/catalog", async (req: Request, res: Response) => {
   const nsfw = req.query.nsfw === "true";
 
   try {
-    const items = await ProviderManager.getCatalog(listType, nsfw);
+    const items = applyOverrides(await ProviderManager.getCatalog(listType, nsfw), await getOverrides());
     await injectRatings(items);
     res.json(items);
   } catch (err) {
@@ -183,7 +191,7 @@ router.get("/providers/by-genre", async (req: Request, res: Response) => {
     return;
   }
   try {
-    const items = await ProviderManager.getByGenre(genre, nsfw);
+    const items = applyOverrides(await ProviderManager.getByGenre(genre, nsfw), await getOverrides());
     await injectRatings(items);
     res.json(items);
   } catch (err) {

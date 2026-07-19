@@ -165,6 +165,130 @@ function GibiAdminCard({ gibi, adminKey, onReview, onEdit, onDelete }: { gibi: G
   );
 }
 
+// Manage live catalog/provider items via the override layer: search, hide/show,
+// and replace cover / synopsis / title without touching the source.
+function CatalogManager({ adminKey }: { adminKey: string }) {
+  const { toast } = useToast();
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [overrides, setOverrides] = useState<Record<string, any>>({});
+  const [editing, setEditing] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({ title: "", coverUrl: "", description: "" });
+
+  const keyOf = (item: any) => { const s = item?.sources?.[0]; return s ? `${s.providerId}:${s.id}` : ""; };
+
+  const loadOverrides = async () => {
+    try {
+      const list = await adminRequest("/api/admin/catalog-overrides", adminKey, "GET");
+      const map: Record<string, any> = {};
+      for (const o of list || []) map[o.id] = o;
+      setOverrides(map);
+    } catch { /* ignore */ }
+  };
+  useEffect(() => { loadOverrides(); /* eslint-disable-next-line */ }, []);
+
+  const runSearch = async () => {
+    if (!q.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(q)}&nsfw=false`);
+      setResults(res.ok ? await res.json() : []);
+    } catch { setResults([]); } finally { setLoading(false); }
+  };
+
+  const save = async (item: any, patch: any) => {
+    const s = item?.sources?.[0];
+    if (!s) return;
+    const cur = overrides[keyOf(item)] || {};
+    try {
+      await adminRequest("/api/admin/catalog-overrides", adminKey, "PUT", {
+        providerId: s.providerId, itemId: s.id,
+        hidden: patch.hidden ?? cur.hidden ?? false,
+        coverUrl: patch.coverUrl ?? cur.coverUrl ?? null,
+        description: patch.description ?? cur.description ?? null,
+        title: patch.title ?? cur.title ?? null,
+      });
+      toast({ title: "Salvo!" });
+      await loadOverrides();
+    } catch (e) { toast({ title: "Erro ao salvar", description: e instanceof Error ? e.message : "", variant: "destructive" }); }
+  };
+
+  const removeOverride = async (item: any) => {
+    try { await adminRequest(`/api/admin/catalog-overrides/${encodeURIComponent(keyOf(item))}`, adminKey, "DELETE"); await loadOverrides(); toast({ title: "Restaurado ao original" }); } catch { /* */ }
+  };
+
+  const openEdit = (item: any) => {
+    const cur = overrides[keyOf(item)] || {};
+    setEditForm({ title: cur.title || "", coverUrl: cur.coverUrl || "", description: cur.description || "" });
+    setEditing(item);
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="font-sans font-bold text-gray-600 text-sm">
+        Busque um item do catálogo (Drive/provedores) e <b>esconda</b>, ou troque <b>capa</b>, <b>título</b> e <b>sinopse</b>. As mudanças valem para todos, sem alterar a fonte.
+      </p>
+      <div className="flex gap-2">
+        <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Enter" && runSearch()}
+          placeholder="Buscar no catálogo…" className="flex-1 border-4 border-black px-3 py-2 font-sans font-bold text-black bg-white focus:outline-none focus:ring-4 focus:ring-secondary" />
+        <button onClick={runSearch} disabled={loading} className="bg-primary text-white border-4 border-black px-5 font-display comic-shadow flex items-center gap-2 disabled:opacity-50">
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <SearchCode className="w-4 h-4" />} BUSCAR
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {results.map((item, i) => {
+          const k = keyOf(item);
+          const ov = overrides[k];
+          const cover = ov?.coverUrl || item.coverUrl;
+          const title = ov?.title || item.title;
+          const prov = item.sources?.[0]?.providerId;
+          return (
+            <div key={k || i} className={`bg-white border-4 border-black flex gap-3 p-3 ${ov?.hidden ? "opacity-50" : ""}`}>
+              <div className="w-12 h-16 border-2 border-black shrink-0 bg-muted overflow-hidden">
+                {cover ? <SafeImage src={cover} alt={title} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-secondary/30" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="font-display text-base text-black leading-tight truncate">{title}</h4>
+                <p className="text-xs font-bold text-gray-500">{prov} · {item.sources?.length || 0} fonte(s)</p>
+                {ov && <span className="inline-block mt-1 text-2xs font-bold bg-secondary/60 border border-black px-1.5">{ov.hidden ? "ESCONDIDO" : "EDITADO"}</span>}
+              </div>
+              <div className="flex flex-col gap-1 shrink-0">
+                <button onClick={() => save(item, { hidden: !ov?.hidden })} title={ov?.hidden ? "Mostrar" : "Esconder"} className="p-2 border-2 border-black hover:bg-secondary"><Eye className="w-4 h-4" /></button>
+                <button onClick={() => openEdit(item)} title="Editar capa/sinopse" className="p-2 border-2 border-black hover:bg-secondary"><Pencil className="w-4 h-4" /></button>
+                {ov && <button onClick={() => removeOverride(item)} title="Restaurar original" className="p-2 border-2 border-black hover:bg-primary hover:text-white"><Trash2 className="w-4 h-4" /></button>}
+              </div>
+            </div>
+          );
+        })}
+        {!loading && results.length === 0 && q && <p className="text-center text-gray-400 py-6 font-display">Nenhum resultado.</p>}
+      </div>
+
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setEditing(null)} />
+          <div className="relative bg-white border-4 border-black comic-shadow max-w-lg w-full z-10">
+            <div className="bg-secondary border-b-4 border-black px-5 py-3 flex items-center justify-between">
+              <h3 className="font-display text-xl">EDITAR ITEM</h3>
+              <button onClick={() => setEditing(null)}><X className="w-5 h-5" strokeWidth={3} /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div><label className="block font-display text-sm mb-1 uppercase">Título</label><input value={editForm.title} onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))} placeholder={editing.title} className="w-full border-4 border-black px-3 py-2 font-bold" /></div>
+              <div><label className="block font-display text-sm mb-1 uppercase">URL da Capa</label><input value={editForm.coverUrl} onChange={e => setEditForm(p => ({ ...p, coverUrl: e.target.value }))} type="url" className="w-full border-4 border-black px-3 py-2 font-bold" /></div>
+              <div><label className="block font-display text-sm mb-1 uppercase">Sinopse</label><textarea value={editForm.description} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} rows={4} className="w-full border-4 border-black px-3 py-2 font-bold" /></div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setEditing(null)} className="flex-1 border-4 border-black py-2 font-display hover:bg-muted">CANCELAR</button>
+                <button onClick={async () => { await save(editing, { title: editForm.title.trim() || null, coverUrl: editForm.coverUrl.trim() || null, description: editForm.description.trim() || null }); setEditing(null); }} className="flex-1 bg-primary text-white border-4 border-black py-2 font-display comic-shadow">SALVAR</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Admin() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -173,7 +297,7 @@ export default function Admin() {
   const [keyInput, setKeyInput] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [tab, setTab] = useState<"pending" | "approved" | "suggestions" | "ranking" | "providers" | "inspector" | "users">("pending");
+  const [tab, setTab] = useState<"pending" | "approved" | "catalog" | "suggestions" | "ranking" | "providers" | "inspector" | "users">("pending");
   const [confirmClearRanking, setConfirmClearRanking] = useState(false);
   const [providers, setProviders] = useState<any[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(false);
@@ -452,7 +576,7 @@ export default function Admin() {
             </p>
           </div>
           <div className="flex gap-3">
-            {!["suggestions", "ranking", "users", "inspector"].includes(tab) && (
+            {!["suggestions", "ranking", "users", "inspector", "catalog"].includes(tab) && (
               <button
                 onClick={() => {
                   if (tab === "providers") {
@@ -484,6 +608,10 @@ export default function Admin() {
             className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "approved" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
             <Check className="w-5 h-5" strokeWidth={3} />
             APROVADOS ({approvedItems.length})
+          </button>
+          <button onClick={() => setTab("catalog")}
+            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "catalog" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
+            <Database className="w-5 h-5" /> <span className="hidden sm:inline">CATÁLOGO</span>
           </button>
           <button onClick={() => setTab("suggestions")}
             className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "suggestions" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
@@ -555,6 +683,8 @@ export default function Admin() {
             </div>
           )
         )}
+
+        {tab === "catalog" && unlocked && <CatalogManager adminKey={adminKey} />}
 
         {tab === "suggestions" && (
           loadingSuggestions ? (

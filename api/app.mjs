@@ -21078,7 +21078,7 @@ var require_application = __commonJS({
       return this;
     };
     app2.render = function render(name, options, callback) {
-      var cache2 = this.cache;
+      var cache3 = this.cache;
       var done = callback;
       var engines = this.engines;
       var opts = options;
@@ -21092,7 +21092,7 @@ var require_application = __commonJS({
         renderOptions.cache = this.enabled("view cache");
       }
       if (renderOptions.cache) {
-        view = cache2[name];
+        view = cache3[name];
       }
       if (!view) {
         var View2 = this.get("view");
@@ -21108,7 +21108,7 @@ var require_application = __commonJS({
           return done(err);
         }
         if (renderOptions.cache) {
-          cache2[name] = view;
+          cache3[name] = view;
         }
       }
       tryRender(view, renderOptions, done);
@@ -26778,12 +26778,12 @@ var require_levels = __commonJS({
     function genLsCache(instance) {
       const formatter = instance[formattersSym].level;
       const { labels } = instance.levels;
-      const cache2 = {};
+      const cache3 = {};
       for (const label in labels) {
         const level = formatter(labels[label], Number(label));
-        cache2[label] = JSON.stringify(level).slice(0, -1);
+        cache3[label] = JSON.stringify(level).slice(0, -1);
       }
-      instance[lsCacheSym] = cache2;
+      instance[lsCacheSym] = cache3;
       return instance;
     }
     function isStandardLevel(level, useOnlyCustomLevels) {
@@ -52359,6 +52359,88 @@ function nextDriveKey() {
   return keys[index];
 }
 
+// src/lib/catalogOverrides.ts
+init_logger();
+function overrideKey(providerId, itemId) {
+  return `${providerId}:${itemId}`;
+}
+var cache = null;
+var fetchedAt = 0;
+var TTL_MS = 6e4;
+async function getOverrides(force = false) {
+  const now = Date.now();
+  if (!force && cache && now - fetchedAt < TTL_MS) return cache;
+  if (!supabase) return cache ?? /* @__PURE__ */ new Map();
+  try {
+    const { data, error } = await supabase.from("catalog_overrides").select("*");
+    if (error) return cache ?? /* @__PURE__ */ new Map();
+    const map = /* @__PURE__ */ new Map();
+    for (const r of data || []) {
+      map.set(String(r.id), {
+        id: String(r.id),
+        providerId: String(r.provider_id),
+        itemId: String(r.item_id),
+        hidden: !!r.hidden,
+        coverUrl: r.cover_url || void 0,
+        description: r.description || void 0,
+        title: r.title || void 0
+      });
+    }
+    cache = map;
+    fetchedAt = now;
+    return map;
+  } catch (err) {
+    logger.warn({ err }, "failed to load catalog_overrides");
+    return cache ?? /* @__PURE__ */ new Map();
+  }
+}
+async function listOverrides() {
+  return Array.from((await getOverrides(true)).values());
+}
+async function upsertOverride(o) {
+  if (!supabase) throw new Error("supabase_unavailable");
+  const id = overrideKey(o.providerId, o.itemId);
+  const { error } = await supabase.from("catalog_overrides").upsert({
+    id,
+    provider_id: o.providerId,
+    item_id: o.itemId,
+    hidden: o.hidden ?? false,
+    cover_url: o.coverUrl ?? null,
+    description: o.description ?? null,
+    title: o.title ?? null,
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  if (error) throw new Error(error.message);
+  cache = null;
+}
+async function deleteOverride(id) {
+  if (!supabase) return;
+  await supabase.from("catalog_overrides").delete().eq("id", id);
+  cache = null;
+}
+function applyOverrides(items, overrides) {
+  if (!overrides.size) return items;
+  const out = [];
+  for (const item of items) {
+    let ov;
+    for (const s of item.sources || []) {
+      const found = overrides.get(overrideKey(s.providerId, s.id));
+      if (found) {
+        ov = found;
+        break;
+      }
+    }
+    if (ov) {
+      if (ov.hidden) continue;
+      if (ov.coverUrl) item.coverUrl = ov.coverUrl;
+      if (ov.description) item.description = ov.description;
+      if (ov.title) item.title = ov.title;
+    }
+    out.push(item);
+  }
+  return out;
+}
+
 // src/routes/gibi.ts
 import { randomUUID, createHash } from "crypto";
 var router2 = (0, import_express2.Router)();
@@ -52685,6 +52767,44 @@ router2.put("/admin/review/:id", async (req, res) => {
 });
 router2.get("/admin/verify", (req, res) => {
   res.json({ valid: isAdmin(req) });
+});
+router2.get("/admin/catalog-overrides", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    res.json(await listOverrides());
+  } catch (err) {
+    res.status(500).json({ error: "list_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router2.put("/admin/catalog-overrides", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { providerId, itemId, hidden, coverUrl, description, title } = req.body || {};
+  if (!providerId || !itemId) {
+    res.status(400).json({ error: "missing_params", message: "providerId e itemId s\xE3o obrigat\xF3rios" });
+    return;
+  }
+  try {
+    await upsertOverride({
+      providerId: String(providerId),
+      itemId: String(itemId),
+      hidden: !!hidden,
+      coverUrl: typeof coverUrl === "string" ? coverUrl.trim() || null : null,
+      description: typeof description === "string" ? description.trim() || null : null,
+      title: typeof title === "string" ? title.trim() || null : null
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "save_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router2.delete("/admin/catalog-overrides/:id", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    await deleteOverride(String(req.params.id));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "delete_failed", message: err instanceof Error ? err.message : String(err) });
+  }
 });
 router2.get("/admin/test-drive", async (req, res) => {
   if (!requireAdmin(req, res)) return;
@@ -57321,8 +57441,9 @@ router3.get("/providers/search", async (req, res) => {
     const { results, hiddenAdultCount, adultQuery } = await ProviderManager.searchWithMetadata(query, nsfw, providers);
     res.setHeader("X-Adult-Results-Hidden", String(hiddenAdultCount));
     res.setHeader("X-Adult-Query", adultQuery ? "true" : "false");
-    await injectRatings(results);
-    res.json(results);
+    const curated = applyOverrides(results, await getOverrides());
+    await injectRatings(curated);
+    res.json(curated);
   } catch (err) {
     res.status(500).json({ error: "search_failed", message: err instanceof Error ? err.message : String(err) });
   }
@@ -57336,6 +57457,12 @@ router3.get("/providers/details", async (req, res) => {
   }
   try {
     const details = await ProviderManager.getDetails(providerId, id);
+    const ov = (await getOverrides()).get(overrideKey(providerId, id));
+    if (ov) {
+      if (ov.coverUrl) details.coverUrl = ov.coverUrl;
+      if (ov.description) details.description = ov.description;
+      if (ov.title) details.title = ov.title;
+    }
     res.json(details);
   } catch (err) {
     res.status(500).json({ error: "details_failed", message: err instanceof Error ? err.message : String(err) });
@@ -57386,7 +57513,7 @@ router3.get("/providers/catalog", async (req, res) => {
   const listType = req.query.listType || "popular";
   const nsfw = req.query.nsfw === "true";
   try {
-    const items = await ProviderManager.getCatalog(listType, nsfw);
+    const items = applyOverrides(await ProviderManager.getCatalog(listType, nsfw), await getOverrides());
     await injectRatings(items);
     res.json(items);
   } catch (err) {
@@ -57405,7 +57532,7 @@ router3.get("/providers/by-genre", async (req, res) => {
     return;
   }
   try {
-    const items = await ProviderManager.getByGenre(genre, nsfw);
+    const items = applyOverrides(await ProviderManager.getByGenre(genre, nsfw), await getOverrides());
     await injectRatings(items);
     res.json(items);
   } catch (err) {
@@ -58058,7 +58185,7 @@ async function scrapeComicSynopsis(title) {
 // src/routes/translate.ts
 var router6 = (0, import_express6.Router)();
 var synopsisCache = /* @__PURE__ */ new Map();
-var cache = /* @__PURE__ */ new Map();
+var cache2 = /* @__PURE__ */ new Map();
 var MAX_CACHE = 3e3;
 router6.post("/translate", async (req, res) => {
   const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
@@ -58066,17 +58193,17 @@ router6.post("/translate", async (req, res) => {
     res.json({ text: "" });
     return;
   }
-  if (cache.has(text)) {
-    res.json({ text: cache.get(text), cached: true });
+  if (cache2.has(text)) {
+    res.json({ text: cache2.get(text), cached: true });
     return;
   }
   try {
     const translated = await translateToPortuguese(text);
-    if (cache.size >= MAX_CACHE) {
-      const oldest = cache.keys().next().value;
-      if (oldest !== void 0) cache.delete(oldest);
+    if (cache2.size >= MAX_CACHE) {
+      const oldest = cache2.keys().next().value;
+      if (oldest !== void 0) cache2.delete(oldest);
     }
-    cache.set(text, translated);
+    cache2.set(text, translated);
     res.json({ text: translated });
   } catch (err) {
     req.log.error({ err, action: "translate" }, "translation failed");

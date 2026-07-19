@@ -235,3 +235,21 @@ CREATE TABLE IF NOT EXISTS curated_cache (
 );
 
 ALTER TABLE curated_cache DISABLE ROW LEVEL SECURITY;
+
+-- ============================================================
+-- Table: catalog_overrides (admin curation of live catalog items)
+-- Hide an item or replace its cover / synopsis / title without
+-- touching the source. Keyed by "<providerId>:<itemId>".
+-- ============================================================
+CREATE TABLE IF NOT EXISTS catalog_overrides (
+  id TEXT PRIMARY KEY,
+  provider_id TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  hidden BOOLEAN NOT NULL DEFAULT FALSE,
+  cover_url TEXT,
+  description TEXT,
+  title TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE catalog_overrides DISABLE ROW LEVEL SECURITY;
