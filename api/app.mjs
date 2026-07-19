@@ -58384,52 +58384,47 @@ router3.post("/admin/catalog/rebuild", async (req, res) => {
 });
 router3.post("/admin/catalog/autofill-synopsis", async (req, res) => {
   if (!requireAdmin2(req, res)) return;
-  const limit = Math.min(Math.max(Number(req.body?.limit) || 12, 1), 25);
+  const list = Array.isArray(req.body?.items) ? req.body.items.slice(0, 25) : [];
+  if (list.length === 0) {
+    res.json({ scanned: 0, filled: 0, reasons: {}, results: [] });
+    return;
+  }
   try {
-    const items = await ProviderManager.getFullCatalog(false);
     const overrides = await getOverrides();
-    const lacksSynopsis = (it) => {
-      const s = it.sources?.[0];
-      if (!s) return false;
-      const ov = overrides.get(overrideKey(s.providerId, s.id));
-      return String(ov?.description || it.description || "").trim().length < 60;
-    };
-    const missing = items.filter(lacksSynopsis);
-    const isHqLike = (it) => {
-      const g = (it.genres || []).map((x) => String(x).toLowerCase());
-      return g.includes("hq") && !g.some((x) => x.includes("gibi") || x.includes("nacional"));
-    };
-    const hqMissing = missing.filter(isHqLike);
-    const pool = hqMissing.length > 0 ? hqMissing : missing;
-    const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, limit);
     let filled = 0;
     const results = [];
     const reasons = {};
     const CONC = 6;
-    for (let i = 0; i < shuffled.length; i += CONC) {
-      await Promise.all(shuffled.slice(i, i + CONC).map(async (it) => {
-        const s = it.sources[0];
-        const { synopsis, reason } = await scrapeComicSynopsisDetailed(it.title).catch(() => ({ synopsis: "", reason: "fetch-error" }));
+    for (let i = 0; i < list.length; i += CONC) {
+      await Promise.all(list.slice(i, i + CONC).map(async (raw) => {
+        const providerId = String(raw?.providerId || "");
+        const itemId = String(raw?.itemId || "");
+        const title = String(raw?.title || "");
+        if (!providerId || !itemId || !title) {
+          reasons["bad-item"] = (reasons["bad-item"] || 0) + 1;
+          return;
+        }
+        const { synopsis, reason } = await scrapeComicSynopsisDetailed(title).catch(() => ({ synopsis: "", reason: "fetch-error" }));
         reasons[reason] = (reasons[reason] || 0) + 1;
         const syn = synopsis.trim();
         if (syn.length >= 40) {
-          const cur = overrides.get(overrideKey(s.providerId, s.id));
+          const cur = overrides.get(overrideKey(providerId, itemId));
           await upsertOverride({
-            providerId: s.providerId,
-            itemId: s.id,
+            providerId,
+            itemId,
             hidden: cur?.hidden ?? false,
             coverUrl: cur?.coverUrl ?? null,
             description: syn,
             title: cur?.title ?? null
           });
           filled++;
-          results.push({ title: it.title, ok: true, reason });
+          results.push({ title, ok: true, reason });
         } else {
-          results.push({ title: it.title, ok: false, reason });
+          results.push({ title, ok: false, reason });
         }
       }));
     }
-    res.json({ totalMissing: missing.length, scanned: shuffled.length, filled, remaining: Math.max(0, missing.length - filled), reasons, results });
+    res.json({ scanned: list.length, filled, reasons, results });
   } catch (err) {
     logger.error({ err }, "autofill synopsis failed");
     res.status(500).json({ error: "autofill_failed", message: err instanceof Error ? err.message : String(err) });

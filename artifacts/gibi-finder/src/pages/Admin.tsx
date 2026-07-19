@@ -245,7 +245,19 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
   const autofillSynopsis = async () => {
     setFilling(true);
     try {
-      const data = await adminRequest("/api/admin/catalog/autofill-synopsis", adminKey, "POST", { limit: 12 });
+      // The client selects the batch (HQ items lacking a synopsis) — the source
+      // only covers HQ — and sends it, so the server just scrapes (no timeout).
+      const cands = items.filter(it => {
+        const ov = overrides[keyOf(it)];
+        const noSyn = String(ov?.description || it.description || "").trim().length < 60;
+        return noSyn && itemType(it, ov) === "hq" && it.sources?.[0];
+      });
+      const batch = [...cands].sort(() => Math.random() - 0.5).slice(0, 12).map(it => {
+        const ov = overrides[keyOf(it)];
+        return { providerId: it.sources[0].providerId, itemId: it.sources[0].id, title: ov?.title || it.title };
+      });
+      if (batch.length === 0) { toast({ title: "Nenhum HQ sem sinopse encontrado" }); setFilling(false); return; }
+      const data = await adminRequest("/api/admin/catalog/autofill-synopsis", adminKey, "POST", { items: batch });
       const r = data.reasons || {};
       const parts: string[] = [];
       if (r["no-match"]) parts.push(`${r["no-match"]} sem correspondência na fonte`);
@@ -255,8 +267,8 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
       toast({
         title: `Sinopses: +${data.filled} de ${data.scanned}`,
         description: data.filled === 0
-          ? `Nenhuma preenchida${why}. Faltam ~${data.remaining}. A fonte é focada em HQ; clique de novo (lote aleatório) que vai achando os HQs.`
-          : `Faltam ~${data.remaining}. Clique de novo para continuar.`,
+          ? `Nenhuma preenchida${why}. Clique de novo (lote aleatório de HQs).`
+          : `Preenchidas! Clique de novo para continuar.`,
       });
       onReload();
       await loadOverrides();
