@@ -876,6 +876,19 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     return () => { cancelled = true; };
   }, [showReader, currentPage, pages.length, nextChapter]);
 
+  // Page mode: warm the neighbouring pages so turning is instant — no flash/jitter
+  // from a page loading from scratch.
+  useEffect(() => {
+    if (!showReader || readerMode !== "page" || pages.length === 0) return;
+    for (const i of [currentPage + 1, currentPage + 2, currentPage - 1]) {
+      const url = pages[i]?.url;
+      if (url && /^https?:/i.test(url)) {
+        const proxied = proxyCoverUrl(url);
+        if (proxied) { const img = new Image(); img.src = proxied; }
+      }
+    }
+  }, [showReader, readerMode, currentPage, pages]);
+
   // Page navigation shared by keyboard, swipe and the bottom bar. In double-page
   // mode it advances a whole spread at a time.
   const goToNextPage = useCallback(() => {
@@ -1604,7 +1617,13 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
           )}
 
           {/* Reader Body */}
-          <div ref={scrollContainerRef} className="flex-1 overflow-auto overscroll-contain flex justify-center p-0 sm:p-4">
+          <div
+            ref={scrollContainerRef}
+            className="flex-1 overflow-auto overscroll-contain flex justify-center p-0 sm:p-4"
+            // Promote to its own GPU layer + reserve scrollbar space so passing a
+            // page doesn't repaint-jitter (iOS) or shift horizontally (desktop).
+            style={{ transform: "translateZ(0)", scrollbarGutter: "stable" }}
+          >
             {getEmbedUrl(pages[currentPage]?.url) ? (
               <div className="w-full max-w-5xl h-full min-h-[70vh] border-4 border-white/20 bg-zinc-900 rounded-lg overflow-hidden">
                 <iframe
