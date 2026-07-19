@@ -52483,6 +52483,28 @@ async function bulkHide(items, overrides) {
   if (error) throw new Error(error.message);
   return rows.length;
 }
+async function bulkSetType(items, itemType, overrides) {
+  if (!supabase || items.length === 0) return 0;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const rows = items.filter((i) => i.providerId && i.itemId).map((i) => {
+    const cur = overrides.get(overrideKey(i.providerId, i.itemId));
+    return {
+      id: overrideKey(i.providerId, i.itemId),
+      provider_id: i.providerId,
+      item_id: i.itemId,
+      hidden: cur?.hidden ?? false,
+      cover_url: cur?.coverUrl ?? null,
+      description: cur?.description ?? null,
+      title: cur?.title ?? null,
+      item_type: itemType,
+      updated_at: now
+    };
+  });
+  const { error } = await supabase.from("catalog_overrides").upsert(rows);
+  cache = null;
+  if (error) throw new Error(error.message);
+  return rows.length;
+}
 async function bulkRestore(ids) {
   if (!supabase || ids.length === 0) return 0;
   const { error } = await supabase.from("catalog_overrides").delete().in("id", ids);
@@ -52881,8 +52903,13 @@ router2.post("/admin/catalog-overrides/bulk", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const action = String(req.body?.action || "");
   const list = Array.isArray(req.body?.items) ? req.body.items : [];
-  if (!["hide", "restore"].includes(action) || list.length === 0) {
-    res.status(400).json({ error: "bad_request", message: "action (hide|restore) e items s\xE3o obrigat\xF3rios" });
+  const type = String(req.body?.type || "");
+  if (!["hide", "restore", "type"].includes(action) || list.length === 0) {
+    res.status(400).json({ error: "bad_request", message: "action (hide|restore|type) e items s\xE3o obrigat\xF3rios" });
+    return;
+  }
+  if (action === "type" && !["hq", "gibi", "manga"].includes(type)) {
+    res.status(400).json({ error: "bad_type", message: "type deve ser hq, gibi ou manga" });
     return;
   }
   try {
@@ -52890,6 +52917,8 @@ router2.post("/admin/catalog-overrides/bulk", async (req, res) => {
     let done = 0;
     if (action === "hide") {
       done = await bulkHide(clean, await getOverrides());
+    } else if (action === "type") {
+      done = await bulkSetType(clean, type, await getOverrides());
     } else {
       done = await bulkRestore(clean.map((i) => overrideKey(i.providerId, i.itemId)));
     }

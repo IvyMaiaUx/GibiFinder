@@ -5,7 +5,7 @@ import { fetchFandomContext } from "../lib/fandom";
 import { supabase } from "../lib/supabase";
 import { nextDriveKey, hasDriveKey } from "../lib/driveKeys";
 import { hashPassword, verifyPassword, isLegacyHash, signToken, sessionUserId } from "../lib/auth";
-import { listOverrides, upsertOverride, deleteOverride, getOverrides, overrideKey, bulkHide, bulkRestore } from "../lib/catalogOverrides";
+import { listOverrides, upsertOverride, deleteOverride, getOverrides, overrideKey, bulkHide, bulkRestore, bulkSetType } from "../lib/catalogOverrides";
 import { randomUUID } from "crypto";
 
 const router: IRouter = Router();
@@ -433,8 +433,13 @@ router.post("/admin/catalog-overrides/bulk", async (req: Request, res: Response)
   if (!requireAdmin(req, res)) return;
   const action = String(req.body?.action || "");
   const list: { providerId?: string; itemId?: string }[] = Array.isArray(req.body?.items) ? req.body.items : [];
-  if (!["hide", "restore"].includes(action) || list.length === 0) {
-    res.status(400).json({ error: "bad_request", message: "action (hide|restore) e items são obrigatórios" });
+  const type = String(req.body?.type || "");
+  if (!["hide", "restore", "type"].includes(action) || list.length === 0) {
+    res.status(400).json({ error: "bad_request", message: "action (hide|restore|type) e items são obrigatórios" });
+    return;
+  }
+  if (action === "type" && !["hq", "gibi", "manga"].includes(type)) {
+    res.status(400).json({ error: "bad_type", message: "type deve ser hq, gibi ou manga" });
     return;
   }
   try {
@@ -444,6 +449,8 @@ router.post("/admin/catalog-overrides/bulk", async (req: Request, res: Response)
     let done = 0;
     if (action === "hide") {
       done = await bulkHide(clean, await getOverrides());
+    } else if (action === "type") {
+      done = await bulkSetType(clean, type, await getOverrides());
     } else {
       done = await bulkRestore(clean.map(i => overrideKey(i.providerId, i.itemId)));
     }

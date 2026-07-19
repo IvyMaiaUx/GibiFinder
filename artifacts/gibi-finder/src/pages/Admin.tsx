@@ -260,6 +260,21 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
     } finally { setBulking(false); }
   };
 
+  const bulkMove = async (type: "hq" | "gibi" | "manga") => {
+    const chosen = items.filter(it => checked.has(keyOf(it)) && it.sources?.[0]);
+    const payload = chosen.map(it => ({ providerId: it.sources[0].providerId, itemId: it.sources[0].id }));
+    if (payload.length === 0) return;
+    setBulking(true);
+    try {
+      const data = await adminRequest("/api/admin/catalog-overrides/bulk", adminKey, "POST", { action: "type", type, items: payload });
+      toast({ title: `${data.done} movido(s) para ${TYPE_LABEL[type]}` });
+      clearChecked();
+      await loadOverrides();
+    } catch (e) {
+      toast({ title: "Erro ao mover", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    } finally { setBulking(false); }
+  };
+
   const autofillSynopsis = async () => {
     setFilling(true);
     try {
@@ -548,6 +563,11 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
                     className="flex items-center gap-1.5 bg-white border-2 border-black px-3 py-1.5 font-display text-sm hover:bg-muted disabled:opacity-50">
                     <RotateCcw className="w-4 h-4" /> Restaurar
                   </button>
+                  <span className="w-px h-6 bg-black/20" />
+                  <span className="font-display text-2xs uppercase text-black/60">Mover p/:</span>
+                  <button onClick={() => bulkMove("hq")} disabled={bulking} className="bg-white border-2 border-black px-2.5 py-1.5 font-display text-sm hover:bg-muted disabled:opacity-50">HQ</button>
+                  <button onClick={() => bulkMove("gibi")} disabled={bulking} className="bg-white border-2 border-black px-2.5 py-1.5 font-display text-sm hover:bg-muted disabled:opacity-50">Gibi</button>
+                  <button onClick={() => bulkMove("manga")} disabled={bulking} className="bg-white border-2 border-black px-2.5 py-1.5 font-display text-sm hover:bg-muted disabled:opacity-50">Mangá</button>
                   {checked.size < filtered.length && (
                     <button onClick={selectAllFiltered} className="text-2xs font-bold uppercase border-2 border-black px-2 py-1 bg-white hover:bg-muted">Selecionar todos ({filtered.length})</button>
                   )}
@@ -594,7 +614,14 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
                           <td className="py-1.5 px-2 min-w-0">
                             <p className="font-sans font-bold text-black text-sm leading-tight line-clamp-2">{title}</p>
                           </td>
-                          <td className="py-1.5 px-2"><span className="text-2xs font-bold uppercase bg-muted border-2 border-black px-1.5 py-0.5">{TYPE_LABEL[t]}</span></td>
+                          <td className="py-1.5 px-2" onClick={e => e.stopPropagation()}>
+                            <select value={t} onChange={e => save(item, { itemType: e.target.value })} title="Mover de categoria"
+                              className="text-2xs font-bold uppercase bg-muted border-2 border-black px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-secondary cursor-pointer">
+                              <option value="hq">HQ</option>
+                              <option value="gibi">Gibi</option>
+                              <option value="manga">Mangá</option>
+                            </select>
+                          </td>
                           <td className="py-1.5 px-2">
                             <span className="text-xs font-bold text-gray-600">{prov}</span>
                             {nSources > 1 && <span className="text-2xs text-gray-400"> +{nSources - 1}</span>}

@@ -116,6 +116,32 @@ export async function bulkHide(items: { providerId: string; itemId: string }[], 
   return rows.length;
 }
 
+/** Reclassify many items (HQ/Gibi/Mangá) in one upsert, preserving other fields. */
+export async function bulkSetType(items: { providerId: string; itemId: string }[], itemType: string, overrides: Map<string, CatalogOverride>): Promise<number> {
+  if (!supabase || items.length === 0) return 0;
+  const now = new Date().toISOString();
+  const rows = items
+    .filter(i => i.providerId && i.itemId)
+    .map(i => {
+      const cur = overrides.get(overrideKey(i.providerId, i.itemId));
+      return {
+        id: overrideKey(i.providerId, i.itemId),
+        provider_id: i.providerId,
+        item_id: i.itemId,
+        hidden: cur?.hidden ?? false,
+        cover_url: cur?.coverUrl ?? null,
+        description: cur?.description ?? null,
+        title: cur?.title ?? null,
+        item_type: itemType,
+        updated_at: now,
+      };
+    });
+  const { error } = await supabase.from("catalog_overrides").upsert(rows);
+  cache = null;
+  if (error) throw new Error(error.message);
+  return rows.length;
+}
+
 /** Remove overrides for many items in one delete (restore to original). */
 export async function bulkRestore(ids: string[]): Promise<number> {
   if (!supabase || ids.length === 0) return 0;
