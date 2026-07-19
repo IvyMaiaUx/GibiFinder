@@ -121,7 +121,7 @@ function EditModal({ gibi, adminKey, onClose, onSaved }: { gibi?: Gibi; adminKey
   );
 }
 
-function GibiAdminCard({ gibi, adminKey, onReview, onEdit, onDelete }: { gibi: Gibi; adminKey: string; onReview?: (action: "approve" | "reject") => void; onEdit: () => void; onDelete: () => void }) {
+function GibiAdminCard({ gibi, onReview, onEdit, onDelete }: { gibi: Gibi; onReview?: (action: "approve" | "reject") => void; onEdit: () => void; onDelete: () => void }) {
   const isPending = gibi.status === "pending";
   return (
     <div className={`bg-white border-4 border-black flex gap-3 p-4 ${isPending ? "border-secondary" : ""}`}>
@@ -653,7 +653,7 @@ export default function Admin() {
           ) : (
             <div className="space-y-3">
               {pendingItems.map(gibi => (
-                <GibiAdminCard key={gibi.id} gibi={gibi} adminKey={adminKey}
+                <GibiAdminCard key={gibi.id} gibi={gibi}
                   onReview={(action) => reviewMutation.mutate({ id: gibi.id, action })}
                   onEdit={() => setEditModal({ open: true, gibi })}
                   onDelete={() => setConfirmDelete(gibi.id)}
@@ -675,7 +675,7 @@ export default function Admin() {
           ) : (
             <div className="space-y-3">
               {approvedItems.map(gibi => (
-                <GibiAdminCard key={gibi.id} gibi={{ ...gibi, status: "approved" }} adminKey={adminKey}
+                <GibiAdminCard key={gibi.id} gibi={{ ...gibi, status: "approved" }}
                   onEdit={() => setEditModal({ open: true, gibi })}
                   onDelete={() => setConfirmDelete(gibi.id)}
                 />

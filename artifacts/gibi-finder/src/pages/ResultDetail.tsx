@@ -157,7 +157,7 @@ export default function ResultDetail() {
   };
 
   const [stats, setStats] = useState<any | null>(null);
-  const [loadingStats, setLoadingStats] = useState(false);
+  const [, setLoadingStats] = useState(false);
 
   const loadStats = async () => {
     if (!itemMangaId || !itemProviderId) return;

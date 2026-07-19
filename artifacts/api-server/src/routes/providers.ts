@@ -55,7 +55,7 @@ async function injectRatings(results: any[]) {
 }
 
 // GET /api/providers - List all active providers
-router.get("/providers", (req: Request, res: Response) => {
+router.get("/providers", (_req: Request, res: Response) => {
   try {
     const list = ProviderManager.listProviders();
     res.json(list);

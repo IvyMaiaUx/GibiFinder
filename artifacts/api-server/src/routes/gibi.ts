@@ -1048,7 +1048,7 @@ router.get("/history", async (req: Request, res: Response) => {
   } catch (err) { logger.error({ err: err }, "History exception:"); res.json({ items: [], total: 0 }); }
 });
 
-router.get("/ranking", async (req: Request, res: Response) => {
+router.get("/ranking", async (_req: Request, res: Response) => {
   try {
     if (!supabase) { res.json({ items: [], week_start: new Date().toISOString() }); return; }
     const now = new Date();

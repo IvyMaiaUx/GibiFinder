@@ -100,8 +100,6 @@ const DRIVE_INDEX_PAGES = [
   "https://sites.google.com/view/hqsmdc/outros",
 ];
 
-const SHAREPOINT_URL =
-  "https://liveuel-my.sharepoint.com/:f:/g/personal/desireebt_1310_live_uel_br/Eg-xTek0aHVGmknAwok3WNsBn5MY46O7QX862ZwlntLPJg?e=NTwbC6";
 
 function normalizeText(value: string): string {
   return value

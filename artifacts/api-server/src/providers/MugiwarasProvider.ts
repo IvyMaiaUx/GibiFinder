@@ -220,7 +220,7 @@ export class MugiwarasProvider implements Provider {
     }
   }
 
-  async getCatalog(listType: "popular" | "latest"): Promise<SearchResult[]> {
+  async getCatalog(_listType: "popular" | "latest"): Promise<SearchResult[]> {
     const results: SearchResult[] = [];
     
     // Resolve full detail objects for the popular list
