@@ -5,7 +5,7 @@ import { fetchFandomContext } from "../lib/fandom";
 import { supabase } from "../lib/supabase";
 import { nextDriveKey, hasDriveKey } from "../lib/driveKeys";
 import { hashPassword, verifyPassword, isLegacyHash, signToken, sessionUserId } from "../lib/auth";
-import { listOverrides, upsertOverride, deleteOverride } from "../lib/catalogOverrides";
+import { listOverrides, upsertOverride, deleteOverride, getOverrides, overrideKey, bulkHide, bulkRestore } from "../lib/catalogOverrides";
 import { randomUUID } from "crypto";
 
 const router: IRouter = Router();
@@ -424,6 +424,33 @@ router.put("/admin/catalog-overrides", async (req: Request, res: Response) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "save_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// POST /api/admin/catalog-overrides/bulk — hide or restore many items at once.
+//   body: { action: "hide" | "restore", items: [{ providerId, itemId }] }
+router.post("/admin/catalog-overrides/bulk", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  const action = String(req.body?.action || "");
+  const list: { providerId?: string; itemId?: string }[] = Array.isArray(req.body?.items) ? req.body.items : [];
+  if (!["hide", "restore"].includes(action) || list.length === 0) {
+    res.status(400).json({ error: "bad_request", message: "action (hide|restore) e items são obrigatórios" });
+    return;
+  }
+  try {
+    const clean = list
+      .map(i => ({ providerId: String(i?.providerId || ""), itemId: String(i?.itemId || "") }))
+      .filter(i => i.providerId && i.itemId);
+    let done = 0;
+    if (action === "hide") {
+      done = await bulkHide(clean, await getOverrides());
+    } else {
+      done = await bulkRestore(clean.map(i => overrideKey(i.providerId, i.itemId)));
+    }
+    res.json({ ok: true, done });
+  } catch (err) {
+    logger.error({ err }, "bulk override failed");
+    res.status(500).json({ error: "bulk_failed", message: err instanceof Error ? err.message : String(err) });
   }
 });
 

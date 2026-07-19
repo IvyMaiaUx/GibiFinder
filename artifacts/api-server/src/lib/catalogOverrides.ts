@@ -90,6 +90,41 @@ export async function upsertOverride(o: {
   cache = null; // invalidate
 }
 
+/** Hide many items in a single upsert (preserving each item's existing fields). */
+export async function bulkHide(items: { providerId: string; itemId: string }[], overrides: Map<string, CatalogOverride>): Promise<number> {
+  if (!supabase || items.length === 0) return 0;
+  const now = new Date().toISOString();
+  const rows = items
+    .filter(i => i.providerId && i.itemId)
+    .map(i => {
+      const cur = overrides.get(overrideKey(i.providerId, i.itemId));
+      return {
+        id: overrideKey(i.providerId, i.itemId),
+        provider_id: i.providerId,
+        item_id: i.itemId,
+        hidden: true,
+        cover_url: cur?.coverUrl ?? null,
+        description: cur?.description ?? null,
+        title: cur?.title ?? null,
+        item_type: cur?.itemType ?? null,
+        updated_at: now,
+      };
+    });
+  const { error } = await supabase.from("catalog_overrides").upsert(rows);
+  cache = null;
+  if (error) throw new Error(error.message);
+  return rows.length;
+}
+
+/** Remove overrides for many items in one delete (restore to original). */
+export async function bulkRestore(ids: string[]): Promise<number> {
+  if (!supabase || ids.length === 0) return 0;
+  const { error } = await supabase.from("catalog_overrides").delete().in("id", ids);
+  cache = null;
+  if (error) throw new Error(error.message);
+  return ids.length;
+}
+
 export async function deleteOverride(id: string): Promise<void> {
   if (!supabase) return;
   await supabase.from("catalog_overrides").delete().eq("id", id);

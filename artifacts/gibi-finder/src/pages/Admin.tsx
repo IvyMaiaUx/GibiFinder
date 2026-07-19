@@ -238,9 +238,27 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
   const [overrides, setOverrides] = useState<Record<string, any>>({});
   const [selected, setSelected] = useState<any | null>(null);
   const [confirmDel, setConfirmDel] = useState<any | null>(null);
-  // Covers that have a URL but failed to load (broken Drive thumbnails), detected
-  // as rows render. Treated as "sem capa" for curation.
   const [filling, setFilling] = useState(false);
+  // Bulk selection (multi-select) for hide/restore in one go.
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [bulking, setBulking] = useState(false);
+  const toggleCheck = (k: string) => setChecked(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const clearChecked = () => setChecked(new Set());
+
+  const bulkAction = async (action: "hide" | "restore") => {
+    const chosen = items.filter(it => checked.has(keyOf(it)) && it.sources?.[0]);
+    const payload = chosen.map(it => ({ providerId: it.sources[0].providerId, itemId: it.sources[0].id }));
+    if (payload.length === 0) return;
+    setBulking(true);
+    try {
+      const data = await adminRequest("/api/admin/catalog-overrides/bulk", adminKey, "POST", { action, items: payload });
+      toast({ title: action === "hide" ? `${data.done} ocultado(s)` : `${data.done} restaurado(s)` });
+      clearChecked();
+      await loadOverrides();
+    } catch (e) {
+      toast({ title: "Erro na ação em massa", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    } finally { setBulking(false); }
+  };
 
   const autofillSynopsis = async () => {
     setFilling(true);
@@ -373,6 +391,15 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageItems = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+  const pageKeys = pageItems.map(keyOf).filter(Boolean);
+  const allPageChecked = pageKeys.length > 0 && pageKeys.every(k => checked.has(k));
+  const toggleAllPage = () => setChecked(prev => {
+    const n = new Set(prev);
+    if (allPageChecked) pageKeys.forEach(k => n.delete(k)); else pageKeys.forEach(k => n.add(k));
+    return n;
+  });
+  // Select ALL items across the whole filtered set (not just the page).
+  const selectAllFiltered = () => setChecked(new Set(filtered.map(keyOf).filter(Boolean)));
 
   // Full-page work editor (no popup) — replaces the list while an item is open.
   if (selected) {
@@ -509,10 +536,30 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
                 )}
               </div>
 
+              {/* Bulk action bar */}
+              {checked.size > 0 && (
+                <div className="flex flex-wrap items-center gap-2 border-4 border-black bg-secondary p-2 sticky top-20 z-10">
+                  <span className="font-display text-sm px-1">{checked.size} selecionado(s)</span>
+                  <button onClick={() => bulkAction("hide")} disabled={bulking}
+                    className="flex items-center gap-1.5 bg-primary text-white border-2 border-black px-3 py-1.5 font-display text-sm hover:bg-red-600 disabled:opacity-50">
+                    {bulking ? <Loader2 className="w-4 h-4 animate-spin" /> : <EyeOff className="w-4 h-4" />} Ocultar
+                  </button>
+                  <button onClick={() => bulkAction("restore")} disabled={bulking}
+                    className="flex items-center gap-1.5 bg-white border-2 border-black px-3 py-1.5 font-display text-sm hover:bg-muted disabled:opacity-50">
+                    <RotateCcw className="w-4 h-4" /> Restaurar
+                  </button>
+                  {checked.size < filtered.length && (
+                    <button onClick={selectAllFiltered} className="text-2xs font-bold uppercase border-2 border-black px-2 py-1 bg-white hover:bg-muted">Selecionar todos ({filtered.length})</button>
+                  )}
+                  <button onClick={clearChecked} className="ml-auto text-2xs font-bold uppercase border-2 border-black px-2 py-1 bg-white hover:bg-muted">Limpar seleção</button>
+                </div>
+              )}
+
               <div className="border-4 border-black bg-white overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[720px]">
                   <thead>
                     <tr className="border-b-4 border-black font-display text-2xs uppercase tracking-wider text-gray-500 bg-muted/50">
+                      <th className="py-2 px-2 w-8"><input type="checkbox" checked={allPageChecked} onChange={toggleAllPage} className="w-4 h-4 accent-primary cursor-pointer" title="Selecionar a página" /></th>
                       <th className="py-2 px-2 w-12"></th>
                       <th className="py-2 px-2">Nome</th>
                       <th className="py-2 px-2 w-16">Tipo</th>
@@ -535,7 +582,10 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
                       const qs = scoreItem(item, ov);
                       const t = itemType(item, ov);
                       return (
-                        <tr key={k || i} className={`hover:bg-secondary/10 cursor-pointer ${ov?.hidden ? "opacity-50" : ""}`} onClick={() => setSelected(item)}>
+                        <tr key={k || i} className={`hover:bg-secondary/10 cursor-pointer ${ov?.hidden ? "opacity-50" : ""} ${checked.has(k) ? "bg-secondary/20" : ""}`} onClick={() => setSelected(item)}>
+                          <td className="py-1.5 px-2" onClick={e => e.stopPropagation()}>
+                            <input type="checkbox" checked={checked.has(k)} onChange={() => toggleCheck(k)} className="w-4 h-4 accent-primary cursor-pointer" />
+                          </td>
                           <td className="py-1.5 px-2">
                             <div className="w-9 h-12 border-2 border-black bg-muted overflow-hidden">
                               {cover ? <SafeImage src={cover} alt={title} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-secondary/30" />}

@@ -52461,6 +52461,35 @@ async function upsertOverride(o) {
   if (error) throw new Error(error.message);
   cache = null;
 }
+async function bulkHide(items, overrides) {
+  if (!supabase || items.length === 0) return 0;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const rows = items.filter((i) => i.providerId && i.itemId).map((i) => {
+    const cur = overrides.get(overrideKey(i.providerId, i.itemId));
+    return {
+      id: overrideKey(i.providerId, i.itemId),
+      provider_id: i.providerId,
+      item_id: i.itemId,
+      hidden: true,
+      cover_url: cur?.coverUrl ?? null,
+      description: cur?.description ?? null,
+      title: cur?.title ?? null,
+      item_type: cur?.itemType ?? null,
+      updated_at: now
+    };
+  });
+  const { error } = await supabase.from("catalog_overrides").upsert(rows);
+  cache = null;
+  if (error) throw new Error(error.message);
+  return rows.length;
+}
+async function bulkRestore(ids) {
+  if (!supabase || ids.length === 0) return 0;
+  const { error } = await supabase.from("catalog_overrides").delete().in("id", ids);
+  cache = null;
+  if (error) throw new Error(error.message);
+  return ids.length;
+}
 async function deleteOverride(id) {
   if (!supabase) return;
   await supabase.from("catalog_overrides").delete().eq("id", id);
@@ -52846,6 +52875,28 @@ router2.put("/admin/catalog-overrides", async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "save_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router2.post("/admin/catalog-overrides/bulk", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const action = String(req.body?.action || "");
+  const list = Array.isArray(req.body?.items) ? req.body.items : [];
+  if (!["hide", "restore"].includes(action) || list.length === 0) {
+    res.status(400).json({ error: "bad_request", message: "action (hide|restore) e items s\xE3o obrigat\xF3rios" });
+    return;
+  }
+  try {
+    const clean = list.map((i) => ({ providerId: String(i?.providerId || ""), itemId: String(i?.itemId || "") })).filter((i) => i.providerId && i.itemId);
+    let done = 0;
+    if (action === "hide") {
+      done = await bulkHide(clean, await getOverrides());
+    } else {
+      done = await bulkRestore(clean.map((i) => overrideKey(i.providerId, i.itemId)));
+    }
+    res.json({ ok: true, done });
+  } catch (err) {
+    logger.error({ err }, "bulk override failed");
+    res.status(500).json({ error: "bulk_failed", message: err instanceof Error ? err.message : String(err) });
   }
 });
 router2.delete("/admin/catalog-overrides/:id", async (req, res) => {
