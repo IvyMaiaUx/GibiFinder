@@ -134,6 +134,15 @@ const QUERY_STOPWORDS = new Set([
   "e", "em", "no", "na", "and", "of", "le", "la", "el", "los", "las",
 ]);
 
+// Resolve the best cover for a Drive file: prefer the API's real thumbnailLink
+// (works even when the public /thumbnail endpoint is broken), upscaled; fall back
+// to the public endpoint; leave empty when the file genuinely has no thumbnail.
+function driveCover(file: { id: string; thumbnailLink?: string; hasThumbnail?: boolean }): string | undefined {
+  if (file.thumbnailLink) return file.thumbnailLink.replace(/=s\d+$/, "=s600");
+  if (file.hasThumbnail === false) return undefined;
+  return `https://drive.google.com/thumbnail?id=${file.id}&sz=w600`;
+}
+
 function matchesQuery(query: string, item: CuratedItem): boolean {
   const terms = normalizeText(query).split(/\s+/).filter(Boolean);
   if (terms.length === 0) return true;
@@ -352,13 +361,15 @@ export class CuratedComicsProvider implements Provider {
           q: `'${folderId}' in parents and trashed=false and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`,
           key: nextDriveKey() || "",
           pageSize: "100",
-          fields: "nextPageToken,files(id,name,mimeType)"
+          // Ask the API for the real thumbnail so covers work even when the public
+          // /thumbnail endpoint fails (broken covers on some shared files).
+          fields: "nextPageToken,files(id,name,mimeType,thumbnailLink,hasThumbnail)"
         });
         if (pageToken) params.set("pageToken", pageToken);
 
         const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`);
         if (!res.ok) break;
-        const data = await res.json() as { nextPageToken?: string; files?: { id: string; name: string; mimeType: string }[] };
+        const data = await res.json() as { nextPageToken?: string; files?: { id: string; name: string; mimeType: string; thumbnailLink?: string; hasThumbnail?: boolean }[] };
 
         for (const file of data.files || []) {
           if (file.mimeType === "application/vnd.google-apps.folder") {
@@ -377,7 +388,7 @@ export class CuratedComicsProvider implements Provider {
             description: "Gibi importado da biblioteca Google Drive compartilhada.",
             genres: ["Biblioteca", "Drive", categoryGenre(title, false)],
             sourceLabel: "Google Drive",
-            coverUrl: `https://drive.google.com/thumbnail?id=${file.id}&sz=w600`,
+            coverUrl: driveCover(file),
             chapters: [{
               id: `ch-${file.id}`,
               chapterNum: "1",
