@@ -53336,7 +53336,7 @@ router2.get("/history", async (req, res) => {
     res.json({ items: [], total: 0 });
   }
 });
-router2.get("/ranking", async (req, res) => {
+router2.get("/ranking", async (_req, res) => {
   try {
     if (!supabase) {
       res.json({ items: [], week_start: (/* @__PURE__ */ new Date()).toISOString() });
@@ -54947,7 +54947,7 @@ var MugiwarasProvider = class {
       return [];
     }
   }
-  async getCatalog(listType) {
+  async getCatalog(_listType) {
     const results = [];
     await Promise.all(
       this.popularComics.map(async (c) => {
@@ -56848,6 +56848,12 @@ var CuratedComicsProvider = class {
     const sorted = listType === "latest" ? [...allItems].reverse() : allItems;
     return sorted.slice(0, 400).map((item) => this.toSearchResult(item));
   }
+  // Full catalog with no slice — used by the admin catalog browser so the whole
+  // curated library (static + Drive/Sites) can be listed and managed.
+  async getAllItems() {
+    const dynamicItems = await this.getDynamicCatalog();
+    return [...STATIC_ITEMS, ...dynamicItems].map((item) => this.toSearchResult(item));
+  }
 };
 
 // src/providers/ProviderManager.ts
@@ -57310,6 +57316,12 @@ var ProviderManager = class {
     );
     const resultsArray = await Promise.all(catalogPromises);
     const flatResults = resultsArray.flat();
+    return this.unifyCatalog(flatResults, nsfw);
+  }
+  // Groups a flat list of provider results into unified titles (merging sources,
+  // covers, descriptions and genres), then filters by the nsfw flag. Shared by
+  // getCatalog and getFullCatalog so both build identical unified shapes.
+  static unifyCatalog(flatResults, nsfw) {
     const groups = /* @__PURE__ */ new Map();
     for (const result of flatResults) {
       if (!result || !result.title) continue;
@@ -57365,6 +57377,28 @@ var ProviderManager = class {
       isAdult: this.isAdultResult(result)
     }));
     return nsfw ? allResults.filter((result) => result.isAdult) : allResults.filter((result) => !result.isAdult);
+  }
+  // Full curated catalog with no per-provider slice — powers the admin catalog
+  // browser. Providers exposing getAllItems (curated ones) return everything;
+  // the rest fall back to their popular catalog.
+  static async getFullCatalog(nsfw) {
+    const activeProviders = Array.from(this.providers.values()).filter(
+      (p) => this.activeStates.get(p.id) === true
+    );
+    const promises = activeProviders.map((p) => {
+      const full = p.getAllItems;
+      const source = full ? full.call(p) : p.getCatalog("popular", nsfw);
+      return this.withTimeout(
+        source.catch((err) => {
+          logger.error({ err }, `Error loading full catalog from ${p.name}:`);
+          return [];
+        }),
+        2e4,
+        []
+      );
+    });
+    const resultsArray = await Promise.all(promises);
+    return this.unifyCatalog(resultsArray.flat(), nsfw);
   }
   // Fetch a large set of titles for a single genre, on demand. Providers with a
   // real genre filter (MangaDex) use it; others contribute their catalog matches.
@@ -57459,7 +57493,7 @@ async function injectRatings(results) {
     }
   });
 }
-router3.get("/providers", (req, res) => {
+router3.get("/providers", (_req, res) => {
   try {
     const list = ProviderManager.listProviders();
     res.json(list);
@@ -57985,6 +58019,26 @@ router3.delete("/providers/custom/:id", (req, res) => {
     res.json({ success: true, id });
   } catch (err) {
     res.status(500).json({ error: "delete_custom_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router3.get("/admin/catalog", async (req, res) => {
+  if (!requireAdmin2(req, res)) return;
+  try {
+    const items = await ProviderManager.getFullCatalog(false);
+    res.json({
+      total: items.length,
+      items: items.map((it) => ({
+        id: it.id,
+        title: it.title,
+        coverUrl: it.coverUrl,
+        description: it.description,
+        genres: it.genres || [],
+        sources: it.sources || []
+      }))
+    });
+  } catch (err) {
+    logger.error({ err }, "admin catalog failed");
+    res.status(500).json({ error: "catalog_failed", message: err instanceof Error ? err.message : String(err) });
   }
 });
 var providers_default = router3;

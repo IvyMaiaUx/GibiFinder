@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, MessageSquare, Bug, Lightbulb, Archive, Trophy, AlertTriangle, Database, User, SearchCode } from "lucide-react";
+import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, EyeOff, MessageSquare, Bug, Lightbulb, Archive, Trophy, AlertTriangle, Database, User, SearchCode, RefreshCw, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { useToast } from "@/hooks/use-toast";
 import { SafeImage } from "@/components/ui/SafeImage";
@@ -167,14 +167,26 @@ function GibiAdminCard({ gibi, onReview, onEdit, onDelete }: { gibi: Gibi; onRev
 
 // Manage live catalog/provider items via the override layer: search, hide/show,
 // and replace cover / synopsis / title without touching the source.
+const PAGE_SIZE = 48;
+
+function itemType(item: any): "gibi" | "hq" {
+  const g: string[] = (item?.genres || []).map((x: string) => (x || "").toLowerCase());
+  return g.some(x => x.includes("gibi") || x.includes("nacional") || x.includes("mônica") || x.includes("monica")) ? "gibi" : "hq";
+}
+
 function CatalogManager({ adminKey }: { adminKey: string }) {
   const { toast } = useToast();
-  const [q, setQ] = useState("");
-  const [results, setResults] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [overrides, setOverrides] = useState<Record<string, any>>({});
   const [editing, setEditing] = useState<any | null>(null);
   const [editForm, setEditForm] = useState({ title: "", coverUrl: "", description: "" });
+  // filters
+  const [q, setQ] = useState("");
+  const [fType, setFType] = useState<"all" | "hq" | "gibi">("all");
+  const [fProv, setFProv] = useState<string>("all");
+  const [fStatus, setFStatus] = useState<"all" | "edited" | "hidden" | "clean">("all");
+  const [page, setPage] = useState(0);
 
   const keyOf = (item: any) => { const s = item?.sources?.[0]; return s ? `${s.providerId}:${s.id}` : ""; };
 
@@ -186,16 +198,19 @@ function CatalogManager({ adminKey }: { adminKey: string }) {
       setOverrides(map);
     } catch { /* ignore */ }
   };
-  useEffect(() => { loadOverrides(); /* eslint-disable-next-line */ }, []);
 
-  const runSearch = async () => {
-    if (!q.trim()) return;
+  const loadCatalog = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(q)}&nsfw=false`);
-      setResults(res.ok ? await res.json() : []);
-    } catch { setResults([]); } finally { setLoading(false); }
+      const data = await adminRequest("/api/admin/catalog", adminKey, "GET");
+      setItems(Array.isArray(data?.items) ? data.items : []);
+    } catch (e) {
+      toast({ title: "Erro ao carregar catálogo", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    } finally { setLoading(false); }
   };
+
+  useEffect(() => { loadCatalog(); loadOverrides(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { setPage(0); }, [q, fType, fProv, fStatus]);
 
   const save = async (item: any, patch: any) => {
     const s = item?.sources?.[0];
@@ -224,46 +239,120 @@ function CatalogManager({ adminKey }: { adminKey: string }) {
     setEditing(item);
   };
 
+  // Provider list for the filter dropdown
+  const providers = Array.from(new Set(items.map(it => it.sources?.[0]?.providerId).filter(Boolean))).sort();
+
+  const nq = q.trim().toLowerCase();
+  const filtered = items.filter(it => {
+    const ov = overrides[keyOf(it)];
+    const title = (ov?.title || it.title || "").toLowerCase();
+    if (nq && !title.includes(nq)) return false;
+    if (fType !== "all" && itemType(it) !== fType) return false;
+    if (fProv !== "all" && it.sources?.[0]?.providerId !== fProv) return false;
+    if (fStatus === "hidden" && !ov?.hidden) return false;
+    if (fStatus === "edited" && !(ov && !ov.hidden)) return false;
+    if (fStatus === "clean" && ov) return false;
+    return true;
+  });
+
+  const nHq = items.filter(it => itemType(it) === "hq").length;
+  const nGibi = items.filter(it => itemType(it) === "gibi").length;
+  const nHidden = items.filter(it => overrides[keyOf(it)]?.hidden).length;
+  const nEdited = items.filter(it => { const o = overrides[keyOf(it)]; return o && !o.hidden; }).length;
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageItems = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
+  const selClass = "border-4 border-black px-2 py-2 font-sans font-bold text-sm bg-white focus:outline-none focus:ring-4 focus:ring-secondary";
+
   return (
     <div className="space-y-4">
-      <p className="font-sans font-bold text-gray-600 text-sm">
-        Busque um item do catálogo (Drive/provedores) e <b>esconda</b>, ou troque <b>capa</b>, <b>título</b> e <b>sinopse</b>. As mudanças valem para todos, sem alterar a fonte.
-      </p>
-      <div className="flex gap-2">
-        <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Enter" && runSearch()}
-          placeholder="Buscar no catálogo…" className="flex-1 border-4 border-black px-3 py-2 font-sans font-bold text-black bg-white focus:outline-none focus:ring-4 focus:ring-secondary" />
-        <button onClick={runSearch} disabled={loading} className="bg-primary text-white border-4 border-black px-5 font-display comic-shadow flex items-center gap-2 disabled:opacity-50">
-          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <SearchCode className="w-4 h-4" />} BUSCAR
+      {/* Stat chips */}
+      <div className="flex flex-wrap gap-2">
+        <span className="border-4 border-black bg-secondary px-3 py-1.5 font-display text-sm">TOTAL {items.length}</span>
+        <span className="border-4 border-black bg-white px-3 py-1.5 font-display text-sm">HQ {nHq}</span>
+        <span className="border-4 border-black bg-white px-3 py-1.5 font-display text-sm">GIBI {nGibi}</span>
+        <span className="border-4 border-black bg-white px-3 py-1.5 font-display text-sm">EDITADOS {nEdited}</span>
+        <span className="border-4 border-black bg-white px-3 py-1.5 font-display text-sm">ESCONDIDOS {nHidden}</span>
+        <button onClick={() => { loadCatalog(); loadOverrides(); }} disabled={loading}
+          className="ml-auto border-4 border-black px-3 py-1.5 font-display text-sm bg-white hover:bg-muted flex items-center gap-2 disabled:opacity-50">
+          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> ATUALIZAR
         </button>
       </div>
 
-      <div className="space-y-2">
-        {results.map((item, i) => {
-          const k = keyOf(item);
-          const ov = overrides[k];
-          const cover = ov?.coverUrl || item.coverUrl;
-          const title = ov?.title || item.title;
-          const prov = item.sources?.[0]?.providerId;
-          return (
-            <div key={k || i} className={`bg-white border-4 border-black flex gap-3 p-3 ${ov?.hidden ? "opacity-50" : ""}`}>
-              <div className="w-12 h-16 border-2 border-black shrink-0 bg-muted overflow-hidden">
-                {cover ? <SafeImage src={cover} alt={title} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-secondary/30" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <h4 className="font-display text-base text-black leading-tight truncate">{title}</h4>
-                <p className="text-xs font-bold text-gray-500">{prov} · {item.sources?.length || 0} fonte(s)</p>
-                {ov && <span className="inline-block mt-1 text-2xs font-bold bg-secondary/60 border border-black px-1.5">{ov.hidden ? "ESCONDIDO" : "EDITADO"}</span>}
-              </div>
-              <div className="flex flex-col gap-1 shrink-0">
-                <button onClick={() => save(item, { hidden: !ov?.hidden })} title={ov?.hidden ? "Mostrar" : "Esconder"} className="p-2 border-2 border-black hover:bg-secondary"><Eye className="w-4 h-4" /></button>
-                <button onClick={() => openEdit(item)} title="Editar capa/sinopse" className="p-2 border-2 border-black hover:bg-secondary"><Pencil className="w-4 h-4" /></button>
-                {ov && <button onClick={() => removeOverride(item)} title="Restaurar original" className="p-2 border-2 border-black hover:bg-primary hover:text-white"><Trash2 className="w-4 h-4" /></button>}
-              </div>
-            </div>
-          );
-        })}
-        {!loading && results.length === 0 && q && <p className="text-center text-gray-400 py-6 font-display">Nenhum resultado.</p>}
+      {/* Filter bar */}
+      <div className="flex flex-wrap gap-2 items-stretch">
+        <div className="flex-1 min-w-[200px] relative">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Filtrar por título…"
+            className="w-full border-4 border-black pl-9 pr-3 py-2 font-sans font-bold text-black bg-white focus:outline-none focus:ring-4 focus:ring-secondary" />
+        </div>
+        <select value={fType} onChange={e => setFType(e.target.value as any)} className={selClass}>
+          <option value="all">Tipo: todos</option>
+          <option value="hq">HQ</option>
+          <option value="gibi">Gibi</option>
+        </select>
+        <select value={fProv} onChange={e => setFProv(e.target.value)} className={selClass}>
+          <option value="all">Provedor: todos</option>
+          {providers.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <select value={fStatus} onChange={e => setFStatus(e.target.value as any)} className={selClass}>
+          <option value="all">Status: todos</option>
+          <option value="clean">Originais</option>
+          <option value="edited">Editados</option>
+          <option value="hidden">Escondidos</option>
+        </select>
       </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-24"><Loader2 className="w-12 h-12 animate-spin text-primary" /></div>
+      ) : (
+        <>
+          <p className="font-sans font-bold text-gray-500 text-sm">
+            {filtered.length} resultado{filtered.length !== 1 ? "s" : ""}
+            {filtered.length > PAGE_SIZE && ` · página ${page + 1}/${totalPages}`}
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {pageItems.map((item, i) => {
+              const k = keyOf(item);
+              const ov = overrides[k];
+              const cover = ov?.coverUrl || item.coverUrl;
+              const title = ov?.title || item.title;
+              const prov = item.sources?.[0]?.providerId;
+              return (
+                <div key={k || i} className={`bg-white border-4 border-black flex gap-3 p-3 ${ov?.hidden ? "opacity-50" : ""}`}>
+                  <div className="w-12 h-16 border-2 border-black shrink-0 bg-muted overflow-hidden">
+                    {cover ? <SafeImage src={cover} alt={title} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-secondary/30" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-display text-base text-black leading-tight line-clamp-2">{title}</h4>
+                    <p className="text-xs font-bold text-gray-500 truncate">{prov} · {itemType(item) === "gibi" ? "Gibi" : "HQ"}</p>
+                    {ov && <span className="inline-block mt-1 text-2xs font-bold bg-secondary/60 border border-black px-1.5">{ov.hidden ? "ESCONDIDO" : "EDITADO"}</span>}
+                  </div>
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <button onClick={() => save(item, { hidden: !ov?.hidden })} title={ov?.hidden ? "Mostrar" : "Esconder"} className="p-2 border-2 border-black hover:bg-secondary">{ov?.hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+                    <button onClick={() => openEdit(item)} title="Editar capa/sinopse" className="p-2 border-2 border-black hover:bg-secondary"><Pencil className="w-4 h-4" /></button>
+                    {ov && <button onClick={() => removeOverride(item)} title="Restaurar original" className="p-2 border-2 border-black hover:bg-primary hover:text-white"><Trash2 className="w-4 h-4" /></button>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {filtered.length === 0 && <p className="text-center text-gray-400 py-12 font-display">Nenhum item com esses filtros.</p>}
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+                className="border-4 border-black p-2 hover:bg-muted disabled:opacity-30"><ChevronLeft className="w-5 h-5" /></button>
+              <span className="font-display text-lg">{page + 1} / {totalPages}</span>
+              <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
+                className="border-4 border-black p-2 hover:bg-muted disabled:opacity-30"><ChevronRight className="w-5 h-5" /></button>
+            </div>
+          )}
+        </>
+      )}
 
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -297,7 +386,7 @@ export default function Admin() {
   const [keyInput, setKeyInput] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [tab, setTab] = useState<"pending" | "approved" | "catalog" | "suggestions" | "ranking" | "providers" | "inspector" | "users">("pending");
+  const [tab, setTab] = useState<"pending" | "approved" | "catalog" | "suggestions" | "ranking" | "providers" | "inspector" | "users">("catalog");
   const [confirmClearRanking, setConfirmClearRanking] = useState(false);
   const [providers, setProviders] = useState<any[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(false);
@@ -599,19 +688,19 @@ export default function Admin() {
 
         {/* Tabs */}
         <div className="flex flex-wrap border-4 border-black mb-6 overflow-hidden">
+          <button onClick={() => setTab("catalog")}
+            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 transition-colors ${tab === "catalog" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
+            <Database className="w-5 h-5" /> CATÁLOGO
+          </button>
           <button onClick={() => setTab("pending")}
-            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 transition-colors ${tab === "pending" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
+            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "pending" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
             <Eye className="w-5 h-5" strokeWidth={3} />
             PENDENTES {pendingItems.length > 0 && <span className="bg-primary text-white text-sm font-bold px-2 py-0.5 rounded-full">{pendingItems.length}</span>}
           </button>
           <button onClick={() => setTab("approved")}
             className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "approved" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
             <Check className="w-5 h-5" strokeWidth={3} />
-            APROVADOS ({approvedItems.length})
-          </button>
-          <button onClick={() => setTab("catalog")}
-            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "catalog" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
-            <Database className="w-5 h-5" /> <span className="hidden sm:inline">CATÁLOGO</span>
+            ENVIADOS ({approvedItems.length})
           </button>
           <button onClick={() => setTab("suggestions")}
             className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "suggestions" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>

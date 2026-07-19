@@ -1,4 +1,4 @@
-import { Provider, UnifiedSearchResult, MangaDetails, Chapter, Page } from "./types";
+import { Provider, UnifiedSearchResult, SearchResult, MangaDetails, Chapter, Page } from "./types";
 import { logger } from "../lib/logger";
 import { MangaDexProvider } from "./MangaDexProvider";
 import { ComicExtraProvider } from "./ComicExtraProvider";
@@ -567,7 +567,13 @@ export class ProviderManager {
 
     const resultsArray = await Promise.all(catalogPromises);
     const flatResults = resultsArray.flat();
+    return this.unifyCatalog(flatResults, nsfw);
+  }
 
+  // Groups a flat list of provider results into unified titles (merging sources,
+  // covers, descriptions and genres), then filters by the nsfw flag. Shared by
+  // getCatalog and getFullCatalog so both build identical unified shapes.
+  private static unifyCatalog(flatResults: SearchResult[], nsfw?: boolean): UnifiedSearchResult[] {
     const groups: Map<string, UnifiedSearchResult> = new Map();
 
     for (const result of flatResults) {
@@ -627,6 +633,29 @@ export class ProviderManager {
     }));
 
     return nsfw ? allResults.filter(result => result.isAdult) : allResults.filter(result => !result.isAdult);
+  }
+
+  // Full curated catalog with no per-provider slice — powers the admin catalog
+  // browser. Providers exposing getAllItems (curated ones) return everything;
+  // the rest fall back to their popular catalog.
+  static async getFullCatalog(nsfw?: boolean): Promise<UnifiedSearchResult[]> {
+    const activeProviders = Array.from(this.providers.values()).filter(
+      p => this.activeStates.get(p.id) === true
+    );
+    const promises = activeProviders.map(p => {
+      const full = (p as Provider & { getAllItems?: () => Promise<SearchResult[]> }).getAllItems;
+      const source = full ? full.call(p) : p.getCatalog("popular", nsfw);
+      return this.withTimeout(
+        source.catch((err: unknown) => {
+          logger.error({ err }, `Error loading full catalog from ${p.name}:`);
+          return [] as SearchResult[];
+        }),
+        20000,
+        [] as SearchResult[]
+      );
+    });
+    const resultsArray = await Promise.all(promises);
+    return this.unifyCatalog(resultsArray.flat(), nsfw);
   }
 
   // Fetch a large set of titles for a single genre, on demand. Providers with a

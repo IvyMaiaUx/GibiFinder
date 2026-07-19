@@ -670,4 +670,29 @@ router.delete("/providers/custom/:id", (req: Request, res: Response) => {
   }
 });
 
+// GET /api/admin/catalog — full curated catalog for the admin browser.
+// Returns raw items (overrides are NOT applied) so the admin can see and manage
+// hidden/edited items. Each item carries its sources[] so the override key
+// (providerId:itemId) can be derived on the client.
+router.get("/admin/catalog", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const items = await ProviderManager.getFullCatalog(false);
+    res.json({
+      total: items.length,
+      items: items.map(it => ({
+        id: it.id,
+        title: it.title,
+        coverUrl: it.coverUrl,
+        description: it.description,
+        genres: it.genres || [],
+        sources: it.sources || [],
+      })),
+    });
+  } catch (err) {
+    logger.error({ err }, "admin catalog failed");
+    res.status(500).json({ error: "catalog_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 export default router;

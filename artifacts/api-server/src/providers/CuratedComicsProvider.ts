@@ -557,4 +557,11 @@ export class CuratedComicsProvider implements Provider {
     // rows from it (the full set is still browsable via search).
     return sorted.slice(0, 400).map(item => this.toSearchResult(item));
   }
+
+  // Full catalog with no slice — used by the admin catalog browser so the whole
+  // curated library (static + Drive/Sites) can be listed and managed.
+  async getAllItems(): Promise<SearchResult[]> {
+    const dynamicItems = await this.getDynamicCatalog();
+    return [...STATIC_ITEMS, ...dynamicItems].map(item => this.toSearchResult(item));
+  }
 }
