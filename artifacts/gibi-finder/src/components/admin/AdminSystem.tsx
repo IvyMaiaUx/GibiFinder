@@ -1,4 +1,4 @@
-import { Server, Database, HardDrive, Cloud, Users as UsersIcon, Library, Globe, Construction } from "lucide-react";
+import { Server, Database, HardDrive, Cloud, Users as UsersIcon, Library, Globe, Key, Table, XCircle } from "lucide-react";
 
 export interface SystemInfo {
   diag?: any;
@@ -6,7 +6,13 @@ export interface SystemInfo {
   usersTotal: number | null;
   providersOnline: number;
   providersOffline: number;
+  env?: Record<string, boolean>;
+  tables?: Record<string, boolean>;
 }
+
+const ENV_LABELS: Record<string, string> = {
+  supabase: "Supabase", driveKey: "Google Drive API", groqKey: "Groq (IA)", geminiKey: "Gemini / Google AI",
+};
 
 function HealthCard({ icon: Icon, label, ok, detail }: { icon: typeof Server; label: string; ok: boolean | null; detail: string }) {
   const color = ok === null ? "#9ca3af" : ok ? "#16a34a" : "#dc2626";
@@ -63,18 +69,54 @@ export function AdminSystem({ info }: { info: SystemInfo }) {
         </div>
       </div>
 
-      {/* Infra — depende de instrumentação */}
+      {/* Ambiente (chaves de API configuradas — nunca os segredos) */}
       <div>
-        <h2 className="font-display text-2xl text-black mb-3 flex items-center gap-2"><Construction className="w-5 h-5" /> Infraestrutura</h2>
-        <div className="bg-white border-4 border-dashed border-black/40 p-6">
-          <p className="font-display text-lg text-black/40 mb-2">EM BREVE</p>
-          <p className="font-sans font-bold text-gray-500 text-sm mb-4">Jobs, cron, filas, backups, deploy e logs em tempo real dependem de instrumentação do runtime — chegam quando ligarmos a telemetria.</p>
-          <div className="flex flex-wrap gap-2">
-            {["Jobs", "Cron", "Filas", "Backups", "Deploy", "Logs", "Feature flags", "Variáveis"].map(s => (
-              <span key={s} className="font-display text-sm px-3 py-1.5 border-4 border-black bg-muted text-gray-500">{s}</span>
+        <h2 className="font-display text-2xl text-black mb-3 flex items-center gap-2"><Key className="w-5 h-5" /> Ambiente</h2>
+        {info.env ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {Object.entries(info.env).map(([k, v]) => (
+              <div key={k} className={`border-4 border-black p-3 ${v ? "bg-green-50" : "bg-red-50"}`}>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full border border-black" style={{ background: v ? "#16a34a" : "#dc2626" }} />
+                  <span className="font-display text-sm">{ENV_LABELS[k] || k}</span>
+                </div>
+                <p className="font-sans font-bold text-2xs mt-1" style={{ color: v ? "#16a34a" : "#dc2626" }}>{v ? "Configurado" : "Ausente"}</p>
+              </div>
             ))}
           </div>
+        ) : <p className="font-sans font-bold text-gray-400 text-sm">Carregando…</p>}
+      </div>
+
+      {/* Tabelas do banco */}
+      <div>
+        <h2 className="font-display text-2xl text-black mb-3 flex items-center gap-2"><Table className="w-5 h-5" /> Tabelas do banco</h2>
+        {info.tables && Object.keys(info.tables).length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(info.tables).map(([t, ok]) => (
+              <span key={t} className={`inline-flex items-center gap-1.5 text-xs font-bold border-2 border-black px-2 py-1 ${ok ? "bg-green-100" : "bg-red-100"}`}>
+                <span className="w-2 h-2 rounded-full" style={{ background: ok ? "#16a34a" : "#dc2626" }} />
+                <span className="font-mono">{t}</span>
+              </span>
+            ))}
+          </div>
+        ) : <p className="font-sans font-bold text-gray-400 text-sm">Carregando…</p>}
+        {info.tables && Object.values(info.tables).some(v => !v) && (
+          <p className="font-sans font-bold text-red-600 text-xs mt-2">Tabelas em vermelho não existem — rode o SQL de schema correspondente.</p>
+        )}
+      </div>
+
+      {/* Serviços ainda não configurados (honesto, sem métrica falsa) */}
+      <div>
+        <h2 className="font-display text-2xl text-black mb-3">Serviços</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          {["Jobs em background", "Cron", "Filas", "Backups automáticos", "Deploy hooks", "Logs centralizados"].map(s => (
+            <div key={s} className="border-4 border-black bg-muted/40 p-3 flex items-center gap-2">
+              <XCircle className="w-4 h-4 text-gray-400 shrink-0" />
+              <div><span className="font-display text-sm">{s}</span><p className="font-sans font-bold text-2xs text-gray-400">Não configurado</p></div>
+            </div>
+          ))}
         </div>
+        <p className="font-sans font-bold text-gray-400 text-xs mt-2">Hoje o deploy é direto (push → Vercel) e o cache do catálogo se renova sozinho a cada 6h. Jobs/cron/filas/backups exigem infra dedicada — quando fizer sentido, a gente liga.</p>
       </div>
     </div>
   );

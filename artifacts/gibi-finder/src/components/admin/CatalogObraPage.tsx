@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ArrowLeft, Info, FileText, Image as ImageIcon, ListOrdered, Globe,
   BarChart3, Search, History, ScrollText, Eye, EyeOff, RotateCcw, Save,
-  Sparkles, Loader2, Construction,
+  Sparkles, Loader2, Construction, Copy, Check as CheckIcon,
 } from "lucide-react";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { scoreItem, qualityColor, type QualityResult } from "./quality";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 type ObraTab = "info" | "sinopse" | "capas" | "capitulos" | "providers" | "stats" | "seo" | "historico" | "logs";
 
@@ -13,11 +15,11 @@ const TABS: { key: ObraTab; label: string; icon: typeof Info; ready: boolean }[]
   { key: "info", label: "Informações", icon: Info, ready: true },
   { key: "sinopse", label: "Sinopse", icon: FileText, ready: true },
   { key: "capas", label: "Capas", icon: ImageIcon, ready: true },
-  { key: "capitulos", label: "Capítulos", icon: ListOrdered, ready: false },
-  { key: "providers", label: "Providers", icon: Globe, ready: false },
+  { key: "capitulos", label: "Capítulos", icon: ListOrdered, ready: true },
+  { key: "providers", label: "Providers", icon: Globe, ready: true },
   { key: "stats", label: "Estatísticas", icon: BarChart3, ready: false },
-  { key: "seo", label: "SEO", icon: Search, ready: false },
-  { key: "historico", label: "Histórico", icon: History, ready: false },
+  { key: "seo", label: "SEO", icon: Search, ready: true },
+  { key: "historico", label: "Histórico", icon: History, ready: true },
   { key: "logs", label: "Logs", icon: ScrollText, ready: false },
 ];
 
@@ -82,6 +84,27 @@ export function CatalogObraPage({ item, override, type, onBack, onSave, onToggle
   const sources: any[] = item?.sources || [];
   const slug = String(item?.id || "").replace(/^drive-/, "");
   const hidden = !!override?.hidden;
+
+  // Chapters are fetched on demand (only when the Capítulos tab opens).
+  const [chapters, setChapters] = useState<any[] | null>(null);
+  const [loadingCh, setLoadingCh] = useState(false);
+  useEffect(() => {
+    if (tab !== "capitulos" || chapters !== null) return;
+    const s = sources[0];
+    if (!s) { setChapters([]); return; }
+    setLoadingCh(true);
+    fetch(`${BASE}/api/providers/chapters?providerId=${s.providerId}&id=${encodeURIComponent(s.id)}`)
+      .then(r => (r.ok ? r.json() : []))
+      .then(d => setChapters(Array.isArray(d) ? d : []))
+      .catch(() => setChapters([]))
+      .finally(() => setLoadingCh(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
+  const [copied, setCopied] = useState<string>("");
+  const copy = (text: string, what: string) => {
+    navigator.clipboard?.writeText(text).then(() => { setCopied(what); setTimeout(() => setCopied(""), 1500); }).catch(() => {});
+  };
 
   const doSave = async (patch: ObraSavePatch) => {
     setSaving(true);
@@ -219,12 +242,113 @@ export function CatalogObraPage({ item, override, type, onBack, onSave, onToggle
             </div>
           )}
 
-          {tab === "capitulos" && <Soon title="Capítulos" note="Lista de capítulos por provider (páginas, status, reimportar). Depende de puxar os capítulos ao vivo de cada fonte." />}
-          {tab === "providers" && <Soon title="Providers da obra" note="Quais fontes servem esta obra, com health (busca/detalhes/capítulos/páginas) e tempo médio. Depende do módulo de monitoramento de providers." />}
+          {tab === "capitulos" && (
+            <div className="bg-white border-4 border-black p-4">
+              {loadingCh ? (
+                <div className="py-12 text-center"><Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" /></div>
+              ) : !chapters || chapters.length === 0 ? (
+                <p className="text-center text-gray-400 py-8 font-display">Nenhum capítulo retornado pela fonte.</p>
+              ) : (
+                <>
+                  <p className="font-sans font-bold text-gray-500 text-sm mb-2">{chapters.length} capítulo(s) · fonte {sources[0]?.providerId}</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-sm">
+                      <thead><tr className="border-b-4 border-black font-display text-2xs uppercase text-gray-500">
+                        <th className="py-2 pr-3 w-16">Cap.</th><th className="py-2 pr-3">Título</th><th className="py-2 pr-3 w-16">Idioma</th>
+                      </tr></thead>
+                      <tbody className="divide-y-2 divide-gray-100">
+                        {chapters.map((c, i) => (
+                          <tr key={c.id || i}>
+                            <td className="py-2 pr-3 font-display">{c.chapterNum || "—"}</td>
+                            <td className="py-2 pr-3 font-sans font-bold">{c.title || `Capítulo ${c.chapterNum || i + 1}`}</td>
+                            <td className="py-2 pr-3 text-2xs font-bold uppercase text-gray-500">{c.language || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-2xs font-bold text-gray-400 mt-2">Editar/remover/reimportar capítulos chega com o painel de providers.</p>
+                </>
+              )}
+            </div>
+          )}
+
+          {tab === "providers" && (
+            <div className="bg-white border-4 border-black p-4 space-y-2">
+              <p className="font-sans font-bold text-gray-500 text-sm">{sources.length} fonte(s) servem esta obra:</p>
+              {sources.map((s, i) => (
+                <div key={i} className="border-2 border-black px-3 py-2 flex items-center gap-3">
+                  <span className="w-2.5 h-2.5 rounded-full border border-black bg-green-500 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-display text-base leading-tight">{s.providerId}</p>
+                    <p className="font-mono text-2xs text-gray-500 break-all">{s.id}</p>
+                  </div>
+                  <button onClick={() => copy(s.id, `id-${i}`)} title="Copiar ID" className="p-1.5 border-2 border-black hover:bg-secondary shrink-0">
+                    {copied === `id-${i}` ? <CheckIcon className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              ))}
+              <p className="text-2xs font-bold text-gray-400">Health (busca/detalhes/capítulos/páginas) e tempo médio por fonte chegam com o monitoramento de providers.</p>
+            </div>
+          )}
+
+          {tab === "seo" && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="bg-white border-4 border-black p-4 space-y-3">
+                <div><span className={lbl}>Slug</span>
+                  <div className="flex gap-2">
+                    <input readOnly value={slug} className={`${inp} bg-muted`} />
+                    <button onClick={() => copy(slug, "slug")} className="border-4 border-black px-3 hover:bg-secondary">{copied === "slug" ? <CheckIcon className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}</button>
+                  </div>
+                </div>
+                <div><span className={lbl}>Título (meta)</span><input readOnly value={curTitle} className={`${inp} bg-muted`} /></div>
+                <div><span className={lbl}>Meta descrição</span>
+                  <textarea readOnly rows={3} value={(curDesc || "Sinopse não disponível.").slice(0, 160)} className={`${inp} bg-muted`} />
+                  <p className="text-2xs font-bold text-gray-400 mt-1">{Math.min((curDesc || "").length, 160)}/160 caracteres.</p>
+                </div>
+                <p className="text-2xs font-bold text-gray-400">Título alternativo editável chega com um campo novo no banco. Por ora, título/sinopse editados na aba correspondente já refletem aqui.</p>
+              </div>
+              {/* Open Graph preview */}
+              <div className="bg-white border-4 border-black p-4">
+                <p className={lbl}>Prévia (Open Graph)</p>
+                <div className="border-4 border-black overflow-hidden">
+                  <div className="aspect-[1.9/1] bg-muted overflow-hidden">
+                    {curCover ? <SafeImage src={curCover} alt={curTitle} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-secondary/30" />}
+                  </div>
+                  <div className="p-2 border-t-4 border-black">
+                    <p className="text-2xs font-bold uppercase text-gray-400">gibifinder</p>
+                    <p className="font-display text-base leading-tight line-clamp-1">{curTitle}</p>
+                    <p className="font-sans text-xs text-gray-600 line-clamp-2">{(curDesc || "Sinopse não disponível.").slice(0, 120)}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {tab === "historico" && (
+            <div className="bg-white border-4 border-black p-4">
+              {override ? (
+                <div className="space-y-2">
+                  <p className="font-sans font-bold text-gray-700 text-sm">Esta obra tem edições no catálogo (override):</p>
+                  <div className="flex flex-wrap gap-2">
+                    {override.hidden && <span className="text-2xs font-bold bg-red-200 border-2 border-black px-2 py-0.5">Escondida</span>}
+                    {override.title && <span className="text-2xs font-bold bg-secondary border-2 border-black px-2 py-0.5">Título editado</span>}
+                    {override.coverUrl && <span className="text-2xs font-bold bg-secondary border-2 border-black px-2 py-0.5">Capa editada</span>}
+                    {override.description && <span className="text-2xs font-bold bg-secondary border-2 border-black px-2 py-0.5">Sinopse editada</span>}
+                  </div>
+                  {(override.updated_at || override.updatedAt) && (
+                    <p className="font-sans font-bold text-gray-500 text-xs">Última alteração: {new Date(override.updated_at || override.updatedAt).toLocaleString("pt-BR")}</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-center text-gray-400 py-8 font-display">Obra no estado original — nenhuma edição.</p>
+              )}
+              <p className="text-2xs font-bold text-gray-400 mt-3">Auditoria completa (quem alterou o quê, antes/depois, restaurar versão) chega com a tabela de auditoria.</p>
+            </div>
+          )}
+
           {tab === "stats" && <Soon title="Estatísticas" note="Leituras, favoritos, tempo médio, conclusão e abandono — depende da telemetria de leitura." />}
-          {tab === "seo" && <Soon title="SEO" note="Título alternativo, slug, meta descrição e Open Graph. Depende de campos novos no banco." />}
-          {tab === "historico" && <Soon title="Histórico" note="Auditoria de alterações (quem mudou o quê, quando) com restaurar versão — depende do log de auditoria." />}
-          {tab === "logs" && <Soon title="Logs" note="Eventos técnicos desta obra (importação, sincronização, erros de provider)." />}
+          {tab === "logs" && <Soon title="Logs" note="Eventos técnicos desta obra (importação, sincronização, erros de provider) — depende do log do runtime." />}
         </div>
       </div>
     </div>

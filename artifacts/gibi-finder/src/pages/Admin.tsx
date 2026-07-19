@@ -723,6 +723,13 @@ export default function Admin() {
     select: (d: { items: { id: string; username: string; email?: string; created_at: string; readCount?: number; favCount?: number; lastReadAt?: string | null }[]; total: number }) => d,
   });
 
+  const { data: healthData } = useQuery({
+    queryKey: ["admin-system-health", adminKey],
+    queryFn: () => adminRequest("/api/admin/system-health", adminKey),
+    enabled: unlocked && tab === "system",
+    select: (d: { env: Record<string, boolean>; tables: Record<string, boolean> }) => d,
+  });
+
   const { data: catalogData, isLoading: loadingCatalog } = useQuery({
     queryKey: ["admin-catalog", adminKey],
     queryFn: () => adminRequest("/api/admin/catalog", adminKey),
@@ -1263,6 +1270,8 @@ export default function Admin() {
           usersTotal: usersData?.total ?? null,
           providersOnline: providers.filter(p => p.active).length,
           providersOffline: providers.filter(p => !p.active).length,
+          env: healthData?.env,
+          tables: healthData?.tables,
         }} />
       )}
 

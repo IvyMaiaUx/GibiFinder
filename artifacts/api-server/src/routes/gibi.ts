@@ -3,7 +3,7 @@ import { logger } from "../lib/logger";
 import { identifyFromImages, searchByText, searchByCharacter } from "../lib/gemini";
 import { fetchFandomContext } from "../lib/fandom";
 import { supabase } from "../lib/supabase";
-import { nextDriveKey } from "../lib/driveKeys";
+import { nextDriveKey, hasDriveKey } from "../lib/driveKeys";
 import { listOverrides, upsertOverride, deleteOverride } from "../lib/catalogOverrides";
 import { randomUUID, createHash } from "crypto";
 
@@ -1754,6 +1754,30 @@ router.get("/admin/users", async (req: Request, res: Response) => {
     }));
     res.json({ items, total: items.length });
   } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
+});
+
+// GET /api/admin/system-health — real environment + database status for the
+// Sistema tab. Env keys are booleans (never the secrets); tables are probed for
+// existence. Jobs/cron/backups genuinely don't exist yet and are reported as such.
+router.get("/admin/system-health", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  const env = {
+    supabase: !!supabase,
+    driveKey: hasDriveKey(),
+    groqKey: !!(process.env["GROQ_API_KEY"] || "").trim(),
+    geminiKey: !!(process.env["GEMINI_API_KEY"] || process.env["GOOGLE_API_KEY"] || "").trim(),
+  };
+  const tableNames = ["curated_cache", "catalog_overrides", "user_reader_settings", "user_profiles", "user_reading_history", "user_favorites", "suggestions"];
+  const tables: Record<string, boolean> = {};
+  if (supabase) {
+    await Promise.all(tableNames.map(async (t) => {
+      try {
+        const { error } = await supabase!.from(t).select("*", { head: true, count: "exact" }).limit(1);
+        tables[t] = !error;
+      } catch { tables[t] = false; }
+    }));
+  }
+  res.json({ env, tables });
 });
 
 // ---- Cross-device reader settings sync ----

@@ -54214,6 +54214,28 @@ router2.get("/admin/users", async (req, res) => {
     res.status(500).json({ error: "server_error" });
   }
 });
+router2.get("/admin/system-health", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const env = {
+    supabase: !!supabase,
+    driveKey: hasDriveKey(),
+    groqKey: !!(process.env["GROQ_API_KEY"] || "").trim(),
+    geminiKey: !!(process.env["GEMINI_API_KEY"] || process.env["GOOGLE_API_KEY"] || "").trim()
+  };
+  const tableNames = ["curated_cache", "catalog_overrides", "user_reader_settings", "user_profiles", "user_reading_history", "user_favorites", "suggestions"];
+  const tables = {};
+  if (supabase) {
+    await Promise.all(tableNames.map(async (t) => {
+      try {
+        const { error } = await supabase.from(t).select("*", { head: true, count: "exact" }).limit(1);
+        tables[t] = !error;
+      } catch {
+        tables[t] = false;
+      }
+    }));
+  }
+  res.json({ env, tables });
+});
 router2.get("/auth/reader-settings", async (req, res) => {
   const userId = req.query.userId;
   if (!userId || !supabase) {
