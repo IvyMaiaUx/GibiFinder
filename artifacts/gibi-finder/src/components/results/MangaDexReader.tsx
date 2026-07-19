@@ -18,7 +18,7 @@ import {
   ZoomIn,
   ZoomOut
 } from "lucide-react";
-import { cn, proxyPdfUrl } from "@/lib/utils";
+import { cn, proxyPdfUrl, proxyCoverUrl } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { useReaderZoom } from "@/components/reader/useReaderZoom";
 import { useAuth } from "@/hooks/use-auth";
@@ -82,6 +82,12 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   const readerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
+  // Virtualization: measured height of each page (keeps off-window spacers the
+  // right size so scroll position never jumps).
+  const pageHeightsRef = useRef<Record<number, number>>({});
+  // Preloader: pages fetched ahead for the next chapter, keyed by chapter id, so
+  // advancing is instant and no loading spinner shows.
+  const prefetchedPagesRef = useRef<Record<string, Page[]>>({});
   // Guards the intersection observer from clobbering the saved page while we
   // are auto-scrolling back to it on resume.
   const resumingRef = useRef(false);
@@ -225,12 +231,19 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     // fullscreen when switching chapters.
     setError(null);
 
+    // Fresh chapter → drop the previous chapter's measured page heights.
+    pageHeightsRef.current = {};
+
     try {
-      const url = `${BASE}/api/providers/pages?providerId=${chapter.providerId}&chapterId=${encodeURIComponent(chapter.id)}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Erro ao carregar páginas do capítulo");
-      const data = await res.json() as Page[];
-      
+      // Use pages already prefetched for this chapter (instant, no spinner).
+      let data = prefetchedPagesRef.current[chapter.id];
+      if (!data) {
+        const url = `${BASE}/api/providers/pages?providerId=${chapter.providerId}&chapterId=${encodeURIComponent(chapter.id)}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Erro ao carregar páginas do capítulo");
+        data = await res.json() as Page[];
+      }
+
       if (data.length === 0) {
         throw new Error("Nenhuma pagina retornada pelo provedor");
       }
@@ -608,6 +621,47 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   const currentChapterIndex = filteredChapters.findIndex(ch => ch.id === selectedChapter?.id);
   const nextChapter = currentChapterIndex > -1 && currentChapterIndex < filteredChapters.length - 1 ? filteredChapters[currentChapterIndex + 1] : null;
   const prevChapter = currentChapterIndex > 0 ? filteredChapters[currentChapterIndex - 1] : null;
+
+  // Virtualization window for cascade mode: only pages within this range mount
+  // their <img> (decode + memory); the rest render as height-reserved spacers so
+  // the scroll position and page tracking stay correct with no reflow/flicker.
+  const V_BEHIND = 4;
+  const V_AHEAD = 7;
+  const vWinStart = Math.max(0, currentPage - V_BEHIND);
+  const vWinEnd = Math.min(pages.length - 1, currentPage + V_AHEAD);
+  const vMeasured = Object.values(pageHeightsRef.current);
+  const vEstHeight = vMeasured.length
+    ? Math.round(vMeasured.reduce((a, b) => a + b, 0) / vMeasured.length)
+    : Math.round((scrollContainerRef.current?.clientWidth || 700) * 1.4);
+
+  // Preloader: once near the end of the chapter, prefetch the next chapter's page
+  // list and warm its first images so advancing never shows a loading spinner.
+  useEffect(() => {
+    if (!showReader || pages.length === 0 || !nextChapter) return;
+    if (currentPage < pages.length - 3) return;
+    if (prefetchedPagesRef.current[nextChapter.id]) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${BASE}/api/providers/pages?providerId=${nextChapter.providerId}&chapterId=${encodeURIComponent(nextChapter.id)}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json() as Page[];
+        if (cancelled || data.length === 0) return;
+        prefetchedPagesRef.current[nextChapter.id] = data;
+        // Warm the first images (skip pdf/embed/external markers).
+        for (const pg of data.slice(0, 4)) {
+          if (pg.url && /^https?:/i.test(pg.url)) {
+            const proxied = proxyCoverUrl(pg.url);
+            if (proxied) {
+              const img = new Image();
+              img.src = proxied;
+            }
+          }
+        }
+      } catch { /* best-effort */ }
+    })();
+    return () => { cancelled = true; };
+  }, [showReader, currentPage, pages.length, nextChapter]);
 
   return (
     <div className="bg-white border-4 border-black p-6 rounded-xl comic-shadow relative overflow-hidden">
@@ -1247,23 +1301,39 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
             ) : readerMode === "scroll" ? (
               /* Continuous Scroll Mode */
               <div className="max-w-2xl w-full space-y-1 sm:space-y-4 flex flex-col items-center" style={{ zoom }}>
-                {pages.map((p, idx) => (
-                  <div
-                    key={idx}
-                    ref={(el) => { pageRefs.current[idx] = el; }}
-                    className="relative w-full border-0 sm:border-4 border-white/10 bg-zinc-900"
-                  >
-                    <SafeImage
-                      src={p.url}
-                      alt={`Página ${p.pageNumber}`}
-                      className="w-full h-auto select-none pointer-events-none"
-                      loading={idx <= 2 || (resumeTargetPage !== null && idx <= resumeTargetPage) ? undefined : "lazy"}
-                    />
-                    <div className="absolute bottom-2 right-2 bg-black/60 text-white font-sans text-xs px-2 py-1">
-                      Pág. {p.pageNumber}
+                {pages.map((p, idx) => {
+                  // Virtualized: only pages in the active window mount their image.
+                  const inWindow = idx >= vWinStart && idx <= vWinEnd;
+                  return (
+                    <div
+                      key={idx}
+                      ref={(el) => { pageRefs.current[idx] = el; }}
+                      className="relative w-full border-0 sm:border-4 border-white/10 bg-zinc-900"
+                    >
+                      {inWindow ? (
+                        <>
+                          <SafeImage
+                            src={p.url}
+                            alt={`Página ${p.pageNumber}`}
+                            className="w-full h-auto select-none pointer-events-none"
+                            // In-window pages load eagerly (the window is the preloader),
+                            // so the next pages are ready before the reader reaches them.
+                            onLoad={() => {
+                              const h = pageRefs.current[idx]?.offsetHeight;
+                              if (h && h > 40) pageHeightsRef.current[idx] = h;
+                            }}
+                          />
+                          <div className="absolute bottom-2 right-2 bg-black/60 text-white font-sans text-xs px-2 py-1">
+                            Pág. {p.pageNumber}
+                          </div>
+                        </>
+                      ) : (
+                        // Height-reserved placeholder keeps scroll position stable.
+                        <div style={{ height: pageHeightsRef.current[idx] ?? vEstHeight }} aria-hidden="true" />
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 
                 {/* Next/Prev Chapter Navigation at the bottom of cascade */}
                 <div className="w-full pt-8 pb-4 border-t-2 border-dashed border-white/20 flex flex-col sm:flex-row justify-between items-center gap-4">
