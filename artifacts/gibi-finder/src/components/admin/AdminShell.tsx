@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import {
   LayoutDashboard, Library, Globe, Settings2, Users, BarChart3,
-  MessageSquare, SearchCode, Wrench, Menu, X, LogOut, ExternalLink,
+  MessageSquare, SearchCode, Wrench, Menu, X, LogOut, ExternalLink, PanelLeftClose,
 } from "lucide-react";
 
 export type AdminModule =
@@ -43,6 +43,13 @@ interface AdminShellProps {
 
 export function AdminShell({ active, onNavigate, onExit, badges = {}, title, subtitle, actions, children }: AdminShellProps) {
   const [open, setOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem("gibi-admin:sidebar-collapsed") === "1"; } catch { return false; }
+  });
+  const setCollapsedPersist = (v: boolean) => {
+    setCollapsed(v);
+    try { localStorage.setItem("gibi-admin:sidebar-collapsed", v ? "1" : "0"); } catch { /* ignore */ }
+  };
   const items = adminNavItems(badges);
 
   const NavList = ({ onPick }: { onPick?: () => void }) => (
@@ -70,12 +77,15 @@ export function AdminShell({ active, onNavigate, onExit, badges = {}, title, sub
 
   const SidebarInner = ({ onPick }: { onPick?: () => void }) => (
     <div className="flex flex-col h-full">
-      <div className="px-4 py-5 border-b-4 border-black">
+      <div className="px-4 py-5 border-b-4 border-black relative">
         <Link href="/" className="flex items-center gap-2 group w-fit">
           <span className="bg-primary text-primary-foreground font-display text-xl px-3 py-1.5 rounded-lg border-4 border-black comic-shadow-sm transform -rotate-3 group-hover:rotate-0 transition-all">GIBI</span>
           <span className="font-display text-2xl text-black tracking-wider">FINDER</span>
         </Link>
         <p className="font-display text-sm text-black/50 tracking-[0.2em] mt-2 pl-1">CENTRO DE OPERAÇÕES</p>
+        <button onClick={() => setCollapsedPersist(true)} title="Recolher menu" className="hidden lg:flex absolute top-3 right-3 p-1.5 border-2 border-black bg-white hover:bg-muted">
+          <PanelLeftClose className="w-4 h-4" strokeWidth={2.5} />
+        </button>
       </div>
       <div className="flex-1 overflow-y-auto px-3 py-4">
         <NavList onPick={onPick} />
@@ -93,8 +103,8 @@ export function AdminShell({ active, onNavigate, onExit, badges = {}, title, sub
 
   return (
     <div className="min-h-screen bg-[#faf7f2]">
-      {/* Desktop sidebar (fixed) */}
-      <aside className="hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:w-64 bg-white border-r-8 border-black z-40">
+      {/* Desktop sidebar (fixed, collapsible) */}
+      <aside className={`${collapsed ? "hidden" : "hidden lg:flex"} lg:flex-col lg:fixed lg:inset-y-0 lg:w-64 bg-white border-r-8 border-black z-40`}>
         <SidebarInner />
       </aside>
 
@@ -110,11 +120,11 @@ export function AdminShell({ active, onNavigate, onExit, badges = {}, title, sub
       )}
 
       {/* Content */}
-      <div className="lg:pl-64 flex flex-col min-h-screen">
+      <div className={`${collapsed ? "" : "lg:pl-64"} flex flex-col min-h-screen`}>
         {/* Top bar */}
         <header className="sticky top-0 z-30 bg-[#faf7f2]/95 backdrop-blur border-b-4 border-black">
           <div className="flex items-center gap-3 px-4 sm:px-6 lg:px-8 py-4">
-            <button onClick={() => setOpen(true)} className="lg:hidden p-2 border-4 border-black bg-white shrink-0"><Menu className="w-5 h-5" strokeWidth={3} /></button>
+            <button onClick={() => { setCollapsedPersist(false); setOpen(true); }} title="Menu" className={`${collapsed ? "" : "lg:hidden"} p-2 border-4 border-black bg-white shrink-0`}><Menu className="w-5 h-5" strokeWidth={3} /></button>
             <div className="min-w-0 flex-1">
               <h1 className="font-display text-3xl md:text-4xl text-black leading-none truncate">{title}</h1>
               {subtitle && <p className="font-sans font-bold text-gray-500 text-sm mt-1 truncate">{subtitle}</p>}
