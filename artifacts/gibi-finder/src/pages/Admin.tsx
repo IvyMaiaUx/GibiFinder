@@ -8,8 +8,8 @@ import { SafeImage } from "@/components/ui/SafeImage";
 import { ProviderInspectorPanel } from "@/pages/ProviderInspector";
 import { AdminShell, type AdminModule } from "@/components/admin/AdminShell";
 import { AdminDashboard, type DashboardStats } from "@/components/admin/AdminDashboard";
-import { AdminPlaceholder } from "@/components/admin/AdminPlaceholder";
 import { AdminEngines } from "@/components/admin/AdminEngines";
+import { AdminSystem } from "@/components/admin/AdminSystem";
 import { scoreItem, qualityColor } from "@/components/admin/quality";
 import { CatalogObraPage } from "@/components/admin/CatalogObraPage";
 
@@ -1257,11 +1257,13 @@ export default function Admin() {
       )}
 
       {tab === "system" && (
-        <AdminPlaceholder
-          title="Sistema"
-          description="Tudo que é infraestrutura em um lugar só: jobs em background, OCR, cache, banco, storage, deploy, filas, cron e variáveis de ambiente — com monitoramento e backups."
-          sections={["Jobs", "OCR", "Cache", "Banco", "Storage", "Deploy", "Logs", "Backups", "Cron", "Variáveis", "Fila", "Monitoramento"]}
-        />
+        <AdminSystem info={{
+          diag: (catalogData as any)?.diag,
+          catalogTotal: catalogData?.total ?? null,
+          usersTotal: usersData?.total ?? null,
+          providersOnline: providers.filter(p => p.active).length,
+          providersOffline: providers.filter(p => !p.active).length,
+        }} />
       )}
 
       {/* Edit/Add modal */}
