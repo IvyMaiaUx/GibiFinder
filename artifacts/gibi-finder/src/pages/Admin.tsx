@@ -10,6 +10,7 @@ import { AdminShell, type AdminModule } from "@/components/admin/AdminShell";
 import { AdminDashboard, type DashboardStats } from "@/components/admin/AdminDashboard";
 import { AdminPlaceholder } from "@/components/admin/AdminPlaceholder";
 import { scoreItem, qualityColor } from "@/components/admin/quality";
+import { CatalogObraPage } from "@/components/admin/CatalogObraPage";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const STORAGE_KEY = "gibi_admin_key";
@@ -194,13 +195,12 @@ function itemType(item: any): "gibi" | "hq" {
 function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebuild, rebuilding, diag }: { adminKey: string; items: any[]; loading: boolean; onReload: () => void; byProvider: Record<string, number>; onRebuild: () => void; rebuilding: boolean; diag?: any }) {
   const { toast } = useToast();
   const [overrides, setOverrides] = useState<Record<string, any>>({});
-  const [editing, setEditing] = useState<any | null>(null);
-  const [editForm, setEditForm] = useState({ title: "", coverUrl: "", description: "" });
+  const [selected, setSelected] = useState<any | null>(null);
   // filters
   const [q, setQ] = useState("");
   const [fType, setFType] = useState<"all" | "hq" | "gibi">("all");
   const [fProv, setFProv] = useState<string>("all");
-  const [fStatus, setFStatus] = useState<"all" | "edited" | "hidden" | "clean">("all");
+  const [fStatus, setFStatus] = useState<"all" | "edited" | "hidden" | "clean" | "no-cover" | "no-synopsis" | "incomplete">("all");
   const [page, setPage] = useState(0);
 
   const keyOf = (item: any) => { const s = item?.sources?.[0]; return s ? `${s.providerId}:${s.id}` : ""; };
@@ -238,12 +238,6 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
     try { await adminRequest(`/api/admin/catalog-overrides/${encodeURIComponent(keyOf(item))}`, adminKey, "DELETE"); await loadOverrides(); toast({ title: "Restaurado ao original" }); } catch { /* */ }
   };
 
-  const openEdit = (item: any) => {
-    const cur = overrides[keyOf(item)] || {};
-    setEditForm({ title: cur.title || "", coverUrl: cur.coverUrl || "", description: cur.description || "" });
-    setEditing(item);
-  };
-
   // Provider list for the filter dropdown
   const providers = Array.from(new Set(items.map(it => it.sources?.[0]?.providerId).filter(Boolean))).sort();
 
@@ -257,6 +251,9 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
     if (fStatus === "hidden" && !ov?.hidden) return false;
     if (fStatus === "edited" && !(ov && !ov.hidden)) return false;
     if (fStatus === "clean" && ov) return false;
+    if (fStatus === "no-cover" && (ov?.coverUrl || it.coverUrl)) return false;
+    if (fStatus === "no-synopsis" && String(ov?.description || it.description || "").trim().length >= 60) return false;
+    if (fStatus === "incomplete" && scoreItem(it, ov).score >= 100) return false;
     return true;
   });
 
@@ -264,11 +261,31 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
   const nGibi = items.filter(it => itemType(it) === "gibi").length;
   const nHidden = items.filter(it => overrides[keyOf(it)]?.hidden).length;
   const nEdited = items.filter(it => { const o = overrides[keyOf(it)]; return o && !o.hidden; }).length;
+  // Curation queue counts (Modo Curadoria)
+  const nNoCover = items.filter(it => { const o = overrides[keyOf(it)]; return !(o?.coverUrl || it.coverUrl); }).length;
+  const nNoSyn = items.filter(it => { const o = overrides[keyOf(it)]; return String(o?.description || it.description || "").trim().length < 60; }).length;
+  const nIncomplete = items.filter(it => scoreItem(it, overrides[keyOf(it)]).score < 100).length;
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageItems = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
   const selClass = "border-4 border-black px-2 py-2 font-sans font-bold text-sm bg-white focus:outline-none focus:ring-4 focus:ring-secondary";
+
+  // Full-page work editor (no popup) — replaces the list while an item is open.
+  if (selected) {
+    const ov = overrides[keyOf(selected)];
+    return (
+      <CatalogObraPage
+        item={selected}
+        override={ov}
+        type={itemType(selected)}
+        onBack={() => setSelected(null)}
+        onSave={async (patch) => { await save(selected, patch); }}
+        onToggleHide={async () => { await save(selected, { hidden: !ov?.hidden }); }}
+        onRestore={async () => { await removeOverride(selected); }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -355,7 +372,21 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
           <option value="clean">Originais</option>
           <option value="edited">Editados</option>
           <option value="hidden">Escondidos</option>
+          <option value="no-cover">Sem capa</option>
+          <option value="no-synopsis">Sem sinopse</option>
+          <option value="incomplete">Incompletos</option>
         </select>
+      </div>
+
+      {/* Modo Curadoria — fila de tarefas por atenção */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <span className="font-display text-sm text-black/60">CURADORIA:</span>
+        <button onClick={() => setFStatus(fStatus === "no-cover" ? "all" : "no-cover")}
+          className={`text-xs font-bold border-4 border-black px-2.5 py-1 ${fStatus === "no-cover" ? "bg-primary text-white" : "bg-white hover:bg-muted"}`}>🟥 {nNoCover} sem capa</button>
+        <button onClick={() => setFStatus(fStatus === "no-synopsis" ? "all" : "no-synopsis")}
+          className={`text-xs font-bold border-4 border-black px-2.5 py-1 ${fStatus === "no-synopsis" ? "bg-primary text-white" : "bg-white hover:bg-muted"}`}>🟧 {nNoSyn} sem sinopse</button>
+        <button onClick={() => setFStatus(fStatus === "incomplete" ? "all" : "incomplete")}
+          className={`text-xs font-bold border-4 border-black px-2.5 py-1 ${fStatus === "incomplete" ? "bg-primary text-white" : "bg-white hover:bg-muted"}`}>🟨 {nIncomplete} incompletos</button>
       </div>
 
       {loading ? (
@@ -374,26 +405,27 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
               const cover = ov?.coverUrl || item.coverUrl;
               const title = ov?.title || item.title;
               const prov = item.sources?.[0]?.providerId;
+              const q = scoreItem(item, ov);
               return (
                 <div key={k || i} className={`bg-white border-4 border-black flex gap-3 p-3 ${ov?.hidden ? "opacity-50" : ""}`}>
-                  <div className="w-12 h-16 border-2 border-black shrink-0 bg-muted overflow-hidden">
-                    {cover ? <SafeImage src={cover} alt={title} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-secondary/30" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-display text-base text-black leading-tight line-clamp-2">{title}</h4>
-                    <p className="text-xs font-bold text-gray-500 truncate">{prov} · {itemType(item) === "gibi" ? "Gibi" : "HQ"}</p>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      {(() => { const q = scoreItem(item, ov); return (
+                  <button onClick={() => setSelected(item)} className="flex gap-3 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity" title="Abrir página da obra">
+                    <div className="w-12 h-16 border-2 border-black shrink-0 bg-muted overflow-hidden">
+                      {cover ? <SafeImage src={cover} alt={title} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-secondary/30" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-display text-base text-black leading-tight line-clamp-2">{title}</h4>
+                      <p className="text-xs font-bold text-gray-500 truncate">{prov} · {itemType(item) === "gibi" ? "Gibi" : "HQ"}</p>
+                      <div className="flex items-center gap-1.5 mt-1">
                         <span className="inline-flex items-center gap-1 text-2xs font-bold border-2 border-black px-1.5" style={{ background: qualityColor(q.score), color: "#fff" }} title={q.checks.filter(c => !c.ok).map(c => c.hint).join(" · ") || "Completo"}>
                           {q.score}%
                         </span>
-                      ); })()}
-                      {ov && <span className="text-2xs font-bold bg-secondary/60 border border-black px-1.5">{ov.hidden ? "ESCONDIDO" : "EDITADO"}</span>}
+                        {ov && <span className="text-2xs font-bold bg-secondary/60 border border-black px-1.5">{ov.hidden ? "ESCONDIDO" : "EDITADO"}</span>}
+                      </div>
                     </div>
-                  </div>
+                  </button>
                   <div className="flex flex-col gap-1 shrink-0">
                     <button onClick={() => save(item, { hidden: !ov?.hidden })} title={ov?.hidden ? "Mostrar" : "Esconder"} className="p-2 border-2 border-black hover:bg-secondary">{ov?.hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
-                    <button onClick={() => openEdit(item)} title="Editar capa/sinopse" className="p-2 border-2 border-black hover:bg-secondary"><Pencil className="w-4 h-4" /></button>
+                    <button onClick={() => setSelected(item)} title="Abrir página da obra" className="p-2 border-2 border-black hover:bg-secondary"><Pencil className="w-4 h-4" /></button>
                     {ov && <button onClick={() => removeOverride(item)} title="Restaurar original" className="p-2 border-2 border-black hover:bg-primary hover:text-white"><Trash2 className="w-4 h-4" /></button>}
                   </div>
                 </div>
@@ -413,27 +445,6 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
             </div>
           )}
         </>
-      )}
-
-      {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setEditing(null)} />
-          <div className="relative bg-white border-4 border-black comic-shadow max-w-lg w-full z-10">
-            <div className="bg-secondary border-b-4 border-black px-5 py-3 flex items-center justify-between">
-              <h3 className="font-display text-xl">EDITAR ITEM</h3>
-              <button onClick={() => setEditing(null)}><X className="w-5 h-5" strokeWidth={3} /></button>
-            </div>
-            <div className="p-5 space-y-3">
-              <div><label className="block font-display text-sm mb-1 uppercase">Título</label><input value={editForm.title} onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))} placeholder={editing.title} className="w-full border-4 border-black px-3 py-2 font-bold" /></div>
-              <div><label className="block font-display text-sm mb-1 uppercase">URL da Capa</label><input value={editForm.coverUrl} onChange={e => setEditForm(p => ({ ...p, coverUrl: e.target.value }))} type="url" className="w-full border-4 border-black px-3 py-2 font-bold" /></div>
-              <div><label className="block font-display text-sm mb-1 uppercase">Sinopse</label><textarea value={editForm.description} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} rows={4} className="w-full border-4 border-black px-3 py-2 font-bold" /></div>
-              <div className="flex gap-3 pt-2">
-                <button onClick={() => setEditing(null)} className="flex-1 border-4 border-black py-2 font-display hover:bg-muted">CANCELAR</button>
-                <button onClick={async () => { await save(editing, { title: editForm.title.trim() || null, coverUrl: editForm.coverUrl.trim() || null, description: editForm.description.trim() || null }); setEditing(null); }} className="flex-1 bg-primary text-white border-4 border-black py-2 font-display comic-shadow">SALVAR</button>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
