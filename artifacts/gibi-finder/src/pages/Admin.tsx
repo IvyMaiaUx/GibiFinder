@@ -172,12 +172,25 @@ function GibiAdminCard({ gibi, onReview, onEdit, onDelete }: { gibi: Gibi; onRev
 // and replace cover / synopsis / title without touching the source.
 const PAGE_SIZE = 48;
 
+// Brazilian-gibi title hints — fallback when an item carries no genre tag.
+const GIBI_TITLE_HINTS = ["monica", "mônica", "cebolinha", "magali", "cascao", "cascão", "chico bento", "almanaque", "turma da", "penadinho", "pelezinho", "ronaldinho", "menino maluquinho", "disney", "mickey", "pato donald", "tio patinhas"];
+
+// Mirrors the app's Explore typeOf: a biblioteca-br item is HQ when tagged "hq",
+// otherwise it's a Gibi (with a title-hint fallback for untagged items).
 function itemType(item: any): "gibi" | "hq" {
-  const g: string[] = (item?.genres || []).map((x: string) => (x || "").toLowerCase());
-  return g.some(x => x.includes("gibi") || x.includes("nacional") || x.includes("mônica") || x.includes("monica")) ? "gibi" : "hq";
+  const provs: string[] = (item?.sources || []).map((s: any) => s?.providerId);
+  const genres: string[] = (item?.genres || []).map((x: string) => (x || "").toLowerCase());
+  const isBiblioteca = provs.includes("biblioteca-br");
+  if (isBiblioteca) {
+    if (genres.includes("hq")) return "hq";
+    if (genres.some(g => g.includes("gibi") || g.includes("nacional"))) return "gibi";
+    const t = (item?.title || "").toLowerCase();
+    return GIBI_TITLE_HINTS.some(k => t.includes(k)) ? "gibi" : "hq";
+  }
+  return "hq";
 }
 
-function CatalogManager({ adminKey, items, loading, onReload }: { adminKey: string; items: any[]; loading: boolean; onReload: () => void }) {
+function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebuild, rebuilding }: { adminKey: string; items: any[]; loading: boolean; onReload: () => void; byProvider: Record<string, number>; onRebuild: () => void; rebuilding: boolean }) {
   const { toast } = useToast();
   const [overrides, setOverrides] = useState<Record<string, any>>({});
   const [editing, setEditing] = useState<any | null>(null);
@@ -259,17 +272,32 @@ function CatalogManager({ adminKey, items, loading, onReload }: { adminKey: stri
   return (
     <div className="space-y-4">
       {/* Stat chips */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 items-center">
         <span className="border-4 border-black bg-secondary px-3 py-1.5 font-display text-sm">TOTAL {items.length}</span>
         <span className="border-4 border-black bg-white px-3 py-1.5 font-display text-sm">HQ {nHq}</span>
         <span className="border-4 border-black bg-white px-3 py-1.5 font-display text-sm">GIBI {nGibi}</span>
         <span className="border-4 border-black bg-white px-3 py-1.5 font-display text-sm">EDITADOS {nEdited}</span>
         <span className="border-4 border-black bg-white px-3 py-1.5 font-display text-sm">ESCONDIDOS {nHidden}</span>
-        <button onClick={() => { onReload(); loadOverrides(); }} disabled={loading}
-          className="ml-auto border-4 border-black px-3 py-1.5 font-display text-sm bg-white hover:bg-muted flex items-center gap-2 disabled:opacity-50">
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> ATUALIZAR
-        </button>
+        <div className="ml-auto flex gap-2">
+          <button onClick={() => { onReload(); loadOverrides(); }} disabled={loading || rebuilding}
+            className="border-4 border-black px-3 py-1.5 font-display text-sm bg-white hover:bg-muted flex items-center gap-2 disabled:opacity-50">
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> ATUALIZAR
+          </button>
+          <button onClick={onRebuild} disabled={rebuilding || loading} title="Força um novo crawl dos Drives + Google Sites"
+            className="border-4 border-black px-3 py-1.5 font-display text-sm bg-primary text-white hover:bg-red-600 flex items-center gap-2 disabled:opacity-50">
+            <RefreshCw className={`w-4 h-4 ${rebuilding ? "animate-spin" : ""}`} /> {rebuilding ? "RECONSTRUINDO…" : "RECONSTRUIR"}
+          </button>
+        </div>
       </div>
+
+      {/* Provider breakdown — where the items come from */}
+      {Object.keys(byProvider).length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {Object.entries(byProvider).sort((a, b) => b[1] - a[1]).map(([pid, n]) => (
+            <span key={pid} className="text-2xs font-bold uppercase tracking-wide bg-muted border-2 border-black px-2 py-0.5">{pid} · {n}</span>
+          ))}
+        </div>
+      )}
 
       {/* Filter bar */}
       <div className="flex flex-wrap gap-2 items-stretch">
@@ -380,6 +408,7 @@ export default function Admin() {
   const [tab, setTab] = useState<AdminModule>("dashboard");
   // Sub-view inside the Catálogo module (library = crawled catalog; pending/sent = manual submissions)
   const [catalogView, setCatalogView] = useState<"library" | "pending" | "sent">("library");
+  const [rebuildingCatalog, setRebuildingCatalog] = useState(false);
   const [confirmClearRanking, setConfirmClearRanking] = useState(false);
   const [providers, setProviders] = useState<any[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(false);
@@ -510,7 +539,7 @@ export default function Admin() {
     queryKey: ["admin-catalog", adminKey],
     queryFn: () => adminRequest("/api/admin/catalog", adminKey),
     enabled: unlocked,
-    select: (d: { items: any[]; total: number }) => d,
+    select: (d: { items: any[]; total: number; byProvider?: Record<string, number> }) => d,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -589,6 +618,17 @@ export default function Admin() {
   const catalogItems = catalogData?.items || [];
 
   const reloadCatalog = () => queryClient.invalidateQueries({ queryKey: ["admin-catalog"] });
+
+  const rebuildCatalog = async () => {
+    setRebuildingCatalog(true);
+    try {
+      const data = await adminRequest("/api/admin/catalog/rebuild", adminKey, "POST");
+      queryClient.setQueryData(["admin-catalog", adminKey], data);
+      toast({ title: `Catálogo reconstruído: ${data.total} itens` });
+    } catch (e) {
+      toast({ title: "Erro ao reconstruir", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    } finally { setRebuildingCatalog(false); }
+  };
 
   const dashboardStats: DashboardStats = {
     catalogTotal: catalogData?.total ?? null,
@@ -729,7 +769,7 @@ export default function Admin() {
             ))}
           </div>
 
-          {catalogView === "library" && <CatalogManager adminKey={adminKey} items={catalogItems} loading={loadingCatalog} onReload={reloadCatalog} />}
+          {catalogView === "library" && <CatalogManager adminKey={adminKey} items={catalogItems} loading={loadingCatalog} onReload={reloadCatalog} byProvider={catalogData?.byProvider || {}} onRebuild={rebuildCatalog} rebuilding={rebuildingCatalog} />}
 
           {catalogView === "pending" && (
           loadingPending ? (

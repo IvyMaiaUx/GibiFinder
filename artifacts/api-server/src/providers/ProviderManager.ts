@@ -658,6 +658,21 @@ export class ProviderManager {
     return this.unifyCatalog(resultsArray.flat(), nsfw);
   }
 
+  // Force a fresh crawl on every provider that supports forceRefresh (the curated
+  // ones), then return the rebuilt full catalog. Powers the admin rebuild action.
+  static async rebuildFullCatalog(nsfw?: boolean): Promise<UnifiedSearchResult[]> {
+    const activeProviders = Array.from(this.providers.values()).filter(
+      p => this.activeStates.get(p.id) === true
+    );
+    await Promise.all(activeProviders.map(p => {
+      const refresh = (p as Provider & { forceRefresh?: () => Promise<SearchResult[]> }).forceRefresh;
+      return refresh
+        ? refresh.call(p).catch((err: unknown) => { logger.error({ err }, `Rebuild failed for ${p.name}`); return []; })
+        : Promise.resolve([]);
+    }));
+    return this.getFullCatalog(nsfw);
+  }
+
   // Fetch a large set of titles for a single genre, on demand. Providers with a
   // real genre filter (MangaDex) use it; others contribute their catalog matches.
   static async getByGenre(genre: string, nsfw?: boolean): Promise<UnifiedSearchResult[]> {

@@ -670,6 +670,28 @@ router.delete("/providers/custom/:id", (req: Request, res: Response) => {
   }
 });
 
+// Serialize the full catalog for the admin browser, with a per-provider count
+// breakdown so the admin can see where items come from (drives vs providers).
+function serializeAdminCatalog(items: Awaited<ReturnType<typeof ProviderManager.getFullCatalog>>) {
+  const byProvider: Record<string, number> = {};
+  for (const it of items) {
+    const pid = it.sources?.[0]?.providerId || "unknown";
+    byProvider[pid] = (byProvider[pid] || 0) + 1;
+  }
+  return {
+    total: items.length,
+    byProvider,
+    items: items.map(it => ({
+      id: it.id,
+      title: it.title,
+      coverUrl: it.coverUrl,
+      description: it.description,
+      genres: it.genres || [],
+      sources: it.sources || [],
+    })),
+  };
+}
+
 // GET /api/admin/catalog — full curated catalog for the admin browser.
 // Returns raw items (overrides are NOT applied) so the admin can see and manage
 // hidden/edited items. Each item carries its sources[] so the override key
@@ -677,21 +699,23 @@ router.delete("/providers/custom/:id", (req: Request, res: Response) => {
 router.get("/admin/catalog", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   try {
-    const items = await ProviderManager.getFullCatalog(false);
-    res.json({
-      total: items.length,
-      items: items.map(it => ({
-        id: it.id,
-        title: it.title,
-        coverUrl: it.coverUrl,
-        description: it.description,
-        genres: it.genres || [],
-        sources: it.sources || [],
-      })),
-    });
+    res.json(serializeAdminCatalog(await ProviderManager.getFullCatalog(false)));
   } catch (err) {
     logger.error({ err }, "admin catalog failed");
     res.status(500).json({ error: "catalog_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// POST /api/admin/catalog/rebuild — force a fresh crawl of the curated sources
+// (Drive + Google Sites) and return the rebuilt catalog. Use when the cached
+// catalog looks stale or partial.
+router.post("/admin/catalog/rebuild", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    res.json(serializeAdminCatalog(await ProviderManager.rebuildFullCatalog(false)));
+  } catch (err) {
+    logger.error({ err }, "admin catalog rebuild failed");
+    res.status(500).json({ error: "rebuild_failed", message: err instanceof Error ? err.message : String(err) });
   }
 });
 

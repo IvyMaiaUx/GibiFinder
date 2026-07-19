@@ -56854,6 +56854,15 @@ var CuratedComicsProvider = class {
     const dynamicItems = await this.getDynamicCatalog();
     return [...STATIC_ITEMS, ...dynamicItems].map((item) => this.toSearchResult(item));
   }
+  // Drop every cache and re-crawl Drive + Google Sites from scratch, persisting
+  // the fresh result. Used by the admin "Reconstruir catálogo" action so a stale
+  // or partial cache can be rebuilt on demand.
+  async forceRefresh() {
+    this.catalogCache = null;
+    this.refreshing = null;
+    const dynamicItems = await this.refreshCatalog();
+    return [...STATIC_ITEMS, ...dynamicItems].map((item) => this.toSearchResult(item));
+  }
 };
 
 // src/providers/ProviderManager.ts
@@ -57399,6 +57408,21 @@ var ProviderManager = class {
     });
     const resultsArray = await Promise.all(promises);
     return this.unifyCatalog(resultsArray.flat(), nsfw);
+  }
+  // Force a fresh crawl on every provider that supports forceRefresh (the curated
+  // ones), then return the rebuilt full catalog. Powers the admin rebuild action.
+  static async rebuildFullCatalog(nsfw) {
+    const activeProviders = Array.from(this.providers.values()).filter(
+      (p) => this.activeStates.get(p.id) === true
+    );
+    await Promise.all(activeProviders.map((p) => {
+      const refresh = p.forceRefresh;
+      return refresh ? refresh.call(p).catch((err) => {
+        logger.error({ err }, `Rebuild failed for ${p.name}`);
+        return [];
+      }) : Promise.resolve([]);
+    }));
+    return this.getFullCatalog(nsfw);
   }
   // Fetch a large set of titles for a single genre, on demand. Providers with a
   // real genre filter (MangaDex) use it; others contribute their catalog matches.
@@ -58021,24 +58045,41 @@ router3.delete("/providers/custom/:id", (req, res) => {
     res.status(500).json({ error: "delete_custom_failed", message: err instanceof Error ? err.message : String(err) });
   }
 });
+function serializeAdminCatalog(items) {
+  const byProvider = {};
+  for (const it of items) {
+    const pid = it.sources?.[0]?.providerId || "unknown";
+    byProvider[pid] = (byProvider[pid] || 0) + 1;
+  }
+  return {
+    total: items.length,
+    byProvider,
+    items: items.map((it) => ({
+      id: it.id,
+      title: it.title,
+      coverUrl: it.coverUrl,
+      description: it.description,
+      genres: it.genres || [],
+      sources: it.sources || []
+    }))
+  };
+}
 router3.get("/admin/catalog", async (req, res) => {
   if (!requireAdmin2(req, res)) return;
   try {
-    const items = await ProviderManager.getFullCatalog(false);
-    res.json({
-      total: items.length,
-      items: items.map((it) => ({
-        id: it.id,
-        title: it.title,
-        coverUrl: it.coverUrl,
-        description: it.description,
-        genres: it.genres || [],
-        sources: it.sources || []
-      }))
-    });
+    res.json(serializeAdminCatalog(await ProviderManager.getFullCatalog(false)));
   } catch (err) {
     logger.error({ err }, "admin catalog failed");
     res.status(500).json({ error: "catalog_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router3.post("/admin/catalog/rebuild", async (req, res) => {
+  if (!requireAdmin2(req, res)) return;
+  try {
+    res.json(serializeAdminCatalog(await ProviderManager.rebuildFullCatalog(false)));
+  } catch (err) {
+    logger.error({ err }, "admin catalog rebuild failed");
+    res.status(500).json({ error: "rebuild_failed", message: err instanceof Error ? err.message : String(err) });
   }
 });
 var providers_default = router3;

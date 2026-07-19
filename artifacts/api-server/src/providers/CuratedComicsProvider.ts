@@ -564,4 +564,14 @@ export class CuratedComicsProvider implements Provider {
     const dynamicItems = await this.getDynamicCatalog();
     return [...STATIC_ITEMS, ...dynamicItems].map(item => this.toSearchResult(item));
   }
+
+  // Drop every cache and re-crawl Drive + Google Sites from scratch, persisting
+  // the fresh result. Used by the admin "Reconstruir catálogo" action so a stale
+  // or partial cache can be rebuilt on demand.
+  async forceRefresh(): Promise<SearchResult[]> {
+    this.catalogCache = null;
+    this.refreshing = null;
+    const dynamicItems = await this.refreshCatalog();
+    return [...STATIC_ITEMS, ...dynamicItems].map(item => this.toSearchResult(item));
+  }
 }
