@@ -573,7 +573,7 @@ export default function Explore() {
               <span className="font-sans text-xs font-bold text-gray-500">{viewAllList.length} títulos</span>
               {viewAllLoading && <Loader2 className="w-5 h-5 animate-spin text-primary" />}
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 sm:gap-4">
+            <div className="grid grid-cols-2 min-[480px]:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 sm:gap-4">
               {viewAllList
                 .slice((viewAllPage - 1) * VIEW_ALL_PAGE_SIZE, viewAllPage * VIEW_ALL_PAGE_SIZE)
                 .map(item => {
