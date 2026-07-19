@@ -15,6 +15,7 @@ export type FitMode = "width" | "height" | "whole" | "auto";
 export type DoublePageMode = "never" | "always" | "auto";
 export type SplitMode = "off" | "manual";
 export type ImmersionLevel = "clean" | "cinema" | "immersion";
+export type TapAction = "prev" | "next" | "menu";
 export type ImageQuality = "auto" | "high" | "original";
 export type ReaderTheme = "dark" | "amoled" | "light" | "custom";
 
@@ -47,6 +48,12 @@ export interface ReaderSettings {
   quality: ImageQuality;
   /** Keep the screen on while reading (Wake Lock, mobile + desktop). */
   keepAwake: boolean;
+  /** Haptic feedback on page turn / actions (mobile). */
+  haptics: boolean;
+  /** In-reader brightness 0-100 (100 = normal; lower dims via an overlay). */
+  brightness: number;
+  /** Tap zones for page mode: [left, centre, right]. */
+  tapZones: [TapAction, TapAction, TapAction];
   // Layout
   pageGap: number;
   animations: boolean;
@@ -76,6 +83,9 @@ export const READER_SETTINGS_DEFAULTS: ReaderSettings = {
   memorySaver: false,
   quality: "auto",
   keepAwake: false,
+  haptics: true,
+  brightness: 100,
+  tapZones: ["prev", "menu", "next"],
   pageGap: 8,
   animations: true,
 };

@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import {
   useReaderSettings, BUILTIN_PROFILES, getCustomProfiles,
   saveCustomProfile, deleteCustomProfile,
-  type ReaderSettings, type ReadingMode, type ReaderProfile,
+  type ReaderSettings, type ReadingMode, type ReaderProfile, type TapAction,
 } from "./useReaderSettings";
 import { usePlatform } from "./usePlatform";
 
@@ -123,6 +123,15 @@ export function ReaderSettingsPanel({
   };
   const customProfiles = getCustomProfiles();
   void profileTick;
+
+  const tapLabel = (a: TapAction) => (a === "prev" ? "Ant" : a === "next" ? "Próx" : "Menu");
+  const cycleTap = (i: number) => {
+    const cur = settings.tapZones[i];
+    const next: TapAction = cur === "prev" ? "menu" : cur === "menu" ? "next" : "prev";
+    const zones = [...settings.tapZones] as [TapAction, TapAction, TapAction];
+    zones[i] = next;
+    set("tapZones", zones);
+  };
 
   if (!open) return null;
 
@@ -288,6 +297,30 @@ export function ReaderSettingsPanel({
             </Row>
             <Row label="Barra inferior">
               <Toggle on={settings.showBottomBar} onChange={(v) => set("showBottomBar", v)} />
+            </Row>
+          </Section>
+
+          <Section title="Dispositivo">
+            <Row label="Zonas de toque" hint="Toque para trocar a ação de cada lado (modo Página)">
+              <div className="flex rounded-lg overflow-hidden border border-white/15">
+                {[0, 1, 2].map(i => (
+                  <button key={i} onClick={() => cycleTap(i)}
+                    className="px-2.5 py-1.5 text-2xs font-bold text-white/80 hover:bg-white/10 border-r border-white/10 last:border-r-0">
+                    {tapLabel(settings.tapZones[i])}
+                  </button>
+                ))}
+              </div>
+            </Row>
+            <Row label="Vibração" platform="mobile" hint="Feedback háptico ao virar a página">
+              <Toggle on={settings.haptics} onChange={(v) => set("haptics", v)} />
+            </Row>
+            <Row label="Brilho" hint="Escurece a tela durante a leitura (não clareia)">
+              <input type="range" min={20} max={100} value={settings.brightness}
+                onChange={(e) => set("brightness", Number(e.target.value))}
+                className="w-28 accent-primary cursor-pointer" />
+            </Row>
+            <Row label="Botões de volume" platform="mobile" soon hint="O navegador não permite capturar as teclas de volume">
+              <span className="text-2xs text-white/40">n/d na web</span>
             </Row>
           </Section>
 

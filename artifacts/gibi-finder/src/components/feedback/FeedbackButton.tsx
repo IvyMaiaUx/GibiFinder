@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageSquarePlus, X, Send, Loader2, Bug, Lightbulb } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -7,6 +8,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export function FeedbackButton() {
   const { toast } = useToast();
+  const [location] = useLocation();
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<"sugestao" | "bug">("sugestao");
   const [message, setMessage] = useState("");
@@ -38,6 +40,9 @@ export function FeedbackButton() {
   };
 
   const inp = "w-full border-4 border-black px-3 py-2 font-sans font-bold text-black bg-white focus:outline-none focus:ring-4 focus:ring-secondary text-sm";
+
+  // No feedback button on the admin panel.
+  if (location.startsWith("/admin")) return null;
 
   return (
     <>

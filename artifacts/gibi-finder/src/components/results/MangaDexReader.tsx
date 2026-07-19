@@ -24,7 +24,7 @@ import {
 import { cn, proxyPdfUrl, proxyCoverUrl } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { useReaderZoom } from "@/components/reader/useReaderZoom";
-import { useReaderSettings, readerThemeVars } from "@/components/reader/useReaderSettings";
+import { useReaderSettings, readerThemeVars, type TapAction } from "@/components/reader/useReaderSettings";
 import { ReaderSettingsPanel } from "@/components/reader/ReaderSettingsPanel";
 import { ReaderDiagnostics, type DiagInfo } from "@/components/reader/ReaderDiagnostics";
 import { logRequest } from "@/components/reader/readerStats";
@@ -836,6 +836,11 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   const currentGroup = spreads ? (spreads.find(g => g.includes(currentPage)) ?? [currentPage]) : null;
   const rtl = settings.direction === "rtl";
 
+  // Tap zones (page mode): [left, centre, right] → action. The default layout
+  // flips prev/next in RTL; a customized layout is used literally.
+  const isDefaultZones = settings.tapZones[0] === "prev" && settings.tapZones[1] === "menu" && settings.tapZones[2] === "next";
+  const tapZones: readonly TapAction[] = (isDefaultZones && rtl) ? ["next", "menu", "prev"] : settings.tapZones;
+
   // ---- Auto-fit (page mode) ----
   // Phones always fit width (no horizontal bars); larger screens respect the
   // setting. "auto" fits whole for landscape/spreads, width for portrait/tall.
@@ -929,6 +934,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // mode it advances a whole spread at a time.
   const goToNextPage = useCallback(() => {
     if (readerMode === "page") {
+      if (settings.haptics && typeof navigator.vibrate === "function") navigator.vibrate(6);
       // Split-spread: first half -> second half before moving on.
       if (isSplitActive(currentPage) && splitSide === 0) { setSplitSide(1); return; }
       const land = (idx: number) => { setCurrentPage(idx); setSplitSide(0); };
@@ -943,10 +949,11 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
       scrollContainerRef.current?.scrollBy({ top: scrollContainerRef.current.clientHeight * 0.9, behavior: "smooth" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [readerMode, currentPage, pages.length, nextChapter, spreads, splitSide, splitSet, settings.splitMode]);
+  }, [readerMode, currentPage, pages.length, nextChapter, spreads, splitSide, splitSet, settings.splitMode, settings.haptics]);
 
   const goToPrevPage = useCallback(() => {
     if (readerMode === "page") {
+      if (settings.haptics && typeof navigator.vibrate === "function") navigator.vibrate(6);
       // Split-spread: second half -> first half before moving on.
       if (isSplitActive(currentPage) && splitSide === 1) { setSplitSide(0); return; }
       // Landing on a split page from the previous one shows its LAST half.
@@ -962,7 +969,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
       scrollContainerRef.current?.scrollBy({ top: -scrollContainerRef.current.clientHeight * 0.9, behavior: "smooth" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [readerMode, currentPage, prevChapter, spreads, splitSide, splitSet, settings.splitMode]);
+  }, [readerMode, currentPage, prevChapter, spreads, splitSide, splitSet, settings.splitMode, settings.haptics]);
 
   // Keyboard shortcuts: ← → ↑ ↓ Space Home End Esc.
   useEffect(() => {
@@ -1519,6 +1526,11 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
       {/* ==================== COMMON READER MODAL OVERLAY (images/iframe) ==================== */}
       {showReader && pages.length > 0 && selectedChapter && !pages[0]?.url?.startsWith("pdf:") && (
         <div ref={readerRef} data-reader-theme={settings.theme} className="fixed inset-0 z-[100] flex flex-col select-none" style={{ ...readerThemeVars(settings), WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none", cursor: cursorHidden ? "none" : undefined }}>
+          {/* Brightness dimmer (can only darken, not brighten the panel). */}
+          {settings.brightness < 100 && (
+            <div className="fixed inset-0 z-[124] pointer-events-none" style={{ background: "#000", opacity: ((100 - settings.brightness) / 100) * 0.75 }} aria-hidden="true" />
+          )}
+
           {/* Header controls */}
           {chromeVisible && (
             <div className="border-b-2 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 select-none animate-in fade-in slide-in-from-top duration-200" style={{ background: "var(--rd-surface)", color: "var(--rd-text)", borderColor: "var(--rd-border)", backdropFilter: "blur(8px)" }}>
@@ -1761,12 +1773,13 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                     !doubleActive && fitFor(currentPage) === "width" ? "items-start" : "items-center",
                   )}
                   onClick={(e) => {
-                    // Three tap zones. Physical side → logical page depends on the
-                    // reading direction: LTR left = previous / RTL left = next.
+                    // Configurable 3 tap zones (default flips prev/next in RTL).
                     const rect = e.currentTarget.getBoundingClientRect();
                     const x = e.clientX - rect.left;
-                    if (x < rect.width * 0.33) (rtl ? goToNextPage : goToPrevPage)();
-                    else if (x > rect.width * 0.67) (rtl ? goToPrevPage : goToNextPage)();
+                    const zone = x < rect.width * 0.33 ? 0 : x > rect.width * 0.67 ? 2 : 1;
+                    const action = tapZones[zone];
+                    if (action === "prev") goToPrevPage();
+                    else if (action === "next") goToNextPage();
                     else toggleChrome();
                   }}
                   onTouchStart={(e) => {
