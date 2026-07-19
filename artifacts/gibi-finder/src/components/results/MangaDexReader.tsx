@@ -180,19 +180,36 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // blocks requestFullscreen() called from an effect. So this is invoked from the
   // gesture paths (I / F shortcuts, panel selection), never from the effect below.
   const requestReaderFullscreen = useCallback(() => {
-    const el = readerRef.current;
-    const coarse = typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
-    if (!coarse && el?.requestFullscreen && !document.fullscreenElement) {
-      el.requestFullscreen().catch(() => { /* ignore */ });
-    }
+    const el = readerRef.current as (HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> | void }) | null;
+    if (!el) return;
+    const anyDoc = document as Document & { webkitFullscreenElement?: Element };
+    if (anyDoc.fullscreenElement || anyDoc.webkitFullscreenElement) return;
+    // Use the Fullscreen API wherever the browser actually supports it (desktop,
+    // iPad, Android). On iPhone Safari it isn't exposed for elements, so this is a
+    // no-op there — true fullscreen on iPhone requires installing the app (PWA).
+    try {
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      req?.call(el);
+    } catch { /* ignore */ }
+  }, []);
+
+  const exitReaderFullscreen = useCallback(() => {
+    const anyDoc = document as Document & { webkitFullscreenElement?: Element; webkitExitFullscreen?: () => void };
+    if (!(anyDoc.fullscreenElement || anyDoc.webkitFullscreenElement)) return;
+    try { (document.exitFullscreen || anyDoc.webkitExitFullscreen)?.call(document); } catch { /* ignore */ }
   }, []);
 
   // Tie native fullscreen (F key / Immersion, desktop only) to the chrome-hidden
   // state so entering fullscreen hides the header/bars and exiting shows them.
   useEffect(() => {
-    const onFs = () => setIsFullscreen(!!document.fullscreenElement);
+    const anyDoc = document as Document & { webkitFullscreenElement?: Element };
+    const onFs = () => setIsFullscreen(!!(anyDoc.fullscreenElement || anyDoc.webkitFullscreenElement));
     document.addEventListener("fullscreenchange", onFs);
-    return () => document.removeEventListener("fullscreenchange", onFs);
+    document.addEventListener("webkitfullscreenchange", onFs);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFs);
+      document.removeEventListener("webkitfullscreenchange", onFs);
+    };
   }, []);
 
   // Immersion (level 3): block image drag / context menu; exit fullscreen on leave.
@@ -206,9 +223,9 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     return () => {
       el?.removeEventListener("dragstart", stopDrag);
       el?.removeEventListener("contextmenu", stopCtx);
-      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => { /* ignore */ });
+      exitReaderFullscreen();
     };
-  }, [showReader, immersion, settings.blockContextMenu]);
+  }, [showReader, immersion, settings.blockContextMenu, exitReaderFullscreen]);
 
   // Ctrl+Shift+D toggles the engineering diagnostics overlay.
   useEffect(() => {
@@ -973,9 +990,9 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
         }
         case "f": case "F": {
           e.preventDefault();
-          const el = readerRef.current;
-          if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
-          else el?.requestFullscreen?.().catch(() => {});
+          const anyDoc = document as Document & { webkitFullscreenElement?: Element };
+          if (anyDoc.fullscreenElement || anyDoc.webkitFullscreenElement) exitReaderFullscreen();
+          else requestReaderFullscreen();
           break;
         }
         case "Escape":
@@ -984,7 +1001,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [showReader, pages.length, readerMode, goToNextPage, goToPrevPage, rtl, immersion, workId, updateSettings, requestReaderFullscreen]);
+  }, [showReader, pages.length, readerMode, goToNextPage, goToPrevPage, rtl, immersion, workId, updateSettings, requestReaderFullscreen, exitReaderFullscreen]);
 
   // Jump to a page from the bottom scrubber.
   const goToPage = useCallback((idx: number) => {
