@@ -588,7 +588,7 @@ export default function Admin() {
 
   if (!unlocked) {
     return (
-      <Layout>
+      <Layout minimal>
         <div className="max-w-md mx-auto mt-16 px-4 animate-in fade-in duration-200">
           <div className="bg-white border-4 border-black p-8 text-center comic-shadow relative overflow-hidden">
             <div className="absolute top-0 right-0 w-24 h-24 opacity-5 bg-[radial-gradient(black_1px,transparent_1px)] [background-size:6px_6px] pointer-events-none" />
@@ -655,7 +655,7 @@ export default function Admin() {
   }
 
   return (
-    <Layout>
+    <Layout minimal>
       <div className="max-w-5xl mx-auto relative z-10">
         <div className="flex items-center justify-between mb-8">
           <div>

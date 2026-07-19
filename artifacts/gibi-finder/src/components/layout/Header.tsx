@@ -4,9 +4,28 @@ import { Search, Clock, Trophy, BookMarked, Compass, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 
-export function Header() {
+export function Header({ minimal = false }: { minimal?: boolean } = {}) {
   const [location, setLocation] = useLocation();
   const { user, logout } = useAuth();
+
+  // Minimal variant (e.g. Admin): only the logo bar, no nav / auth / +18.
+  if (minimal) {
+    return (
+      <header className="fixed inset-x-0 top-0 z-50 bg-secondary border-b-8 border-black shadow-[0_8px_0_rgba(0,0,0,0.18)]">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-20 md:h-24 flex items-center justify-between gap-2">
+          <Link href="/" className="flex items-center gap-1.5 group comic-hover transition-transform shrink-0">
+            <div className="bg-primary text-primary-foreground font-display text-lg sm:text-xl md:text-3xl px-2 md:px-4 py-1 md:py-2 rounded-lg border-2 sm:border-4 border-black comic-shadow transform -rotate-3 group-hover:rotate-0 transition-all">
+              GIBI
+            </div>
+            <span className="hidden sm:inline font-display text-2xl md:text-4xl text-black tracking-wider group-hover:scale-105 transition-transform drop-shadow-[2px_2px_0_white]">
+              FINDER
+            </span>
+          </Link>
+          <span className="font-display text-lg md:text-2xl text-black/70 tracking-wider">ADMIN</span>
+        </div>
+      </header>
+    );
+  }
   const [isNsfw, setIsNsfw] = useState(() => document.documentElement.classList.contains("nsfw"));
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showAgeModal, setShowAgeModal] = useState(false);
