@@ -58395,7 +58395,13 @@ router3.post("/admin/catalog/autofill-synopsis", async (req, res) => {
       return String(ov?.description || it.description || "").trim().length < 60;
     };
     const missing = items.filter(lacksSynopsis);
-    const shuffled = [...missing].sort(() => Math.random() - 0.5).slice(0, limit);
+    const isHqLike = (it) => {
+      const g = (it.genres || []).map((x) => String(x).toLowerCase());
+      return g.includes("hq") && !g.some((x) => x.includes("gibi") || x.includes("nacional"));
+    };
+    const hqMissing = missing.filter(isHqLike);
+    const pool = hqMissing.length > 0 ? hqMissing : missing;
+    const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, limit);
     let filled = 0;
     const results = [];
     const reasons = {};

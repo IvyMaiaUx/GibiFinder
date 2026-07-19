@@ -240,8 +240,6 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
   const [confirmDel, setConfirmDel] = useState<any | null>(null);
   // Covers that have a URL but failed to load (broken Drive thumbnails), detected
   // as rows render. Treated as "sem capa" for curation.
-  const [brokenCovers, setBrokenCovers] = useState<Set<string>>(new Set());
-  const markBroken = (k: string) => setBrokenCovers(prev => prev.has(k) ? prev : new Set(prev).add(k));
   const [filling, setFilling] = useState(false);
 
   const autofillSynopsis = async () => {
@@ -339,7 +337,7 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
     if (fStatus === "hidden" && !ov?.hidden) return false;
     if (fStatus === "edited" && !(ov && !ov.hidden)) return false;
     if (fStatus === "clean" && ov) return false;
-    if (fStatus === "no-cover" && (ov?.coverUrl || it.coverUrl) && !brokenCovers.has(keyOf(it))) return false;
+    if (fStatus === "no-cover" && (ov?.coverUrl || it.coverUrl)) return false;
     if (fStatus === "no-synopsis" && String(ov?.description || it.description || "").trim().length >= 60) return false;
     if (fStatus === "incomplete" && scoreItem(it, ov).score >= 100) return false;
     if (fStatus === "duplicates" && !isDup(it)) return false;
@@ -356,7 +354,7 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
   const nHidden = items.filter(it => overrides[keyOf(it)]?.hidden).length;
   const nEdited = items.filter(it => { const o = overrides[keyOf(it)]; return o && !o.hidden; }).length;
   // Curation queue counts (Modo Curadoria)
-  const nNoCover = items.filter(it => { const o = overrides[keyOf(it)]; return !(o?.coverUrl || it.coverUrl) || brokenCovers.has(keyOf(it)); }).length;
+  const nNoCover = items.filter(it => { const o = overrides[keyOf(it)]; return !(o?.coverUrl || it.coverUrl); }).length;
   const nNoSyn = items.filter(it => { const o = overrides[keyOf(it)]; return String(o?.description || it.description || "").trim().length < 60; }).length;
   const nIncomplete = items.filter(it => scoreItem(it, overrides[keyOf(it)]).score < 100).length;
   const nDup = items.filter(isDup).length;
@@ -528,7 +526,7 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
                         <tr key={k || i} className={`hover:bg-secondary/10 cursor-pointer ${ov?.hidden ? "opacity-50" : ""}`} onClick={() => setSelected(item)}>
                           <td className="py-1.5 px-2">
                             <div className="w-9 h-12 border-2 border-black bg-muted overflow-hidden">
-                              {cover ? <SafeImage src={cover} alt={title} className="w-full h-full object-cover" onBroken={() => markBroken(k)} /> : <div className="w-full h-full bg-secondary/30" />}
+                              {cover ? <SafeImage src={cover} alt={title} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-secondary/30" />}
                             </div>
                           </td>
                           <td className="py-1.5 px-2 min-w-0">

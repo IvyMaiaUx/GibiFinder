@@ -747,8 +747,16 @@ router.post("/admin/catalog/autofill-synopsis", async (req: Request, res: Respon
       return String(ov?.description || it.description || "").trim().length < 60;
     };
     const missing = items.filter(lacksSynopsis);
-    // Random slice so we don't retry the same unfindable titles every call.
-    const shuffled = [...missing].sort(() => Math.random() - 0.5).slice(0, limit);
+    // The source (Zona Fantasma) only covers HQ. Target HQ-tagged items first so
+    // a batch actually finds synopses instead of scraping gibis it never has.
+    const isHqLike = (it: (typeof items)[number]) => {
+      const g = (it.genres || []).map(x => String(x).toLowerCase());
+      return g.includes("hq") && !g.some(x => x.includes("gibi") || x.includes("nacional"));
+    };
+    const hqMissing = missing.filter(isHqLike);
+    const pool = hqMissing.length > 0 ? hqMissing : missing;
+    // Random slice so repeated calls make progress instead of retrying the same.
+    const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, limit);
 
     let filled = 0;
     const results: { title: string; ok: boolean; reason: string }[] = [];

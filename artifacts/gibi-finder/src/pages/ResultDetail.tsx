@@ -288,27 +288,27 @@ export default function ResultDetail() {
             <p className="font-sans font-bold text-gray-700">Não foi possível carregar as informações deste título.</p>
           </div>
         ) : (
-          <div className="space-y-12">
-            <div className="flex justify-between items-center bg-white p-4 border-4 border-black rounded-xl comic-shadow">
-              <span className="font-display text-2xl text-gray-600">
+          <div className="space-y-6 sm:space-y-12">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 bg-white p-4 border-4 border-black rounded-xl comic-shadow">
+              <span className="font-display text-base sm:text-2xl text-gray-600 truncate">
                 {isOnlineResult ? `PROVEDOR: ${providerId.toUpperCase()}` : `ARQUIVO #${id.slice(0,8).toUpperCase()}`}
               </span>
-              <div className="flex gap-2">
-                <button 
+              <div className="flex gap-2 shrink-0">
+                <button
                   onClick={toggleFavorite}
                   className={cn(
-                    "flex items-center gap-2 font-sans font-extrabold text-sm uppercase px-4 py-2 border-2 border-black rounded transition-colors",
-                    isFavorited 
-                      ? "bg-yellow-400 text-black hover:bg-yellow-500" 
+                    "flex-1 sm:flex-none flex items-center justify-center gap-2 font-sans font-extrabold text-sm uppercase px-4 py-2 border-2 border-black rounded transition-colors",
+                    isFavorited
+                      ? "bg-yellow-400 text-black hover:bg-yellow-500"
                       : "bg-white text-black hover:bg-gray-100"
                   )}
                 >
                   <Star className={cn("w-4 h-4", isFavorited && "fill-black")} strokeWidth={3} />
                   {isFavorited ? "FAVORITADO" : "FAVORITAR"}
                 </button>
-                <button 
+                <button
                   onClick={handleCopyLink}
-                  className="flex items-center gap-2 font-sans font-extrabold text-sm uppercase bg-secondary px-4 py-2 border-2 border-black rounded hover:bg-secondary/80 transition-colors"
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 font-sans font-extrabold text-sm uppercase bg-secondary px-4 py-2 border-2 border-black rounded hover:bg-secondary/80 transition-colors"
                 >
                   <Link2 className="w-4 h-4" strokeWidth={3} />
                   COPIAR LINK
@@ -351,26 +351,26 @@ export default function ResultDetail() {
 
             {/* Tabs Navigation Bar */}
             <div className="flex border-4 border-black bg-white overflow-hidden select-none comic-shadow-sm">
-              <button 
+              <button
                 onClick={() => setDetailTab("read")}
                 className={cn(
-                  "flex-1 py-3.5 font-display text-lg flex items-center justify-center gap-2 transition-colors border-r-4 border-black",
+                  "flex-1 py-3 sm:py-3.5 px-2 font-display text-sm sm:text-lg flex items-center justify-center gap-1.5 sm:gap-2 transition-colors border-r-4 border-black",
                   detailTab === "read" ? "bg-primary text-white" : "bg-white text-gray-500 hover:bg-muted"
                 )}
               >
-                <BookOpen className="w-5 h-5" strokeWidth={3} />
+                <BookOpen className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" strokeWidth={3} />
                 LER CAPÍTULOS
               </button>
-              
-              <button 
+
+              <button
                 onClick={() => setDetailTab("buy")}
                 className={cn(
-                  "flex-1 py-3.5 font-display text-lg flex items-center justify-center gap-2 transition-colors",
+                  "flex-1 py-3 sm:py-3.5 px-2 font-display text-sm sm:text-lg flex items-center justify-center gap-1.5 sm:gap-2 transition-colors",
                   detailTab === "buy" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"
                 )}
               >
-                <Star className="w-5 h-5" strokeWidth={3} />
-                ONDE COMPRAR (OFICIAL)
+                <Star className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" strokeWidth={3} />
+                ONDE COMPRAR<span className="hidden sm:inline">&nbsp;(OFICIAL)</span>
               </button>
             </div>
 
