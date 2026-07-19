@@ -1767,6 +1767,15 @@ router.get("/admin/system-health", async (req: Request, res: Response) => {
     groqKey: !!(process.env["GROQ_API_KEY"] || "").trim(),
     geminiKey: !!(process.env["GEMINI_API_KEY"] || process.env["GOOGLE_API_KEY"] || "").trim(),
   };
+  // Architectural services (facts about how the app runs, not live metrics).
+  const services = {
+    deploy: { ok: true, detail: "push → Vercel" },
+    cron: { ok: true, detail: (process.env["CRON_SECRET"] || "").trim() ? "Catálogo a cada 6h (protegido)" : "Catálogo a cada 6h" },
+    logs: { ok: true, detail: "Vercel + pino" },
+    backups: { ok: true, detail: "Supabase (gerenciado)" },
+    jobs: { ok: null as boolean | null, detail: "Não usado" },
+    filas: { ok: null as boolean | null, detail: "Não usado" },
+  };
   const tableNames = ["curated_cache", "catalog_overrides", "user_reader_settings", "user_profiles", "user_reading_history", "user_favorites", "suggestions"];
   const tables: Record<string, boolean> = {};
   if (supabase) {
@@ -1777,7 +1786,7 @@ router.get("/admin/system-health", async (req: Request, res: Response) => {
       } catch { tables[t] = false; }
     }));
   }
-  res.json({ env, tables });
+  res.json({ env, tables, services });
 });
 
 // ---- Cross-device reader settings sync ----

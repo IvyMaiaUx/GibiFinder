@@ -54222,6 +54222,14 @@ router2.get("/admin/system-health", async (req, res) => {
     groqKey: !!(process.env["GROQ_API_KEY"] || "").trim(),
     geminiKey: !!(process.env["GEMINI_API_KEY"] || process.env["GOOGLE_API_KEY"] || "").trim()
   };
+  const services = {
+    deploy: { ok: true, detail: "push \u2192 Vercel" },
+    cron: { ok: true, detail: (process.env["CRON_SECRET"] || "").trim() ? "Cat\xE1logo a cada 6h (protegido)" : "Cat\xE1logo a cada 6h" },
+    logs: { ok: true, detail: "Vercel + pino" },
+    backups: { ok: true, detail: "Supabase (gerenciado)" },
+    jobs: { ok: null, detail: "N\xE3o usado" },
+    filas: { ok: null, detail: "N\xE3o usado" }
+  };
   const tableNames = ["curated_cache", "catalog_overrides", "user_reader_settings", "user_profiles", "user_reading_history", "user_favorites", "suggestions"];
   const tables = {};
   if (supabase) {
@@ -54234,7 +54242,7 @@ router2.get("/admin/system-health", async (req, res) => {
       }
     }));
   }
-  res.json({ env, tables });
+  res.json({ env, tables, services });
 });
 router2.get("/auth/reader-settings", async (req, res) => {
   const userId = req.query.userId;
@@ -58343,6 +58351,21 @@ router3.post("/admin/catalog/autofill-synopsis", async (req, res) => {
   } catch (err) {
     logger.error({ err }, "autofill synopsis failed");
     res.status(500).json({ error: "autofill_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+router3.get("/cron/refresh-catalog", async (req, res) => {
+  const secret = (process.env["CRON_SECRET"] || "").trim();
+  if (secret && req.headers["authorization"] !== `Bearer ${secret}`) {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  try {
+    const { items } = await ProviderManager.getFullCatalogDiag(false, true);
+    logger.info({ total: items.length }, "cron: catalog refreshed");
+    res.json({ ok: true, total: items.length });
+  } catch (err) {
+    logger.error({ err }, "cron catalog refresh failed");
+    res.status(500).json({ error: "refresh_failed", message: err instanceof Error ? err.message : String(err) });
   }
 });
 var providers_default = router3;

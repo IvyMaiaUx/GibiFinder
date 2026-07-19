@@ -727,7 +727,7 @@ export default function Admin() {
     queryKey: ["admin-system-health", adminKey],
     queryFn: () => adminRequest("/api/admin/system-health", adminKey),
     enabled: unlocked && tab === "system",
-    select: (d: { env: Record<string, boolean>; tables: Record<string, boolean> }) => d,
+    select: (d: { env: Record<string, boolean>; tables: Record<string, boolean>; services?: Record<string, { ok: boolean | null; detail: string }> }) => d,
   });
 
   const { data: catalogData, isLoading: loadingCatalog } = useQuery({
@@ -1272,6 +1272,7 @@ export default function Admin() {
           providersOffline: providers.filter(p => !p.active).length,
           env: healthData?.env,
           tables: healthData?.tables,
+          services: healthData?.services,
         }} />
       )}
 

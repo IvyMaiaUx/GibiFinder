@@ -780,4 +780,24 @@ router.post("/admin/catalog/autofill-synopsis", async (req: Request, res: Respon
   }
 });
 
+// GET /api/cron/refresh-catalog — invoked by Vercel Cron every 6h to re-crawl the
+// Drive/Sites catalog automatically (keeps covers + new folders fresh without a
+// manual RECONSTRUIR). Secured with CRON_SECRET when set (Vercel sends it as a
+// Bearer token); left open only when no secret is configured.
+router.get("/cron/refresh-catalog", async (req: Request, res: Response) => {
+  const secret = (process.env["CRON_SECRET"] || "").trim();
+  if (secret && req.headers["authorization"] !== `Bearer ${secret}`) {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  try {
+    const { items } = await ProviderManager.getFullCatalogDiag(false, true);
+    logger.info({ total: items.length }, "cron: catalog refreshed");
+    res.json({ ok: true, total: items.length });
+  } catch (err) {
+    logger.error({ err }, "cron catalog refresh failed");
+    res.status(500).json({ error: "refresh_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 export default router;

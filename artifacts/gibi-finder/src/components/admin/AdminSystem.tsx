@@ -8,10 +8,14 @@ export interface SystemInfo {
   providersOffline: number;
   env?: Record<string, boolean>;
   tables?: Record<string, boolean>;
+  services?: Record<string, { ok: boolean | null; detail: string }>;
 }
 
 const ENV_LABELS: Record<string, string> = {
   supabase: "Supabase", driveKey: "Google Drive API", groqKey: "Groq (IA)", geminiKey: "Gemini / Google AI",
+};
+const SERVICE_LABELS: Record<string, string> = {
+  deploy: "Deploy", cron: "Cron", logs: "Logs", backups: "Backups", jobs: "Jobs", filas: "Filas",
 };
 
 function HealthCard({ icon: Icon, label, ok, detail }: { icon: typeof Server; label: string; ok: boolean | null; detail: string }) {
@@ -105,18 +109,26 @@ export function AdminSystem({ info }: { info: SystemInfo }) {
         )}
       </div>
 
-      {/* Serviços ainda não configurados (honesto, sem métrica falsa) */}
+      {/* Serviços — status real da arquitetura */}
       <div>
         <h2 className="font-display text-2xl text-black mb-3">Serviços</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-          {["Jobs em background", "Cron", "Filas", "Backups automáticos", "Deploy hooks", "Logs centralizados"].map(s => (
-            <div key={s} className="border-4 border-black bg-muted/40 p-3 flex items-center gap-2">
-              <XCircle className="w-4 h-4 text-gray-400 shrink-0" />
-              <div><span className="font-display text-sm">{s}</span><p className="font-sans font-bold text-2xs text-gray-400">Não configurado</p></div>
-            </div>
-          ))}
-        </div>
-        <p className="font-sans font-bold text-gray-400 text-xs mt-2">Hoje o deploy é direto (push → Vercel) e o cache do catálogo se renova sozinho a cada 6h. Jobs/cron/filas/backups exigem infra dedicada — quando fizer sentido, a gente liga.</p>
+        {info.services ? (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {Object.entries(info.services).map(([k, s]) => {
+              const color = s.ok === null ? "#9ca3af" : s.ok ? "#16a34a" : "#dc2626";
+              return (
+                <div key={k} className={`border-4 border-black p-3 flex items-center gap-2 ${s.ok === null ? "bg-muted/40" : "bg-white"}`}>
+                  {s.ok === null ? <XCircle className="w-4 h-4 text-gray-400 shrink-0" /> : <span className="w-3 h-3 rounded-full border border-black shrink-0" style={{ background: color }} />}
+                  <div className="min-w-0">
+                    <span className="font-display text-sm">{SERVICE_LABELS[k] || k}</span>
+                    <p className="font-sans font-bold text-2xs" style={{ color: s.ok === null ? "#9ca3af" : "#4b5563" }}>{s.detail}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : <p className="font-sans font-bold text-gray-400 text-sm">Carregando…</p>}
+        <p className="font-sans font-bold text-gray-400 text-xs mt-2">Deploy é push → Vercel; logs ficam na Vercel; backups são gerenciados pelo Supabase; o cron renova o catálogo a cada 6h. Jobs/filas não são usados nesta arquitetura.</p>
       </div>
     </div>
   );
