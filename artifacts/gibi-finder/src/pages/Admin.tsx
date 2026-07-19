@@ -1,11 +1,14 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, EyeOff, MessageSquare, Bug, Lightbulb, Archive, Trophy, AlertTriangle, Database, User, SearchCode, RefreshCw, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, EyeOff, MessageSquare, Bug, Lightbulb, Archive, Trophy, AlertTriangle, User, RefreshCw, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { useToast } from "@/hooks/use-toast";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { ProviderInspectorPanel } from "@/pages/ProviderInspector";
+import { AdminShell, type AdminModule } from "@/components/admin/AdminShell";
+import { AdminDashboard, type DashboardStats } from "@/components/admin/AdminDashboard";
+import { AdminPlaceholder } from "@/components/admin/AdminPlaceholder";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const STORAGE_KEY = "gibi_admin_key";
@@ -174,10 +177,8 @@ function itemType(item: any): "gibi" | "hq" {
   return g.some(x => x.includes("gibi") || x.includes("nacional") || x.includes("mônica") || x.includes("monica")) ? "gibi" : "hq";
 }
 
-function CatalogManager({ adminKey }: { adminKey: string }) {
+function CatalogManager({ adminKey, items, loading, onReload }: { adminKey: string; items: any[]; loading: boolean; onReload: () => void }) {
   const { toast } = useToast();
-  const [items, setItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [overrides, setOverrides] = useState<Record<string, any>>({});
   const [editing, setEditing] = useState<any | null>(null);
   const [editForm, setEditForm] = useState({ title: "", coverUrl: "", description: "" });
@@ -199,17 +200,7 @@ function CatalogManager({ adminKey }: { adminKey: string }) {
     } catch { /* ignore */ }
   };
 
-  const loadCatalog = async () => {
-    setLoading(true);
-    try {
-      const data = await adminRequest("/api/admin/catalog", adminKey, "GET");
-      setItems(Array.isArray(data?.items) ? data.items : []);
-    } catch (e) {
-      toast({ title: "Erro ao carregar catálogo", description: e instanceof Error ? e.message : "", variant: "destructive" });
-    } finally { setLoading(false); }
-  };
-
-  useEffect(() => { loadCatalog(); loadOverrides(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { loadOverrides(); /* eslint-disable-next-line */ }, []);
   useEffect(() => { setPage(0); }, [q, fType, fProv, fStatus]);
 
   const save = async (item: any, patch: any) => {
@@ -274,7 +265,7 @@ function CatalogManager({ adminKey }: { adminKey: string }) {
         <span className="border-4 border-black bg-white px-3 py-1.5 font-display text-sm">GIBI {nGibi}</span>
         <span className="border-4 border-black bg-white px-3 py-1.5 font-display text-sm">EDITADOS {nEdited}</span>
         <span className="border-4 border-black bg-white px-3 py-1.5 font-display text-sm">ESCONDIDOS {nHidden}</span>
-        <button onClick={() => { loadCatalog(); loadOverrides(); }} disabled={loading}
+        <button onClick={() => { onReload(); loadOverrides(); }} disabled={loading}
           className="ml-auto border-4 border-black px-3 py-1.5 font-display text-sm bg-white hover:bg-muted flex items-center gap-2 disabled:opacity-50">
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> ATUALIZAR
         </button>
@@ -386,7 +377,9 @@ export default function Admin() {
   const [keyInput, setKeyInput] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [tab, setTab] = useState<"pending" | "approved" | "catalog" | "suggestions" | "ranking" | "providers" | "inspector" | "users">("catalog");
+  const [tab, setTab] = useState<AdminModule>("dashboard");
+  // Sub-view inside the Catálogo module (library = crawled catalog; pending/sent = manual submissions)
+  const [catalogView, setCatalogView] = useState<"library" | "pending" | "sent">("library");
   const [confirmClearRanking, setConfirmClearRanking] = useState(false);
   const [providers, setProviders] = useState<any[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(false);
@@ -426,11 +419,11 @@ export default function Admin() {
     }
   };
 
+  // Fetch providers once unlocked so the Dashboard can show online/offline counts.
   useEffect(() => {
-    if (tab === "providers" && unlocked) {
-      fetchProviders();
-    }
-  }, [tab, unlocked]);
+    if (unlocked) fetchProviders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unlocked]);
   const [editModal, setEditModal] = useState<{ open: boolean; gibi?: Gibi }>({ open: false });
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [customProviderModal, setCustomProviderModal] = useState(false);
@@ -502,15 +495,23 @@ export default function Admin() {
   const { data: rankingData, isLoading: loadingRanking } = useQuery({
     queryKey: ["admin-ranking", adminKey],
     queryFn: () => adminRequest("/api/admin/ranking", adminKey),
-    enabled: unlocked && tab === "ranking",
+    enabled: unlocked && tab === "analytics",
     select: (d: { items: { revista: string; titulo: string; editora: string; search_count: number; last_searched: string }[]; total: number }) => d,
   });
 
   const { data: usersData, isLoading: loadingUsers } = useQuery({
     queryKey: ["admin-users", adminKey],
     queryFn: () => adminRequest("/api/admin/users", adminKey),
-    enabled: unlocked && tab === "users",
+    enabled: unlocked,
     select: (d: { items: { id: string; username: string; email?: string; created_at: string }[]; total: number }) => d,
+  });
+
+  const { data: catalogData, isLoading: loadingCatalog } = useQuery({
+    queryKey: ["admin-catalog", adminKey],
+    queryFn: () => adminRequest("/api/admin/catalog", adminKey),
+    enabled: unlocked,
+    select: (d: { items: any[]; total: number }) => d,
+    staleTime: 5 * 60 * 1000,
   });
 
   const deleteRankingEntryMutation = useMutation({
@@ -540,7 +541,7 @@ export default function Admin() {
     queryFn: () => adminRequest("/api/admin/suggestions", adminKey),
     enabled: unlocked,
     select: (d: { items: Suggestion[]; total: number }) => d,
-    refetchInterval: tab === "suggestions" ? 30000 : false,
+    refetchInterval: tab === "feedback" ? 30000 : false,
   });
 
   const updateSuggestionMutation = useMutation({
@@ -585,6 +586,57 @@ export default function Admin() {
   const approvedItems = approvedData?.items || [];
   const suggestionItems = suggestionsData?.items || [];
   const newSuggestions = suggestionItems.filter(s => s.status === "novo");
+  const catalogItems = catalogData?.items || [];
+
+  const reloadCatalog = () => queryClient.invalidateQueries({ queryKey: ["admin-catalog"] });
+
+  const dashboardStats: DashboardStats = {
+    catalogTotal: catalogData?.total ?? null,
+    catalogLoading: loadingCatalog,
+    pending: pendingItems.length,
+    sent: approvedItems.length,
+    usersTotal: usersData?.total ?? null,
+    feedbackNew: newSuggestions.length,
+    feedbackTotal: suggestionItems.length,
+    providersOnline: providers.filter(p => p.active).length,
+    providersOffline: providers.filter(p => !p.active).length,
+    offlineProviders: providers.filter(p => !p.active).map(p => p.name),
+  };
+
+  // Per-module header config for the shell
+  const moduleMeta: Record<AdminModule, { title: string; subtitle?: string }> = {
+    dashboard: { title: "Dashboard", subtitle: "Visão geral do sistema" },
+    catalog: { title: "Catálogo", subtitle: "Biblioteca completa, pendentes e enviados" },
+    providers: { title: "Providers", subtitle: "Fontes de conteúdo" },
+    engines: { title: "Engines", subtitle: "Motores reutilizáveis de scraping" },
+    users: { title: "Usuários", subtitle: usersData ? `${usersData.total} cadastrado(s)` : undefined },
+    analytics: { title: "Analytics", subtitle: "Métricas e ranking de buscas" },
+    feedback: { title: "Feedback", subtitle: "Sugestões e bugs reportados" },
+    inspector: { title: "Inspector", subtitle: "Diagnóstico de URLs e engines" },
+    system: { title: "Sistema", subtitle: "Jobs, cache, logs e infraestrutura" },
+  };
+
+  const headerActions = (() => {
+    if (tab === "catalog" && catalogView !== "library") {
+      return (
+        <button onClick={() => setEditModal({ open: true })}
+          className="flex items-center gap-2 bg-primary text-white font-display text-base px-3 py-2 border-4 border-black comic-shadow-sm hover:translate-y-[-2px] transition-transform">
+          <Plus className="w-4 h-4" strokeWidth={3} /> ADICIONAR
+        </button>
+      );
+    }
+    if (tab === "providers") {
+      return (
+        <button onClick={() => setCustomProviderModal(true)}
+          className="flex items-center gap-2 bg-primary text-white font-display text-base px-3 py-2 border-4 border-black comic-shadow-sm hover:translate-y-[-2px] transition-transform">
+          <Plus className="w-4 h-4" strokeWidth={3} /> PROVIDER
+        </button>
+      );
+    }
+    return null;
+  })();
+
+  const exitAdmin = () => { localStorage.removeItem(STORAGE_KEY); setUnlocked(false); setAdminKey(""); setKeyInput(""); };
 
   if (!unlocked) {
     return (
@@ -655,82 +707,31 @@ export default function Admin() {
   }
 
   return (
-    <Layout minimal>
-      <div className="max-w-5xl mx-auto relative z-10">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="font-display text-5xl text-black leading-none">PAINEL ADMIN</h1>
-            <p className="font-sans font-bold text-gray-600 mt-1">
-              {pendingItems.length > 0 ? `${pendingItems.length} pendente${pendingItems.length !== 1 ? "s" : ""} aguardando análise` : "Nenhuma submissão pendente"}
-            </p>
-          </div>
-          <div className="flex gap-3">
-            {!["suggestions", "ranking", "users", "inspector", "catalog"].includes(tab) && (
-              <button
-                onClick={() => {
-                  if (tab === "providers") {
-                    setCustomProviderModal(true);
-                  } else {
-                    setEditModal({ open: true });
-                  }
-                }}
-                className="flex items-center gap-2 bg-primary text-white font-display text-lg px-4 py-3 border-4 border-black comic-shadow hover:translate-y-[-2px] transition-transform"
-              >
-                <Plus className="w-5 h-5" strokeWidth={3} /> ADICIONAR
+    <AdminShell
+      active={tab}
+      onNavigate={setTab}
+      onExit={exitAdmin}
+      badges={{ catalog: pendingItems.length || undefined, feedback: newSuggestions.length || undefined }}
+      title={moduleMeta[tab].title}
+      subtitle={moduleMeta[tab].subtitle}
+      actions={headerActions}
+    >
+      {tab === "dashboard" && <AdminDashboard stats={dashboardStats} onNavigate={setTab} />}
+
+      {tab === "catalog" && (
+        <div className="space-y-5">
+          <div className="inline-flex border-4 border-black overflow-hidden">
+            {([["library", "Biblioteca"], ["pending", pendingItems.length ? `Pendentes (${pendingItems.length})` : "Pendentes"], ["sent", `Enviados (${approvedItems.length})`]] as const).map(([k, label], i) => (
+              <button key={k} onClick={() => setCatalogView(k)}
+                className={`px-4 py-2 font-display text-base ${i > 0 ? "border-l-4 border-black" : ""} ${catalogView === k ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
+                {label}
               </button>
-            )}
-            <button onClick={() => { localStorage.removeItem(STORAGE_KEY); setUnlocked(false); setAdminKey(""); setKeyInput(""); }}
-              className="border-4 border-black px-4 py-3 font-display text-lg hover:bg-muted transition-colors">
-              SAIR
-            </button>
+            ))}
           </div>
-        </div>
 
-        {/* Tabs */}
-        <div className="flex flex-wrap border-4 border-black mb-6 overflow-hidden">
-          <button onClick={() => setTab("catalog")}
-            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 transition-colors ${tab === "catalog" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
-            <Database className="w-5 h-5" /> CATÁLOGO
-          </button>
-          <button onClick={() => setTab("pending")}
-            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "pending" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
-            <Eye className="w-5 h-5" strokeWidth={3} />
-            PENDENTES {pendingItems.length > 0 && <span className="bg-primary text-white text-sm font-bold px-2 py-0.5 rounded-full">{pendingItems.length}</span>}
-          </button>
-          <button onClick={() => setTab("approved")}
-            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "approved" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
-            <Check className="w-5 h-5" strokeWidth={3} />
-            ENVIADOS ({approvedItems.length})
-          </button>
-          <button onClick={() => setTab("suggestions")}
-            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "suggestions" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
-            <MessageSquare className="w-5 h-5" strokeWidth={3} />
-            FEEDBACK {newSuggestions.length > 0 && <span className="bg-primary text-white text-sm font-bold px-2 py-0.5 rounded-full">{newSuggestions.length}</span>}
-          </button>
-          <button onClick={() => setTab("ranking")}
-            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "ranking" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
-            <Trophy className="w-5 h-5" strokeWidth={3} />
-            RANKING
-          </button>
-          <button onClick={() => setTab("providers")}
-            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "providers" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
-            <Database className="w-5 h-5" strokeWidth={3} />
-            PROVEDORES
-          </button>
-          <button onClick={() => setTab("inspector")}
-            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "inspector" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
-            <SearchCode className="w-5 h-5" strokeWidth={3} />
-            INSPECTOR
-          </button>
-          <button onClick={() => setTab("users")}
-            className={`flex-1 py-3 font-display text-lg flex items-center justify-center gap-2 border-l-4 border-black transition-colors ${tab === "users" ? "bg-secondary text-black" : "bg-white text-gray-500 hover:bg-muted"}`}>
-            <User className="w-5 h-5" strokeWidth={3} />
-            USUÁRIOS
-          </button>
-        </div>
+          {catalogView === "library" && <CatalogManager adminKey={adminKey} items={catalogItems} loading={loadingCatalog} onReload={reloadCatalog} />}
 
-        {/* Pending tab */}
-        {tab === "pending" && (
+          {catalogView === "pending" && (
           loadingPending ? (
             <div className="flex items-center justify-center py-24"><Loader2 className="w-12 h-12 animate-spin text-primary" /></div>
           ) : pendingItems.length === 0 ? (
@@ -752,8 +753,7 @@ export default function Admin() {
           )
         )}
 
-        {/* Approved tab */}
-        {tab === "approved" && (
+          {catalogView === "sent" && (
           loadingApproved ? (
             <div className="flex items-center justify-center py-24"><Loader2 className="w-12 h-12 animate-spin text-primary" /></div>
           ) : approvedItems.length === 0 ? (
@@ -773,9 +773,10 @@ export default function Admin() {
           )
         )}
 
-        {tab === "catalog" && unlocked && <CatalogManager adminKey={adminKey} />}
+        </div>
+      )}
 
-        {tab === "suggestions" && (
+      {tab === "feedback" && (
           loadingSuggestions ? (
             <div className="flex items-center justify-center py-24"><Loader2 className="w-12 h-12 animate-spin text-primary" /></div>
           ) : suggestionItems.length === 0 ? (
@@ -835,8 +836,8 @@ export default function Admin() {
           )
         )}
 
-        {/* Ranking tab */}
-        {tab === "ranking" && (
+        {/* Analytics (ranking de buscas) */}
+        {tab === "analytics" && (
           <div className="space-y-4">
             {/* Header with clear all */}
             <div className="flex items-center justify-between">
@@ -1018,7 +1019,22 @@ export default function Admin() {
             </div>
           )
         )}
-      </div>
+
+      {tab === "engines" && (
+        <AdminPlaceholder
+          title="Engines"
+          description="O coração técnico: motores de scraping reutilizáveis (Madara, WordPress Comic, ComicExtra, Generic HTML, API JSON). Cada engine serve vários providers, com seletores, parser e helpers versionados — criar um provider novo vira só apontar a URL para a engine certa."
+          sections={["Sites por engine", "Seletores", "Parser", "Helpers", "Compatibilidade", "Logs", "Criar provider"]}
+        />
+      )}
+
+      {tab === "system" && (
+        <AdminPlaceholder
+          title="Sistema"
+          description="Tudo que é infraestrutura em um lugar só: jobs em background, OCR, cache, banco, storage, deploy, filas, cron e variáveis de ambiente — com monitoramento e backups."
+          sections={["Jobs", "OCR", "Cache", "Banco", "Storage", "Deploy", "Logs", "Backups", "Cron", "Variáveis", "Fila", "Monitoramento"]}
+        />
+      )}
 
       {/* Edit/Add modal */}
       <AnimatePresence>
@@ -1062,7 +1078,7 @@ export default function Admin() {
           />
         )}
       </AnimatePresence>
-    </Layout>
+    </AdminShell>
   );
 }
 
