@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { syncReadingHistory, syncSearchHistory } from "@/lib/user-history";
+import { setToken, clearToken, authHeaders } from "@/lib/authToken";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const AUTH_KEY = "gibi-finder:auth_user";
@@ -41,9 +42,10 @@ export function useAuth() {
         } else {
           sessionStorage.setItem(AUTH_KEY, JSON.stringify(data.user));
         }
+        if (data.token) setToken(data.token, rememberMe);
         setUser(data.user);
         toast({ title: `Bem-vindo de volta, ${data.user.username}!`, description: "Seu progresso e favoritos foram sincronizados." });
-        
+
         syncUserData(data.user.id);
         return true;
       } else {
@@ -70,9 +72,10 @@ export function useAuth() {
         } else {
           sessionStorage.setItem(AUTH_KEY, JSON.stringify(data.user));
         }
+        if (data.token) setToken(data.token, rememberMe);
         setUser(data.user);
         toast({ title: "Cadastro realizado!", description: `Sua conta '${data.user.username}' foi criada com sucesso.` });
-        
+
         syncUserData(data.user.id);
         return true;
       } else {
@@ -88,6 +91,7 @@ export function useAuth() {
   const logout = () => {
     localStorage.removeItem(AUTH_KEY);
     sessionStorage.removeItem(AUTH_KEY);
+    clearToken();
     setUser(null);
     toast({ title: "Sessão encerrada", description: "Você desconectou da sua estante." });
   };
@@ -99,12 +103,12 @@ export function useAuth() {
       // Upload current local favorites to server
       await fetch(`${BASE}/api/auth/favorites/sync`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ userId, favorites: localFavs })
       });
-      
+
       // Also fetch merged favorites from server
-      const res = await fetch(`${BASE}/api/auth/favorites?userId=${userId}`);
+      const res = await fetch(`${BASE}/api/auth/favorites?userId=${userId}`, { headers: { ...authHeaders() } });
       if (res.ok) {
         const serverFavs = await res.json();
         if (serverFavs && serverFavs.length > 0) {

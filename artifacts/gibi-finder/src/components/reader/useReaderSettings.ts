@@ -1,4 +1,5 @@
 import { useSyncExternalStore, useCallback, useEffect, useRef, type CSSProperties } from "react";
+import { authHeaders } from "@/lib/authToken";
 
 /**
  * Reader preferences. Two layers, both persisted to localStorage and shared via a
@@ -316,7 +317,7 @@ export function useSettingsSync(userId?: string) {
     let active = true;
     (async () => {
       try {
-        const res = await fetch(`${SYNC_BASE}/api/auth/reader-settings?userId=${encodeURIComponent(userId)}`);
+        const res = await fetch(`${SYNC_BASE}/api/auth/reader-settings?userId=${encodeURIComponent(userId)}`, { headers: { ...authHeaders() } });
         if (res.ok && active) hydrateFromAccount(await res.json());
       } catch { /* ignore */ }
     })();
@@ -326,7 +327,7 @@ export function useSettingsSync(userId?: string) {
       timer.current = setTimeout(() => {
         fetch(`${SYNC_BASE}/api/auth/reader-settings/upsert`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify({ userId, ...getSyncPayload() }),
         }).catch(() => { /* ignore */ });
       }, 1500);

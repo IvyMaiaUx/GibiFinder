@@ -4,8 +4,9 @@ import { identifyFromImages, searchByText, searchByCharacter } from "../lib/gemi
 import { fetchFandomContext } from "../lib/fandom";
 import { supabase } from "../lib/supabase";
 import { nextDriveKey, hasDriveKey } from "../lib/driveKeys";
+import { hashPassword, verifyPassword, isLegacyHash, signToken, sessionUserId } from "../lib/auth";
 import { listOverrides, upsertOverride, deleteOverride } from "../lib/catalogOverrides";
-import { randomUUID, createHash } from "crypto";
+import { randomUUID } from "crypto";
 
 const router: IRouter = Router();
 
@@ -1254,13 +1255,13 @@ router.post("/auth/register", async (req: Request, res: Response) => {
     return;
   }
   try {
-    const password_hash = createHash("sha256").update(password).digest("hex");
+    const password_hash = hashPassword(password);
     const { data, error } = await supabase
       .from("user_profiles")
       .insert({ username, password_hash, email: email || null })
       .select("id, username, email, created_at")
       .single();
-    
+
     if (error) {
       if (error.code === "23505") {
         res.status(409).json({ error: "username_taken", message: "Este nome de usuário já está em uso" });
@@ -1269,7 +1270,7 @@ router.post("/auth/register", async (req: Request, res: Response) => {
       }
       return;
     }
-    res.json({ success: true, user: data });
+    res.json({ success: true, user: data, token: signToken(data.id) });
   } catch (err) {
     res.status(500).json({ error: "server_error", message: err instanceof Error ? err.message : "Erro desconhecido" });
   }
@@ -1284,20 +1285,24 @@ router.post("/auth/login", async (req: Request, res: Response) => {
     return;
   }
   try {
-    const password_hash = createHash("sha256").update(password).digest("hex");
     const { data, error } = await supabase
       .from("user_profiles")
       .select("id, username, email, created_at, password_hash")
       .eq("username", username)
       .single();
-    
-    if (error || !data || data.password_hash !== password_hash) {
+
+    if (error || !data || !verifyPassword(password, data.password_hash)) {
       res.status(401).json({ error: "invalid_credentials", message: "Usuário ou senha incorretos" });
       return;
     }
-    
+
+    // Transparently migrate legacy unsalted SHA-256 hashes to scrypt on login.
+    if (isLegacyHash(data.password_hash)) {
+      try { await supabase.from("user_profiles").update({ password_hash: hashPassword(password) }).eq("id", data.id); } catch { /* best effort */ }
+    }
+
     const { password_hash: _, ...user } = data;
-    res.json({ success: true, user });
+    res.json({ success: true, user, token: signToken(data.id) });
   } catch (err) {
     res.status(500).json({ error: "server_error" });
   }
@@ -1306,7 +1311,7 @@ router.post("/auth/login", async (req: Request, res: Response) => {
 // GET /api/auth/favorites - get synced user favorites
 router.get("/auth/favorites", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
-  const userId = req.query.userId as string;
+  const userId = sessionUserId(req);
   if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
   try {
     const { data, error } = await supabase
@@ -1332,7 +1337,8 @@ router.get("/auth/favorites", async (req: Request, res: Response) => {
 // POST /api/auth/favorites/sync - sync favorites to database
 router.post("/auth/favorites/sync", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
-  const { userId, favorites } = req.body;
+  const userId = sessionUserId(req);
+  const { favorites } = req.body;
   if (!userId || !Array.isArray(favorites)) { res.status(400).json({ error: "bad_request" }); return; }
   try {
     await supabase.from("user_favorites").delete().eq("user_id", userId);
@@ -1358,7 +1364,7 @@ router.post("/auth/favorites/sync", async (req: Request, res: Response) => {
 // GET /api/auth/history/search - get synced search history
 router.get("/auth/history/search", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
-  const userId = req.query.userId as string;
+  const userId = sessionUserId(req);
   if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
   try {
     const { data, error } = await supabase
@@ -1384,7 +1390,8 @@ router.get("/auth/history/search", async (req: Request, res: Response) => {
 // POST /api/auth/history/search/upsert - save one search history item
 router.post("/auth/history/search/upsert", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
-  const { userId, item } = req.body;
+  const userId = sessionUserId(req);
+  const { item } = req.body;
   if (!userId || !item?.id) { res.status(400).json({ error: "bad_request" }); return; }
   try {
     await supabase.from("user_search_history").delete().eq("user_id", userId).eq("item_id", item.id);
@@ -1407,7 +1414,8 @@ router.post("/auth/history/search/upsert", async (req: Request, res: Response) =
 // POST /api/auth/history/search/sync - merge local and server search history
 router.post("/auth/history/search/sync", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
-  const { userId, items } = req.body;
+  const userId = sessionUserId(req);
+  const { items } = req.body;
   if (!userId || !Array.isArray(items)) { res.status(400).json({ error: "bad_request" }); return; }
   try {
     const { data: existing } = await supabase.from("user_search_history").select("*").eq("user_id", userId);
@@ -1451,7 +1459,7 @@ router.post("/auth/history/search/sync", async (req: Request, res: Response) => 
 
 router.delete("/auth/history/search/:itemId", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
-  const userId = req.query.userId as string;
+  const userId = sessionUserId(req);
   if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
   const { error } = await supabase.from("user_search_history").delete().eq("user_id", userId).eq("item_id", req.params.itemId);
   if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
@@ -1460,7 +1468,7 @@ router.delete("/auth/history/search/:itemId", async (req: Request, res: Response
 
 router.delete("/auth/history/search", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
-  const userId = req.query.userId as string;
+  const userId = sessionUserId(req);
   if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
   const { error } = await supabase.from("user_search_history").delete().eq("user_id", userId);
   if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
@@ -1470,7 +1478,7 @@ router.delete("/auth/history/search", async (req: Request, res: Response) => {
 // GET /api/auth/history/reading - get synced reading history
 router.get("/auth/history/reading", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
-  const userId = req.query.userId as string;
+  const userId = sessionUserId(req);
   if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
   try {
     const { data, error } = await supabase
@@ -1499,7 +1507,8 @@ router.get("/auth/history/reading", async (req: Request, res: Response) => {
 // POST /api/auth/history/reading/upsert - save one reading history/progress item
 router.post("/auth/history/reading/upsert", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
-  const { userId, progressKey, progress, historyItem } = req.body;
+  const userId = sessionUserId(req);
+  const { progressKey, progress, historyItem } = req.body;
   if (!userId || !progressKey || !progress || !historyItem?.id) { res.status(400).json({ error: "bad_request" }); return; }
   try {
     await supabase.from("user_reading_progress").delete().eq("user_id", userId).eq("progress_key", progressKey);
@@ -1540,7 +1549,8 @@ router.post("/auth/history/reading/upsert", async (req: Request, res: Response) 
 // POST /api/auth/history/reading/sync - merge local and server reading history/progress
 router.post("/auth/history/reading/sync", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
-  const { userId, history, progress } = req.body;
+  const userId = sessionUserId(req);
+  const { history, progress } = req.body;
   if (!userId || !Array.isArray(history)) { res.status(400).json({ error: "bad_request" }); return; }
   try {
     const { data: existingHistory } = await supabase.from("user_reading_history").select("*").eq("user_id", userId);
@@ -1608,7 +1618,7 @@ router.post("/auth/history/reading/sync", async (req: Request, res: Response) =>
 // for one manga (so a deleted shelf item doesn't come back after sync).
 router.delete("/auth/history/reading/by-manga", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
-  const userId = req.query.userId as string;
+  const userId = sessionUserId(req);
   const providerId = req.query.providerId as string;
   const mangaId = req.query.mangaId as string;
   if (!userId || !providerId || !mangaId) { res.status(400).json({ error: "missing_params" }); return; }
@@ -1619,7 +1629,7 @@ router.delete("/auth/history/reading/by-manga", async (req: Request, res: Respon
 
 router.delete("/auth/history/reading/:itemId", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
-  const userId = req.query.userId as string;
+  const userId = sessionUserId(req);
   if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
   const { error } = await supabase.from("user_reading_history").delete().eq("user_id", userId).eq("item_id", req.params.itemId);
   if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
@@ -1628,7 +1638,7 @@ router.delete("/auth/history/reading/:itemId", async (req: Request, res: Respons
 
 router.delete("/auth/history/reading", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
-  const userId = req.query.userId as string;
+  const userId = sessionUserId(req);
   if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
   const { error } = await supabase.from("user_reading_history").delete().eq("user_id", userId);
   if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
@@ -1639,7 +1649,7 @@ router.delete("/auth/history/reading", async (req: Request, res: Response) => {
 // GET /api/auth/history/completed - get synced completed chapters
 router.get("/auth/history/completed", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
-  const userId = req.query.userId as string;
+  const userId = sessionUserId(req);
   if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
   try {
     const { data, error } = await supabase
@@ -1664,7 +1674,8 @@ router.get("/auth/history/completed", async (req: Request, res: Response) => {
 // POST /api/auth/history/completed/upsert - mark one chapter completed
 router.post("/auth/history/completed/upsert", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
-  const { userId, item } = req.body;
+  const userId = sessionUserId(req);
+  const { item } = req.body;
   if (!userId || !item?.mangaId || !item?.providerId || !item?.chapterId) { res.status(400).json({ error: "bad_request" }); return; }
   try {
     await supabase.from("user_completed").delete()
@@ -1687,7 +1698,7 @@ router.post("/auth/history/completed/upsert", async (req: Request, res: Response
 // DELETE /api/auth/history/completed - remove one completed entry (by keys)
 router.delete("/auth/history/completed", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
-  const userId = req.query.userId as string;
+  const userId = sessionUserId(req);
   const providerId = req.query.providerId as string;
   const mangaId = req.query.mangaId as string;
   const chapterId = req.query.chapterId as string;
@@ -1792,7 +1803,7 @@ router.get("/admin/system-health", async (req: Request, res: Response) => {
 // ---- Cross-device reader settings sync ----
 // GET /api/auth/reader-settings?userId= -> { settings, profiles, workOverrides }
 router.get("/auth/reader-settings", async (req: Request, res: Response) => {
-  const userId = req.query.userId as string;
+  const userId = sessionUserId(req);
   if (!userId || !supabase) { res.json({}); return; }
   try {
     const { data, error } = await supabase
@@ -1810,7 +1821,8 @@ router.get("/auth/reader-settings", async (req: Request, res: Response) => {
 
 // POST /api/auth/reader-settings/upsert - { userId, settings, profiles, workOverrides }
 router.post("/auth/reader-settings/upsert", async (req: Request, res: Response) => {
-  const { userId, settings, profiles, workOverrides } = req.body || {};
+  const userId = sessionUserId(req);
+  const { settings, profiles, workOverrides } = req.body || {};
   if (!userId || !supabase) { res.json({ ok: false }); return; }
   try {
     await supabase.from("user_reader_settings").upsert({

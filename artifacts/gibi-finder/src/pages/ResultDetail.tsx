@@ -9,6 +9,7 @@ import { Link2, AlertCircle, Loader2, Star, BookOpen, ExternalLink, ShoppingCart
 import { useToast } from "@/hooks/use-toast";
 import { cn, translateToPt, cleanSynopsis, getGeneratedSynopsis } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { authHeaders } from "@/lib/authToken";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -151,7 +152,7 @@ export default function ResultDetail() {
       if (user) {
         fetch(`${BASE}/api/auth/favorites/sync`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify({ userId: user.id, favorites: newFavorites })
         }).catch(err => console.error("Error syncing favorite to server:", err));
       }

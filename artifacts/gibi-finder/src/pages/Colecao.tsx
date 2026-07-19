@@ -3,6 +3,7 @@ import { Layout } from "@/components/layout/Layout";
 import { BookOpen, Trash2, Clock, BookOpenCheck, Star, CheckCircle2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn, isAdultProviderId } from "@/lib/utils";
+import { authHeaders } from "@/lib/authToken";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { useAuth } from "@/hooks/use-auth";
 import { getLocalCompleted, saveLocalCompleted, getSyncedReadingHistory, getSyncedCompleted, removeCompletedRemote, removeReadingByManga, type CompletedReadingItem } from "@/lib/user-history";
@@ -190,7 +191,7 @@ export default function Colecao() {
         const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
         fetch(`${BASE}/api/auth/favorites/sync`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify({ userId: user.id, favorites: filtered })
         }).catch(err => console.error("Error syncing favorites after deletion:", err));
       }

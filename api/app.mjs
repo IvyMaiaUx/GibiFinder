@@ -52359,6 +52359,52 @@ function nextDriveKey() {
   return keys[index];
 }
 
+// src/lib/auth.ts
+import { scryptSync, randomBytes, timingSafeEqual, createHmac, createHash } from "crypto";
+var SESSION_SECRET = (process.env["SESSION_SECRET"] || process.env["ADMIN_KEY"] || "gibi-session-secret-change-me").trim();
+function hashPassword(password) {
+  const salt = randomBytes(16).toString("hex");
+  const hash = scryptSync(password, salt, 64).toString("hex");
+  return `scrypt$${salt}$${hash}`;
+}
+function isLegacyHash(stored) {
+  return typeof stored === "string" && !stored.startsWith("scrypt$");
+}
+function verifyPassword(password, stored) {
+  if (!stored) return false;
+  if (stored.startsWith("scrypt$")) {
+    const [, salt, hash] = stored.split("$");
+    if (!salt || !hash) return false;
+    const expected = Buffer.from(hash, "hex");
+    const test = scryptSync(password, salt, 64);
+    return test.length === expected.length && timingSafeEqual(test, expected);
+  }
+  const legacy = createHash("sha256").update(password).digest("hex");
+  return legacy.length === stored.length && timingSafeEqual(Buffer.from(legacy), Buffer.from(stored));
+}
+function signToken(userId) {
+  const sig = createHmac("sha256", SESSION_SECRET).update(userId).digest("base64url");
+  return `${userId}.${sig}`;
+}
+function verifyToken(token) {
+  if (!token || typeof token !== "string") return null;
+  const dot = token.lastIndexOf(".");
+  if (dot <= 0) return null;
+  const userId = token.slice(0, dot);
+  const sig = token.slice(dot + 1);
+  const expected = createHmac("sha256", SESSION_SECRET).update(userId).digest("base64url");
+  try {
+    if (sig.length === expected.length && timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return userId;
+  } catch {
+  }
+  return null;
+}
+function sessionUserId(req) {
+  const header = req.headers["x-user-token"];
+  const token = Array.isArray(header) ? header[0] : header;
+  return verifyToken(token);
+}
+
 // src/lib/catalogOverrides.ts
 init_logger();
 function overrideKey(providerId, itemId) {
@@ -52442,7 +52488,7 @@ function applyOverrides(items, overrides) {
 }
 
 // src/routes/gibi.ts
-import { randomUUID, createHash } from "crypto";
+import { randomUUID } from "crypto";
 var router2 = (0, import_express2.Router)();
 var ADMIN_KEY = process.env["ADMIN_KEY"] || "gibi-admin-2024";
 function isAdmin(req) {
@@ -53609,7 +53655,7 @@ router2.post("/auth/register", async (req, res) => {
     return;
   }
   try {
-    const password_hash = createHash("sha256").update(password).digest("hex");
+    const password_hash = hashPassword(password);
     const { data, error } = await supabase.from("user_profiles").insert({ username, password_hash, email: email || null }).select("id, username, email, created_at").single();
     if (error) {
       if (error.code === "23505") {
@@ -53620,7 +53666,7 @@ router2.post("/auth/register", async (req, res) => {
       }
       return;
     }
-    res.json({ success: true, user: data });
+    res.json({ success: true, user: data, token: signToken(data.id) });
   } catch (err) {
     res.status(500).json({ error: "server_error", message: err instanceof Error ? err.message : "Erro desconhecido" });
   }
@@ -53636,14 +53682,19 @@ router2.post("/auth/login", async (req, res) => {
     return;
   }
   try {
-    const password_hash = createHash("sha256").update(password).digest("hex");
     const { data, error } = await supabase.from("user_profiles").select("id, username, email, created_at, password_hash").eq("username", username).single();
-    if (error || !data || data.password_hash !== password_hash) {
+    if (error || !data || !verifyPassword(password, data.password_hash)) {
       res.status(401).json({ error: "invalid_credentials", message: "Usu\xE1rio ou senha incorretos" });
       return;
     }
+    if (isLegacyHash(data.password_hash)) {
+      try {
+        await supabase.from("user_profiles").update({ password_hash: hashPassword(password) }).eq("id", data.id);
+      } catch {
+      }
+    }
     const { password_hash: _, ...user } = data;
-    res.json({ success: true, user });
+    res.json({ success: true, user, token: signToken(data.id) });
   } catch (err) {
     res.status(500).json({ error: "server_error" });
   }
@@ -53653,7 +53704,7 @@ router2.get("/auth/favorites", async (req, res) => {
     res.status(503).json({ error: "db_unavailable" });
     return;
   }
-  const userId = req.query.userId;
+  const userId = sessionUserId(req);
   if (!userId) {
     res.status(400).json({ error: "missing_userId" });
     return;
@@ -53683,7 +53734,8 @@ router2.post("/auth/favorites/sync", async (req, res) => {
     res.status(503).json({ error: "db_unavailable" });
     return;
   }
-  const { userId, favorites } = req.body;
+  const userId = sessionUserId(req);
+  const { favorites } = req.body;
   if (!userId || !Array.isArray(favorites)) {
     res.status(400).json({ error: "bad_request" });
     return;
@@ -53712,7 +53764,7 @@ router2.get("/auth/history/search", async (req, res) => {
     res.status(503).json({ error: "db_unavailable" });
     return;
   }
-  const userId = req.query.userId;
+  const userId = sessionUserId(req);
   if (!userId) {
     res.status(400).json({ error: "missing_userId" });
     return;
@@ -53744,7 +53796,8 @@ router2.post("/auth/history/search/upsert", async (req, res) => {
     res.status(503).json({ error: "db_unavailable" });
     return;
   }
-  const { userId, item } = req.body;
+  const userId = sessionUserId(req);
+  const { item } = req.body;
   if (!userId || !item?.id) {
     res.status(400).json({ error: "bad_request" });
     return;
@@ -53778,7 +53831,8 @@ router2.post("/auth/history/search/sync", async (req, res) => {
     res.status(503).json({ error: "db_unavailable" });
     return;
   }
-  const { userId, items } = req.body;
+  const userId = sessionUserId(req);
+  const { items } = req.body;
   if (!userId || !Array.isArray(items)) {
     res.status(400).json({ error: "bad_request" });
     return;
@@ -53828,7 +53882,7 @@ router2.delete("/auth/history/search/:itemId", async (req, res) => {
     res.status(503).json({ error: "db_unavailable" });
     return;
   }
-  const userId = req.query.userId;
+  const userId = sessionUserId(req);
   if (!userId) {
     res.status(400).json({ error: "missing_userId" });
     return;
@@ -53846,7 +53900,7 @@ router2.delete("/auth/history/search", async (req, res) => {
     res.status(503).json({ error: "db_unavailable" });
     return;
   }
-  const userId = req.query.userId;
+  const userId = sessionUserId(req);
   if (!userId) {
     res.status(400).json({ error: "missing_userId" });
     return;
@@ -53864,7 +53918,7 @@ router2.get("/auth/history/reading", async (req, res) => {
     res.status(503).json({ error: "db_unavailable" });
     return;
   }
-  const userId = req.query.userId;
+  const userId = sessionUserId(req);
   if (!userId) {
     res.status(400).json({ error: "missing_userId" });
     return;
@@ -53899,7 +53953,8 @@ router2.post("/auth/history/reading/upsert", async (req, res) => {
     res.status(503).json({ error: "db_unavailable" });
     return;
   }
-  const { userId, progressKey, progress, historyItem } = req.body;
+  const userId = sessionUserId(req);
+  const { progressKey, progress, historyItem } = req.body;
   if (!userId || !progressKey || !progress || !historyItem?.id) {
     res.status(400).json({ error: "bad_request" });
     return;
@@ -53950,7 +54005,8 @@ router2.post("/auth/history/reading/sync", async (req, res) => {
     res.status(503).json({ error: "db_unavailable" });
     return;
   }
-  const { userId, history, progress } = req.body;
+  const userId = sessionUserId(req);
+  const { history, progress } = req.body;
   if (!userId || !Array.isArray(history)) {
     res.status(400).json({ error: "bad_request" });
     return;
@@ -54022,7 +54078,7 @@ router2.delete("/auth/history/reading/by-manga", async (req, res) => {
     res.status(503).json({ error: "db_unavailable" });
     return;
   }
-  const userId = req.query.userId;
+  const userId = sessionUserId(req);
   const providerId = req.query.providerId;
   const mangaId = req.query.mangaId;
   if (!userId || !providerId || !mangaId) {
@@ -54038,7 +54094,7 @@ router2.delete("/auth/history/reading/:itemId", async (req, res) => {
     res.status(503).json({ error: "db_unavailable" });
     return;
   }
-  const userId = req.query.userId;
+  const userId = sessionUserId(req);
   if (!userId) {
     res.status(400).json({ error: "missing_userId" });
     return;
@@ -54056,7 +54112,7 @@ router2.delete("/auth/history/reading", async (req, res) => {
     res.status(503).json({ error: "db_unavailable" });
     return;
   }
-  const userId = req.query.userId;
+  const userId = sessionUserId(req);
   if (!userId) {
     res.status(400).json({ error: "missing_userId" });
     return;
@@ -54074,7 +54130,7 @@ router2.get("/auth/history/completed", async (req, res) => {
     res.status(503).json({ error: "db_unavailable" });
     return;
   }
-  const userId = req.query.userId;
+  const userId = sessionUserId(req);
   if (!userId) {
     res.status(400).json({ error: "missing_userId" });
     return;
@@ -54105,7 +54161,8 @@ router2.post("/auth/history/completed/upsert", async (req, res) => {
     res.status(503).json({ error: "db_unavailable" });
     return;
   }
-  const { userId, item } = req.body;
+  const userId = sessionUserId(req);
+  const { item } = req.body;
   if (!userId || !item?.mangaId || !item?.providerId || !item?.chapterId) {
     res.status(400).json({ error: "bad_request" });
     return;
@@ -54138,7 +54195,7 @@ router2.delete("/auth/history/completed", async (req, res) => {
     res.status(503).json({ error: "db_unavailable" });
     return;
   }
-  const userId = req.query.userId;
+  const userId = sessionUserId(req);
   const providerId = req.query.providerId;
   const mangaId = req.query.mangaId;
   const chapterId = req.query.chapterId;
@@ -54245,7 +54302,7 @@ router2.get("/admin/system-health", async (req, res) => {
   res.json({ env, tables, services });
 });
 router2.get("/auth/reader-settings", async (req, res) => {
-  const userId = req.query.userId;
+  const userId = sessionUserId(req);
   if (!userId || !supabase) {
     res.json({});
     return;
@@ -54263,7 +54320,8 @@ router2.get("/auth/reader-settings", async (req, res) => {
   }
 });
 router2.post("/auth/reader-settings/upsert", async (req, res) => {
-  const { userId, settings, profiles, workOverrides } = req.body || {};
+  const userId = sessionUserId(req);
+  const { settings, profiles, workOverrides } = req.body || {};
   if (!userId || !supabase) {
     res.json({ ok: false });
     return;

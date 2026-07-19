@@ -1,4 +1,5 @@
 import type { LocalHistoryItem } from "@/hooks/use-local-history";
+import { authHeaders } from "./authToken";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const SEARCH_HISTORY_KEY = "gibi_local_history";
@@ -71,7 +72,7 @@ export const addSearchHistoryItem = async (item: LocalHistoryItem, userId?: stri
   if (!userId) return;
   await fetch(`${BASE}/api/auth/history/search/upsert`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ userId, item })
   }).catch(err => console.error("Failed to sync search history:", err));
 };
@@ -79,7 +80,7 @@ export const addSearchHistoryItem = async (item: LocalHistoryItem, userId?: stri
 export const getSyncedSearchHistory = async (userId?: string) => {
   if (!userId) return getLocalSearchHistory();
   try {
-    const res = await fetch(`${BASE}/api/auth/history/search?userId=${encodeURIComponent(userId)}`);
+    const res = await fetch(`${BASE}/api/auth/history/search?userId=${encodeURIComponent(userId)}`, { headers: { ...authHeaders() } });
     if (!res.ok) return getLocalSearchHistory();
     const items = await res.json() as LocalHistoryItem[];
     saveLocalSearchHistory(items);
@@ -94,7 +95,7 @@ export const syncSearchHistory = async (userId: string) => {
   const localItems = getLocalSearchHistory();
   await fetch(`${BASE}/api/auth/history/search/sync`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ userId, items: localItems })
   }).catch(err => console.error("Failed to upload search history:", err));
   return getSyncedSearchHistory(userId);
@@ -105,7 +106,8 @@ export const removeSearchHistoryItem = async (id: string, userId?: string) => {
   saveLocalSearchHistory(updated);
   if (userId) {
     await fetch(`${BASE}/api/auth/history/search/${encodeURIComponent(id)}?userId=${encodeURIComponent(userId)}`, {
-      method: "DELETE"
+      method: "DELETE",
+      headers: { ...authHeaders() }
     }).catch(err => console.error("Failed to delete search history:", err));
   }
   return updated;
@@ -115,7 +117,8 @@ export const clearSearchHistory = async (userId?: string) => {
   localStorage.removeItem(SEARCH_HISTORY_KEY);
   if (userId) {
     await fetch(`${BASE}/api/auth/history/search?userId=${encodeURIComponent(userId)}`, {
-      method: "DELETE"
+      method: "DELETE",
+      headers: { ...authHeaders() }
     }).catch(err => console.error("Failed to clear search history:", err));
   }
 };
@@ -141,7 +144,7 @@ export const saveLocalCompleted = (items: CompletedReadingItem[]) => {
 export const getSyncedCompleted = async (userId?: string): Promise<CompletedReadingItem[]> => {
   if (!userId) return getLocalCompleted();
   try {
-    const res = await fetch(`${BASE}/api/auth/history/completed?userId=${encodeURIComponent(userId)}`);
+    const res = await fetch(`${BASE}/api/auth/history/completed?userId=${encodeURIComponent(userId)}`, { headers: { ...authHeaders() } });
     if (!res.ok) return getLocalCompleted();
     const items = await res.json() as CompletedReadingItem[];
     saveLocalCompleted(items);
@@ -163,7 +166,7 @@ export const removeCompletedRemote = async (
     mangaId: item.mangaId,
     chapterId: item.chapterId,
   });
-  await fetch(`${BASE}/api/auth/history/completed?${params.toString()}`, { method: "DELETE" })
+  await fetch(`${BASE}/api/auth/history/completed?${params.toString()}`, { method: "DELETE", headers: { ...authHeaders() } })
     .catch(err => console.error("Failed to delete completed:", err));
 };
 
@@ -181,7 +184,7 @@ export const markChapterCompleted = (
   if (!userId) return;
   fetch(`${BASE}/api/auth/history/completed/upsert`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ userId, item })
   }).catch(err => console.error("Failed to sync completed reading:", err));
 };
@@ -189,7 +192,7 @@ export const markChapterCompleted = (
 export const getSyncedReadingHistory = async (userId?: string) => {
   if (!userId) return getLocalReadingHistory();
   try {
-    const res = await fetch(`${BASE}/api/auth/history/reading?userId=${encodeURIComponent(userId)}`);
+    const res = await fetch(`${BASE}/api/auth/history/reading?userId=${encodeURIComponent(userId)}`, { headers: { ...authHeaders() } });
     if (!res.ok) return getLocalReadingHistory();
     const items = await res.json() as ReadingHistoryItem[];
     saveLocalReadingHistory(items);
@@ -222,7 +225,7 @@ export const syncReadingHistory = async (userId: string) => {
   const progress = getLocalProgress();
   await fetch(`${BASE}/api/auth/history/reading/sync`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ userId, history, progress })
   }).catch(err => console.error("Failed to upload reading history:", err));
   return getSyncedReadingHistory(userId);
@@ -247,7 +250,7 @@ export const saveReadingState = async (
   if (!userId) return;
   await fetch(`${BASE}/api/auth/history/reading/upsert`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ userId, progressKey, progress, historyItem: historyEntry })
   }).catch(err => console.error("Failed to sync reading history:", err));
 };
@@ -257,7 +260,8 @@ export const removeReadingHistoryItem = async (id: string, userId?: string) => {
   saveLocalReadingHistory(updated);
   if (userId) {
     await fetch(`${BASE}/api/auth/history/reading/${encodeURIComponent(id)}?userId=${encodeURIComponent(userId)}`, {
-      method: "DELETE"
+      method: "DELETE",
+      headers: { ...authHeaders() }
     }).catch(err => console.error("Failed to delete reading history:", err));
   }
   return updated;
@@ -268,7 +272,7 @@ export const removeReadingHistoryItem = async (id: string, userId?: string) => {
 export const removeReadingByManga = async (providerId: string, mangaId: string, userId?: string) => {
   if (!userId) return;
   const params = new URLSearchParams({ userId, providerId, mangaId });
-  await fetch(`${BASE}/api/auth/history/reading/by-manga?${params.toString()}`, { method: "DELETE" })
+  await fetch(`${BASE}/api/auth/history/reading/by-manga?${params.toString()}`, { method: "DELETE", headers: { ...authHeaders() } })
     .catch(err => console.error("Failed to delete reading by manga:", err));
 };
 
@@ -276,7 +280,8 @@ export const clearReadingHistory = async (userId?: string) => {
   localStorage.removeItem(READING_HISTORY_KEY);
   if (userId) {
     await fetch(`${BASE}/api/auth/history/reading?userId=${encodeURIComponent(userId)}`, {
-      method: "DELETE"
+      method: "DELETE",
+      headers: { ...authHeaders() }
     }).catch(err => console.error("Failed to clear reading history:", err));
   }
 };

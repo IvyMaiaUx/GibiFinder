@@ -1,3 +1,5 @@
+import { authHeaders } from "./authToken";
+
 const FAVORITES_KEY = "gibi-finder:favorites";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -26,7 +28,7 @@ export const isFavorite = (providerId: string, mangaId: string): boolean =>
 export const getSyncedFavorites = async (userId?: string): Promise<FavoriteItem[]> => {
   if (!userId) return getFavorites();
   try {
-    const res = await fetch(`${BASE}/api/auth/favorites?userId=${encodeURIComponent(userId)}`);
+    const res = await fetch(`${BASE}/api/auth/favorites?userId=${encodeURIComponent(userId)}`, { headers: { ...authHeaders() } });
     if (!res.ok) return getFavorites();
     const items = await res.json() as FavoriteItem[];
     localStorage.setItem(FAVORITES_KEY, JSON.stringify(items));
@@ -58,7 +60,7 @@ export const toggleFavorite = (
   if (userId) {
     fetch(`${BASE}/api/auth/favorites/sync`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ userId, favorites: next })
     }).catch(err => console.error("Error syncing favorites:", err));
   }
