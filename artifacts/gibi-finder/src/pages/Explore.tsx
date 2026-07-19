@@ -64,7 +64,7 @@ const HQ_PROVIDER_IDS = ["comicextra", "jon-domingues", "batcave", "multiverso-h
 const GIBI_PROVIDER_IDS = ["biblioteca-br"];
 // Brazilian-gibi title hints — keep Turma da Mônica / Disney out of the HQ tab
 // even when the crawl mistagged the item's genre as "HQ".
-const GIBI_TITLE_HINTS = ["monica", "cebolinha", "magali", "cascao", "cascão", "chico bento", "almanaque", "tmj", "turma da", "penadinho", "pelezinho", "ronaldinho", "menino maluquinho", "disney", "mickey", "pato donald", "tio patinhas", "luluzinha", "recruta zero", "senninha", "piteco", "horacio", "bidu"];
+const GIBI_TITLE_HINTS = ["monica", "mônica", "cebolinha", "magali", "cascao", "cascão", "chico bento", "almanaque", "almanacão", "tmj", "turma da", "turma do", "penadinho", "pelezinho", "ronaldinho", "menino maluquinho", "disney", "mickey", "pato donald", "tio patinhas", "luluzinha", "recruta zero", "senninha", "piteco", "horacio", "bidu", "ze carioca", "zé carioca", "pateta", "sitio do picapau", "sítio do picapau", "picapau", "pica-pau", "narizinho", "xaveco", "franjinha", "do bidu", "chico bento moço", "mundo de tio patinhas"];
 const typeOf = (item: UnifiedCatalogItem): "manga" | "hq" | "gibi" => {
   const provs = (item.sources || []).map(s => s.providerId);
   const genres = (item.genres || []).map(g => g.toLowerCase());
