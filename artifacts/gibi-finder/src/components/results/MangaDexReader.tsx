@@ -176,14 +176,21 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     };
   }, [showReader, immersion]);
 
-  // Immersion (level 3): native fullscreen on desktop + block drag / context menu.
-  useEffect(() => {
-    if (!showReader || immersion !== "immersion") return;
+  // Native fullscreen must be triggered by a real user gesture — the browser
+  // blocks requestFullscreen() called from an effect. So this is invoked from the
+  // gesture paths (I / F shortcuts, panel selection), never from the effect below.
+  const requestReaderFullscreen = useCallback(() => {
     const el = readerRef.current;
     const coarse = typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
     if (!coarse && el?.requestFullscreen && !document.fullscreenElement) {
       el.requestFullscreen().catch(() => { /* ignore */ });
     }
+  }, []);
+
+  // Immersion (level 3): block image drag / context menu; exit fullscreen on leave.
+  useEffect(() => {
+    if (!showReader || immersion !== "immersion") return;
+    const el = readerRef.current;
     const stopDrag = (e: Event) => e.preventDefault();
     const stopCtx = (e: Event) => { if (settings.blockContextMenu) e.preventDefault(); };
     el?.addEventListener("dragstart", stopDrag);
@@ -936,10 +943,13 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
           e.preventDefault();
           updateSettings({ immersion: immersion === "cinema" ? "clean" : "cinema" }, workId ? "work" : "global");
           break;
-        case "i": case "I":
+        case "i": case "I": {
           e.preventDefault();
-          updateSettings({ immersion: immersion === "immersion" ? "clean" : "immersion" }, workId ? "work" : "global");
+          const enabling = immersion !== "immersion";
+          updateSettings({ immersion: enabling ? "immersion" : "clean" }, workId ? "work" : "global");
+          if (enabling) requestReaderFullscreen(); // real user gesture
           break;
+        }
         case "f": case "F": {
           e.preventDefault();
           const el = readerRef.current;
@@ -953,7 +963,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [showReader, pages.length, readerMode, goToNextPage, goToPrevPage, rtl, immersion, workId, updateSettings]);
+  }, [showReader, pages.length, readerMode, goToNextPage, goToPrevPage, rtl, immersion, workId, updateSettings, requestReaderFullscreen]);
 
   // Jump to a page from the bottom scrubber.
   const goToPage = useCallback((idx: number) => {
@@ -1891,6 +1901,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
             workTitle={selectedResult?.title || mangaTitle}
             readingMode={readerMode}
             onSetReadingMode={setReaderMode}
+            onEnterImmersion={requestReaderFullscreen}
           />
 
           {/* Engineering diagnostics (Ctrl+Shift+D) */}

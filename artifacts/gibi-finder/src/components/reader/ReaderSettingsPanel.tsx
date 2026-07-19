@@ -11,6 +11,9 @@ interface ReaderSettingsPanelProps {
   /** Reading mode is owned by the reader (also drives resume); panel just reflects it. */
   readingMode: "scroll" | "page";
   onSetReadingMode: (mode: "scroll" | "page") => void;
+  /** Called (from the click gesture) when the user selects the Immersion level,
+   *  so the reader can request native fullscreen while still in a user gesture. */
+  onEnterImmersion?: () => void;
 }
 
 /* ---- tiny presentational controls (reader-dark themed) ---- */
@@ -76,7 +79,7 @@ function Toggle({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean
 }
 
 export function ReaderSettingsPanel({
-  open, onClose, workId, workTitle, readingMode, onSetReadingMode,
+  open, onClose, workId, workTitle, readingMode, onSetReadingMode, onEnterImmersion,
 }: ReaderSettingsPanelProps) {
   const { settings, update, clearWork, hasWorkOverride } = useReaderSettings(workId);
   // Which layer edits target: global defaults or just this work.
@@ -216,7 +219,7 @@ export function ReaderSettingsPanel({
             <Row label="Nível">
               <Segmented
                 value={settings.immersion}
-                onChange={(v) => set("immersion", v)}
+                onChange={(v) => { set("immersion", v); if (v === "immersion") onEnterImmersion?.(); }}
                 options={[
                   { label: "Limpa", value: "clean" },
                   { label: "Cinema", value: "cinema" },
