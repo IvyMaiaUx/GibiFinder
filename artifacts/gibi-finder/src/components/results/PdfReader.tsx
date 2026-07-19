@@ -64,6 +64,9 @@ export function PdfReader({
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
+  // Actual rendered height per page, so a page that scrolls out of the mount
+  // window is replaced by a spacer of its REAL height (no scroll jump).
+  const pageHeights = useRef<number[]>([]);
   const resumingRef = useRef(initialPage > 0);
   const didResumeRef = useRef(false);
 
@@ -430,11 +433,12 @@ export function PdfReader({
                           {active ? (
                             <>
                               <Page pageNumber={idx + 1} {...pageProps} renderTextLayer={false} renderAnnotationLayer={false}
-                                loading={<div style={{ height: placeholderH, width: fitHeight ? undefined : pageWidth }} className="flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>} />
+                                onRenderSuccess={() => { const el = pageRefs.current[idx]; if (el && zoom === 1) pageHeights.current[idx] = el.offsetHeight; }}
+                                loading={<div style={{ height: pageHeights.current[idx] || placeholderH, width: fitHeight ? undefined : pageWidth }} className="flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>} />
                               {settings.showPageNumber && <div className="absolute bottom-2 right-2 bg-black/60 text-white font-sans text-xs px-2 py-1 rounded">{idx + 1}</div>}
                             </>
                           ) : (
-                            <div style={{ height: placeholderH, width: fitHeight ? pageWidth * 0.7 : pageWidth }} className="flex items-center justify-center font-display text-2xl">{idx + 1}</div>
+                            <div style={{ height: pageHeights.current[idx] || placeholderH, width: fitHeight ? pageWidth * 0.7 : pageWidth }} className="flex items-center justify-center font-display text-2xl">{idx + 1}</div>
                           )}
                         </div>
                       );
