@@ -11,7 +11,7 @@ import { useSyncExternalStore, useCallback } from "react";
  */
 export type ReadingMode = "scroll" | "page" | "double" | "webtoon";
 export type ReadingDirection = "ltr" | "rtl";
-export type FitMode = "width" | "height" | "auto";
+export type FitMode = "width" | "height" | "whole" | "auto";
 export type DoublePageMode = "never" | "always" | "auto";
 export type ImageQuality = "auto" | "high" | "original";
 export type ReaderTheme = "dark" | "amoled" | "light";

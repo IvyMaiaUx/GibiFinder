@@ -159,8 +159,9 @@ export function ReaderSettingsPanel({
                 onChange={(v) => set("fitMode", v)}
                 options={[
                   { label: "Largura", value: "width" },
-                  { label: "Altura", value: "height", disabled: true },
-                  { label: "Auto", value: "auto", disabled: true },
+                  { label: "Altura", value: "height" },
+                  { label: "Inteira", value: "whole" },
+                  { label: "Auto", value: "auto" },
                 ]}
               />
             </Row>
@@ -223,7 +224,7 @@ export function ReaderSettingsPanel({
           </Section>
 
           <p className="pt-4 text-3xs text-white/30 font-sans flex items-center gap-1.5">
-            <Sparkles className="w-3 h-3" /> Webtoon, ajuste altura/auto e temas chegam nas próximas atualizações.
+            <Sparkles className="w-3 h-3" /> Modo Webtoon e temas do leitor chegam nas próximas atualizações.
           </p>
         </div>
       </div>

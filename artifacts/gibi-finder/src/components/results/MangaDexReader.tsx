@@ -706,6 +706,22 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   const currentGroup = spreads ? (spreads.find(g => g.includes(currentPage)) ?? [currentPage]) : null;
   const rtl = settings.direction === "rtl";
 
+  // ---- Auto-fit (page mode) ----
+  // Phones always fit width (no horizontal bars); larger screens respect the
+  // setting. "auto" fits whole for landscape/spreads, width for portrait/tall.
+  const fitFor = (idx: number): "width" | "height" | "whole" => {
+    if (!isLargeScreen) return "width";
+    if (settings.fitMode !== "auto") return settings.fitMode;
+    const a = pageAspectRef.current[idx] ?? 0.68;
+    return a > 1.15 ? "whole" : "width";
+  };
+  const fitClass = (fit: "width" | "height" | "whole") =>
+    fit === "width"
+      ? "w-full h-auto"
+      : fit === "height"
+        ? "h-[90dvh] w-auto max-w-full object-contain"
+        : "max-h-[90dvh] max-w-full object-contain"; // whole page
+
   // Keep the current page aligned to the start of its spread so the scrubber and
   // navigation stay consistent when double-page turns on or regroups.
   useEffect(() => {
@@ -1533,7 +1549,12 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               /* Page by Page Mode (single or smart double-page) */
               <div className={cn("w-full h-full flex flex-col justify-between items-center gap-4", doubleActive ? "max-w-6xl" : "max-w-xl")}>
                 <div
-                  className="flex-1 flex items-center justify-center w-full gap-0.5 relative group cursor-pointer"
+                  className={cn(
+                    "flex-1 flex justify-center w-full gap-0.5 relative group cursor-pointer",
+                    // Width-fit tall pages align to the top so they scroll cleanly;
+                    // height/whole fits are centred in the viewport.
+                    !doubleActive && fitFor(currentPage) === "width" ? "items-start" : "items-center",
+                  )}
                   onClick={(e) => {
                     // Three tap zones. Physical side → logical page depends on the
                     // reading direction: LTR left = previous / RTL left = next.
@@ -1571,8 +1592,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                       src={pages[pi]?.url}
                       alt={`Página ${pages[pi]?.pageNumber}`}
                       className={cn(
-                        "object-contain border-4 border-white/20 select-none pointer-events-none",
-                        doubleActive && currentGroup && currentGroup.length === 2 ? "max-h-[85vh] max-w-[50%]" : "max-h-[85vh] max-w-full",
+                        "border-4 border-white/20 select-none pointer-events-none",
+                        doubleActive && currentGroup && currentGroup.length === 2
+                          ? "max-h-[88vh] max-w-[50%] object-contain" // double: keep proportion, no stretch
+                          : fitClass(fitFor(pi)),
                       )}
                       style={{ zoom }}
                       onLoad={(e) => recordAspect(pi, e.currentTarget as HTMLImageElement)}
