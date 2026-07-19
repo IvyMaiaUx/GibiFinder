@@ -54154,6 +54154,20 @@ router2.delete("/auth/history/completed", async (req, res) => {
   }
   res.json({ success: true });
 });
+async function fetchAllRows(table, columns) {
+  if (!supabase) return [];
+  const rows = [];
+  const page = 1e3;
+  let from = 0;
+  for (let i = 0; i < 50; i++) {
+    const { data, error } = await supabase.from(table).select(columns).range(from, from + page - 1);
+    if (error || !data || data.length === 0) break;
+    rows.push(...data);
+    if (data.length < page) break;
+    from += page;
+  }
+  return rows;
+}
 router2.get("/admin/users", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   if (!supabase) {
@@ -54161,12 +54175,40 @@ router2.get("/admin/users", async (req, res) => {
     return;
   }
   try {
-    const { data, error } = await supabase.from("user_profiles").select("id, username, email, created_at").order("created_at", { ascending: false });
+    const { data: users, error } = await supabase.from("user_profiles").select("id, username, email, created_at").order("created_at", { ascending: false });
     if (error) {
       res.status(500).json({ error: "db_error" });
       return;
     }
-    res.json({ items: data, total: data.length });
+    const readByUser = {};
+    const favByUser = {};
+    const lastReadByUser = {};
+    try {
+      const history = await fetchAllRows("user_reading_history", "user_id, item_id, timestamp");
+      for (const h of history) {
+        if (!h?.user_id) continue;
+        (readByUser[h.user_id] ??= /* @__PURE__ */ new Set()).add(String(h.item_id));
+        const ts = Number(h.timestamp) || 0;
+        if (ts > (lastReadByUser[h.user_id] || 0)) lastReadByUser[h.user_id] = ts;
+      }
+    } catch (e) {
+      req.log.warn({ err: e }, "reading history aggregate failed");
+    }
+    try {
+      const favs = await fetchAllRows("user_favorites", "user_id");
+      for (const f of favs) {
+        if (f?.user_id) favByUser[f.user_id] = (favByUser[f.user_id] || 0) + 1;
+      }
+    } catch (e) {
+      req.log.warn({ err: e }, "favorites aggregate failed");
+    }
+    const items = (users || []).map((u) => ({
+      ...u,
+      readCount: readByUser[u.id]?.size || 0,
+      favCount: favByUser[u.id] || 0,
+      lastReadAt: lastReadByUser[u.id] ? new Date(lastReadByUser[u.id]).toISOString() : null
+    }));
+    res.json({ items, total: items.length });
   } catch (err) {
     req.log.error({ err }, "handler failed");
     res.status(500).json({ error: "server_error" });

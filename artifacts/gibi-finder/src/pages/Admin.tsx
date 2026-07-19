@@ -643,7 +643,7 @@ export default function Admin() {
     queryKey: ["admin-users", adminKey],
     queryFn: () => adminRequest("/api/admin/users", adminKey),
     enabled: unlocked,
-    select: (d: { items: { id: string; username: string; email?: string; created_at: string }[]; total: number }) => d,
+    select: (d: { items: { id: string; username: string; email?: string; created_at: string; readCount?: number; favCount?: number; lastReadAt?: string | null }[]; total: number }) => d,
   });
 
   const { data: catalogData, isLoading: loadingCatalog } = useQuery({
@@ -1133,34 +1133,38 @@ export default function Admin() {
           ) : (
             <div className="bg-white border-4 border-black p-6 comic-shadow animate-in fade-in duration-200">
               <div className="overflow-x-auto">
-                <table className="w-full text-left font-sans select-none border-collapse">
+                <table className="w-full text-left font-sans select-none border-collapse min-w-[640px]">
                   <thead>
                     <tr className="border-b-4 border-black text-xs font-display uppercase tracking-wider text-gray-500">
                       <th className="pb-3 pr-4">Nome de Usuário</th>
+                      <th className="pb-3 pr-4 text-center">Títulos lidos</th>
+                      <th className="pb-3 pr-4 text-center">Favoritos</th>
                       <th className="pb-3 pr-4">E-mail</th>
-                      <th className="pb-3 pr-4 text-right">Data de Cadastro</th>
+                      <th className="pb-3 pr-4 text-right">Última leitura</th>
+                      <th className="pb-3 pr-4 text-right">Cadastro</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y-2 divide-dashed divide-gray-200">
-                    {usersData.items.map((user: any) => (
+                    {[...usersData.items].sort((a: any, b: any) => (b.readCount || 0) - (a.readCount || 0)).map((user: any) => (
                       <tr key={user.id} className="text-black font-bold text-sm">
-                        <td className="py-4 pr-4 flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-secondary border-2 border-black flex items-center justify-center">
-                            <span className="font-display text-sm leading-none">{user.username.charAt(0).toUpperCase()}</span>
+                        <td className="py-4 pr-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-secondary border-2 border-black flex items-center justify-center shrink-0">
+                              <span className="font-display text-sm leading-none">{user.username.charAt(0).toUpperCase()}</span>
+                            </div>
+                            <span className="font-sans text-base">{user.username}</span>
                           </div>
-                          <span className="font-sans text-base">{user.username}</span>
                         </td>
-                        <td className="py-4 pr-4 font-medium text-gray-600">
-                          {user.email || "Não informado"}
+                        <td className="py-4 pr-4 text-center">
+                          <span className="inline-block font-display text-lg border-2 border-black bg-secondary px-2.5 py-0.5">{user.readCount ?? 0}</span>
+                        </td>
+                        <td className="py-4 pr-4 text-center font-display text-lg text-gray-700">{user.favCount ?? 0}</td>
+                        <td className="py-4 pr-4 font-medium text-gray-600">{user.email || "Não informado"}</td>
+                        <td className="py-4 pr-4 text-right font-medium text-gray-500">
+                          {user.lastReadAt ? new Date(user.lastReadAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—"}
                         </td>
                         <td className="py-4 pr-4 text-right font-medium text-gray-500">
-                          {new Date(user.created_at).toLocaleDateString("pt-BR", {
-                            day: "2-digit",
-                            month: "2-digit",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit"
-                          })}
+                          {new Date(user.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })}
                         </td>
                       </tr>
                     ))}

@@ -1699,17 +1699,60 @@ router.delete("/auth/history/completed", async (req: Request, res: Response) => 
 });
 
 // GET /api/admin/users - list registered users (admin only)
+// Fetch every row of a table in 1000-row pages (Supabase caps a single select at
+// ~1000 rows), so per-user aggregates are complete even for large histories.
+async function fetchAllRows(table: string, columns: string): Promise<any[]> {
+  if (!supabase) return [];
+  const rows: any[] = [];
+  const page = 1000;
+  let from = 0;
+  // Bounded loop so a huge table can't spin forever within the request budget.
+  for (let i = 0; i < 50; i++) {
+    const { data, error } = await supabase.from(table).select(columns).range(from, from + page - 1);
+    if (error || !data || data.length === 0) break;
+    rows.push(...data);
+    if (data.length < page) break;
+    from += page;
+  }
+  return rows;
+}
+
 router.get("/admin/users", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
   try {
-    const { data, error } = await supabase
+    const { data: users, error } = await supabase
       .from("user_profiles")
       .select("id, username, email, created_at")
       .order("created_at", { ascending: false });
-    
     if (error) { res.status(500).json({ error: "db_error" }); return; }
-    res.json({ items: data, total: data.length });
+
+    // Aggregate reading + favorites per user from the existing tables. Degrade
+    // gracefully (counts = 0) if a table is missing.
+    const readByUser: Record<string, Set<string>> = {};
+    const favByUser: Record<string, number> = {};
+    const lastReadByUser: Record<string, number> = {};
+    try {
+      const history = await fetchAllRows("user_reading_history", "user_id, item_id, timestamp");
+      for (const h of history) {
+        if (!h?.user_id) continue;
+        (readByUser[h.user_id] ??= new Set()).add(String(h.item_id));
+        const ts = Number(h.timestamp) || 0;
+        if (ts > (lastReadByUser[h.user_id] || 0)) lastReadByUser[h.user_id] = ts;
+      }
+    } catch (e) { req.log.warn({ err: e }, "reading history aggregate failed"); }
+    try {
+      const favs = await fetchAllRows("user_favorites", "user_id");
+      for (const f of favs) { if (f?.user_id) favByUser[f.user_id] = (favByUser[f.user_id] || 0) + 1; }
+    } catch (e) { req.log.warn({ err: e }, "favorites aggregate failed"); }
+
+    const items = (users || []).map(u => ({
+      ...u,
+      readCount: readByUser[u.id]?.size || 0,
+      favCount: favByUser[u.id] || 0,
+      lastReadAt: lastReadByUser[u.id] ? new Date(lastReadByUser[u.id]).toISOString() : null,
+    }));
+    res.json({ items, total: items.length });
   } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
 });
 
