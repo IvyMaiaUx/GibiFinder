@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { Layout } from "@/components/layout/Layout";
-import { Lock, User, Check, Loader2, LogOut, ArrowRight, UserPlus, ShieldAlert } from "lucide-react";
+import { Lock, User, Check, Loader2, LogOut, ArrowRight, UserPlus } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
 export default function Login() {

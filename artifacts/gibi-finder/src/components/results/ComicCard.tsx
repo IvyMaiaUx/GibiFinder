@@ -1,6 +1,5 @@
 import { Link } from "wouter";
 import { ExternalLink, Star } from "lucide-react";
-import type { ComicResult } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 

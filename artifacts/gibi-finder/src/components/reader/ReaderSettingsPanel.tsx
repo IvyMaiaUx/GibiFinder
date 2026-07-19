@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Check, RotateCcw, Sparkles } from "lucide-react";
+import { X, RotateCcw, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useReaderSettings, type ReaderSettings, type ReadingMode } from "./useReaderSettings";
 

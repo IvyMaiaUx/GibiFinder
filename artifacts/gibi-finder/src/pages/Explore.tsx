@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Layout } from "@/components/layout/Layout";
-import { Loader2, AlertCircle, Compass, Star, ChevronLeft, ChevronRight, Play, BookOpen, CheckCircle2, Sparkles } from "lucide-react";
+import { Loader2, AlertCircle, Compass, Star, ChevronLeft, ChevronRight, Play, BookOpen, CheckCircle2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
@@ -68,6 +68,19 @@ const typeOf = (item: UnifiedCatalogItem): "manga" | "hq" | "gibi" => {
     return genres.includes("hq") ? "hq" : "gibi";
   }
   if (provs.some(p => HQ_PROVIDER_IDS.includes(p))) return "hq";
+  return "manga";
+};
+
+// "Continue lendo" items come from local progress and carry no genres, so we
+// classify them by provider + a Brazilian-gibi title hint (keeps Turma da Mônica
+// out of the HQ tab).
+const GIBI_TITLE_HINTS = ["monica", "cebolinha", "magali", "cascao", "cascão", "chico bento", "almanaque", "tmj", "turma da", "penadinho", "pelezinho", "ronaldinho", "menino maluquinho", "disney", "mickey", "pato donald", "tio patinhas"];
+const typeOfContinue = (item: { providerId: string; title?: string }): "manga" | "hq" | "gibi" => {
+  if (GIBI_PROVIDER_IDS.includes(item.providerId)) {
+    const t = (item.title || "").toLowerCase();
+    return GIBI_TITLE_HINTS.some(k => t.includes(k)) ? "gibi" : "hq";
+  }
+  if (HQ_PROVIDER_IDS.includes(item.providerId)) return "hq";
   return "manga";
 };
 
@@ -556,7 +569,10 @@ export default function Explore() {
           <div className="space-y-8">
             {/* Continue reading (+18 items only in +18 mode) */}
             {(() => {
-              const visibleContinue = continueItems.filter(i => ADULT_PROVIDERS.includes(i.providerId) === isNsfw);
+              const visibleContinue = continueItems.filter(i =>
+                ADULT_PROVIDERS.includes(i.providerId) === isNsfw &&
+                (typeFilter === "all" || typeOfContinue(i) === typeFilter),
+              );
               if (visibleContinue.length === 0) return null;
               return (
                 <Row title="▶ Continue lendo">

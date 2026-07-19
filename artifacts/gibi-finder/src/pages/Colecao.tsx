@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
-import { BookOpen, Trash2, Compass, Clock, BookOpenCheck, Star, CheckCircle2 } from "lucide-react";
+import { BookOpen, Trash2, Clock, BookOpenCheck, Star, CheckCircle2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn, isAdultProviderId } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";

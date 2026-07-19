@@ -33,8 +33,6 @@ interface UnifiedSearchResult {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 export const LAST_ONLINE_SEARCH_KEY = "gibi-finder:last-online-search";
-const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erotico", "erotica", "adulto", "adult"];
-const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai"];
 
 const PUBLISHER_FILTERS = [
   { id: "all", label: "Todas" },
