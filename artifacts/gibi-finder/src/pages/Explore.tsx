@@ -30,6 +30,9 @@ interface RowData {
   key: string;
   title: string;
   items: UnifiedCatalogItem[];
+  /** Overrides what "Ver tudo" opens (defaults to the title as a franchise). */
+  seeAllTerm?: string;
+  seeAllKind?: "genre" | "franchise";
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -283,6 +286,24 @@ export default function Explore() {
     setCuratedRows([]);
     setCuratedLoading(true);
 
+    // Lead with a "Todos os HQs / Gibis" row (the whole curated library of this
+    // type), whose "Ver tudo" opens the full paginated set.
+    const allTag = typeFilter === "hq" ? "HQ" : "Gibi Nacional";
+    const allTitle = typeFilter === "hq" ? "📚 Todos os HQs" : "📚 Todos os Gibis";
+    fetch(`${BASE}/api/providers/by-genre?genre=${encodeURIComponent(allTag)}&nsfw=${isNsfw}`)
+      .then(r => (r.ok ? r.json() : []))
+      .then((items: UnifiedCatalogItem[]) => {
+        if (cancelled) return;
+        const list = (Array.isArray(items) ? items : []).filter(i => typeOf(i) === typeFilter);
+        if (list.length > 0) {
+          setCuratedRows(prev => [
+            { key: "all", title: allTitle, items: list.slice(0, 20), seeAllTerm: allTag, seeAllKind: "genre" },
+            ...prev.filter(r => r.key !== "all"),
+          ]);
+        }
+      })
+      .catch(() => { /* ignore */ });
+
     // Max speed: scope the row searches to the curated Drive library only, which
     // is fully cached (Supabase + memory) — so each search returns in ~1s and all
     // rows load in parallel. (Batcave/Jon Domingues HQs stay findable via search.)
@@ -321,8 +342,8 @@ export default function Explore() {
     setViewAllPage(1);
     setViewAllLoading(true);
     const endpoint = viewAllKind === "franchise"
-      // Scope franchise "Ver tudo" to the cached Drive library for instant results.
-      ? `${BASE}/api/providers/search?query=${encodeURIComponent(viewAllGenre)}&nsfw=${isNsfw}&providers=${encodeURIComponent(GIBI_PROVIDER_IDS.join(","))}`
+      // "Ver tudo" queries ALL providers for completeness (rows stay scoped/fast).
+      ? `${BASE}/api/providers/search?query=${encodeURIComponent(viewAllGenre)}&nsfw=${isNsfw}`
       : `${BASE}/api/providers/by-genre?genre=${encodeURIComponent(viewAllGenre)}&nsfw=${isNsfw}`;
     fetch(endpoint)
       .then(r => (r.ok ? r.json() : []))
@@ -610,7 +631,7 @@ export default function Explore() {
               </div>
             )}
             {curatedRows.map(row => (
-              <Row key={row.key} title={row.title} onSeeAll={() => openViewAll(row.title, "franchise")}>
+              <Row key={row.key} title={row.title} onSeeAll={() => openViewAll(row.seeAllTerm ?? row.title, row.seeAllKind ?? "franchise")}>
                 {row.items.map(item => {
                   const src = item.sources?.[0];
                   return (
