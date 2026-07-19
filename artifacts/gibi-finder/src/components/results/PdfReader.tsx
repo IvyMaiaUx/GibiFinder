@@ -55,6 +55,7 @@ export function PdfReader({
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [readerMode, setReaderMode] = useState<"page" | "scroll">(initialMode);
   const [pageWidth, setPageWidth] = useState(700);
+  const [pageHeight, setPageHeight] = useState(0);
   const [loadError, setLoadError] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false); // true = chrome hidden
   const [showSettings, setShowSettings] = useState(false);
@@ -155,16 +156,30 @@ export function PdfReader({
     return () => { clearTimeout(t); el?.removeEventListener("pointermove", ping); el?.removeEventListener("pointerdown", ping); };
   }, [immersion]);
 
-  // Fit page width to the container.
+  // Fit the page to the container (width & height). Full-bleed in immersion so
+  // the page uses the whole screen; re-measured on resize + fullscreen change.
   useEffect(() => {
     const measure = () => {
-      const w = scrollRef.current?.clientWidth ?? 700;
-      setPageWidth(Math.min(Math.max(w - 24, 280), 1000));
+      const el = scrollRef.current;
+      const w = el?.clientWidth ?? 700;
+      const h = el?.clientHeight ?? 900;
+      const pad = immersion !== "clean" ? 0 : 24;
+      setPageWidth(Math.min(Math.max(w - pad, 260), 1400));
+      setPageHeight(Math.max(h - pad, 300));
     };
     measure();
     window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [numPages]);
+    document.addEventListener("fullscreenchange", measure);
+    document.addEventListener("webkitfullscreenchange", measure);
+    // Re-measure shortly after entering immersion (layout settles after the bar hides).
+    const t = setTimeout(measure, 120);
+    return () => {
+      window.removeEventListener("resize", measure);
+      document.removeEventListener("fullscreenchange", measure);
+      document.removeEventListener("webkitfullscreenchange", measure);
+      clearTimeout(t);
+    };
+  }, [numPages, immersion, isFullscreen]);
 
   const handleClose = () => { exitReaderFullscreen(); onClose(); };
   const toggleChrome = useCallback(() => setIsFullscreen(prev => !prev), []);
@@ -307,6 +322,13 @@ export function PdfReader({
   const previewFallback = drivePreviewUrl(rawUrl);
   const pct = numPages > 0 ? ((currentPage + 1) / numPages) * 100 : 0;
 
+  // Fit mode: "height" fills the screen vertically (great in immersion); anything
+  // else fits width. pdf.js takes either a width OR a height.
+  const fitHeight = settings.fitMode === "height";
+  const pageProps = fitHeight ? { height: pageHeight } : { width: pageWidth };
+  const placeholderH = fitHeight ? pageHeight : Math.round(pageWidth * 1.4);
+  const bodyPad = immersion !== "clean" ? "p-0" : "p-3 sm:p-4";
+
   // Themed chrome styles.
   const barStyle: CSSProperties = {
     background: "var(--rd-surface)",
@@ -367,8 +389,8 @@ export function PdfReader({
       {/* Body */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto overscroll-contain flex justify-center p-3 sm:p-4"
-        onClick={readerMode === "scroll" ? toggleChrome : undefined}
+        className={`flex-1 overflow-auto overscroll-contain flex ${zoom > 1 ? "justify-start" : "justify-center"} ${bodyPad}`}
+        onClick={readerMode === "scroll" && zoom === 1 ? toggleChrome : undefined}
       >
         {loadError ? (
           <div className="max-w-lg w-full bg-white border-4 border-black p-8 text-center text-black rounded-xl comic-shadow self-center">
@@ -384,7 +406,7 @@ export function PdfReader({
             )}
           </div>
         ) : (
-          <div style={{ transform: `scale(${zoom})`, transformOrigin: "top center", width: pageWidth, maxWidth: "100%" }}>
+          <div style={{ zoom }}>
             <Document
               file={fileUrl}
               onLoadSuccess={({ numPages: n }) => setNumPages(n)}
@@ -400,19 +422,19 @@ export function PdfReader({
             >
               {numPages > 0 && (
                 readerMode === "scroll" ? (
-                  <div className="w-full flex flex-col items-center" style={{ gap: settings.pageGap }}>
+                  <div className="flex flex-col items-center" style={{ gap: settings.pageGap }}>
                     {Array.from({ length: numPages }).map((_, idx) => {
                       const active = Math.abs(idx - currentPage) <= (settings.memorySaver ? 2 : 4);
                       return (
-                        <div key={idx} ref={(el) => { pageRefs.current[idx] = el; }} className="relative bg-white w-full" style={{ boxShadow: "var(--rd-shadow)" }}>
+                        <div key={idx} ref={(el) => { pageRefs.current[idx] = el; }} className="relative bg-white" style={{ boxShadow: "var(--rd-shadow)" }}>
                           {active ? (
                             <>
-                              <Page pageNumber={idx + 1} width={pageWidth} renderTextLayer={false} renderAnnotationLayer={false}
-                                loading={<div style={{ height: pageWidth * 1.4 }} className="flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>} />
+                              <Page pageNumber={idx + 1} {...pageProps} renderTextLayer={false} renderAnnotationLayer={false}
+                                loading={<div style={{ height: placeholderH, width: fitHeight ? undefined : pageWidth }} className="flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>} />
                               {settings.showPageNumber && <div className="absolute bottom-2 right-2 bg-black/60 text-white font-sans text-xs px-2 py-1 rounded">{idx + 1}</div>}
                             </>
                           ) : (
-                            <div style={{ height: pageWidth * 1.4 }} className="flex items-center justify-center font-display text-2xl" >{idx + 1}</div>
+                            <div style={{ height: placeholderH, width: fitHeight ? pageWidth * 0.7 : pageWidth }} className="flex items-center justify-center font-display text-2xl">{idx + 1}</div>
                           )}
                         </div>
                       );
@@ -421,7 +443,7 @@ export function PdfReader({
                 ) : (
                   <div className="relative flex flex-col items-center">
                     <div className="bg-white" style={{ boxShadow: "var(--rd-shadow)" }}>
-                      <Page pageNumber={currentPage + 1} width={pageWidth} renderTextLayer={false} renderAnnotationLayer={false} />
+                      <Page pageNumber={currentPage + 1} {...pageProps} renderTextLayer={false} renderAnnotationLayer={false} />
                     </div>
                     {/* Tap zones (page mode) */}
                     <div className="absolute inset-0 flex" onClick={e => e.stopPropagation()}>
