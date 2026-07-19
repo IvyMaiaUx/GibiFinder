@@ -97,6 +97,7 @@ export function AdminShell({ active, onNavigate, onExit, badges = {}, title, sub
         <button onClick={onExit} className="w-full flex items-center gap-3 px-3 py-2 border-4 border-transparent hover:border-black font-display text-base text-gray-500 hover:text-primary transition-all">
           <LogOut className="w-4 h-4" strokeWidth={2.5} /> Sair
         </button>
+        <p className="text-2xs font-bold text-gray-300 px-3 pt-1 select-text">build {__BUILD_ID__}</p>
       </div>
     </div>
   );

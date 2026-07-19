@@ -10,6 +10,10 @@ const basePath = process.env.BASE_PATH ?? "/";
 
 export default defineConfig({
   base: basePath,
+  // Build identifier shown in the Admin so we can confirm which deploy is live.
+  define: {
+    __BUILD_ID__: JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7) || `dev-${new Date().toISOString().slice(11, 16)}`),
+  },
   plugins: [
     react(),
     tailwindcss(),
