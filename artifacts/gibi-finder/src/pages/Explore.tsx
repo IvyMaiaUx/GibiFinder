@@ -62,12 +62,17 @@ const MIN_ROW_ITEMS = 4;
 
 const HQ_PROVIDER_IDS = ["comicextra", "jon-domingues", "batcave", "multiverso-hq", "mega-hq", "hq-desejo"];
 const GIBI_PROVIDER_IDS = ["biblioteca-br"];
+// Brazilian-gibi title hints — keep Turma da Mônica / Disney out of the HQ tab
+// even when the crawl mistagged the item's genre as "HQ".
+const GIBI_TITLE_HINTS = ["monica", "cebolinha", "magali", "cascao", "cascão", "chico bento", "almanaque", "tmj", "turma da", "penadinho", "pelezinho", "ronaldinho", "menino maluquinho", "disney", "mickey", "pato donald", "tio patinhas", "luluzinha", "recruta zero", "senninha", "piteco", "horacio", "bidu"];
 const typeOf = (item: UnifiedCatalogItem): "manga" | "hq" | "gibi" => {
   const provs = (item.sources || []).map(s => s.providerId);
   const genres = (item.genres || []).map(g => g.toLowerCase());
   if (provs.some(p => GIBI_PROVIDER_IDS.includes(p))) {
-    // biblioteca-br is a mixed library: HQ-tagged items (Marvel/DC/Star Wars) go
-    // to the HQ tab, the rest (Turma da Mônica etc.) stay in Gibi.
+    // biblioteca-br is a mixed library. A gibi title hint always wins (fixes
+    // Turma da Mônica mistagged as HQ); otherwise trust the crawl's genre tag.
+    const t = (item.title || "").toLowerCase();
+    if (GIBI_TITLE_HINTS.some(k => t.includes(k))) return "gibi";
     return genres.includes("hq") ? "hq" : "gibi";
   }
   if (provs.some(p => HQ_PROVIDER_IDS.includes(p))) return "hq";
@@ -75,9 +80,7 @@ const typeOf = (item: UnifiedCatalogItem): "manga" | "hq" | "gibi" => {
 };
 
 // "Continue lendo" items come from local progress and carry no genres, so we
-// classify them by provider + a Brazilian-gibi title hint (keeps Turma da Mônica
-// out of the HQ tab).
-const GIBI_TITLE_HINTS = ["monica", "cebolinha", "magali", "cascao", "cascão", "chico bento", "almanaque", "tmj", "turma da", "penadinho", "pelezinho", "ronaldinho", "menino maluquinho", "disney", "mickey", "pato donald", "tio patinhas"];
+// classify them by provider + the same Brazilian-gibi title hint.
 const typeOfContinue = (item: { providerId: string; title?: string }): "manga" | "hq" | "gibi" => {
   if (GIBI_PROVIDER_IDS.includes(item.providerId)) {
     const t = (item.title || "").toLowerCase();
@@ -203,7 +206,11 @@ export default function Explore() {
   const { user } = useAuth();
   const [popular, setPopular] = useState<UnifiedCatalogItem[]>([]);
   const [latest, setLatest] = useState<UnifiedCatalogItem[]>([]);
-  const [typeFilter, setTypeFilter] = useState<"all" | "manga" | "hq" | "gibi">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "manga" | "hq" | "gibi">(() => {
+    // Restore the tab when returning from a work detail ("Voltar para Explorar").
+    const t = new URLSearchParams(window.location.search).get("tab");
+    return (t === "hq" || t === "gibi" || t === "manga") ? t : "all";
+  });
   const [curatedRows, setCuratedRows] = useState<RowData[]>([]);
   const [curatedLoading, setCuratedLoading] = useState(false);
   const [viewAllGenre, setViewAllGenre] = useState<string | null>(null);
@@ -358,7 +365,7 @@ export default function Explore() {
   const openItem = (item: UnifiedCatalogItem) => {
     const src = item.sources?.[0];
     if (!src) return;
-    setLocation(`/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}`);
+    setLocation(`/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}&from=explore&tab=${typeFilter}`);
   };
 
   const handleToggleFav = (item: UnifiedCatalogItem, e: React.MouseEvent) => {
@@ -608,7 +615,7 @@ export default function Explore() {
                     <ContinueCard
                       key={`${item.providerId}-${item.mangaId}`}
                       item={item}
-                      onClick={() => setLocation(`/gibi/online?providerId=${item.providerId}&id=${encodeURIComponent(item.mangaId)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&resume=true`)}
+                      onClick={() => setLocation(`/gibi/online?providerId=${item.providerId}&id=${encodeURIComponent(item.mangaId)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&resume=true&from=explore&tab=${typeFilter}`)}
                     />
                   ))}
                 </Row>

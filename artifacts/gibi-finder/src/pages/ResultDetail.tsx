@@ -56,6 +56,10 @@ export default function ResultDetail() {
   const initialTitle = searchParams.get("title") || "";
   const initialCoverUrl = searchParams.get("coverUrl") || "";
   const initialDescription = searchParams.get("description") || "";
+  // Navigation origin: "explore" when the user came from the Explorar tabs (not
+  // from a search), so the back button returns there instead of a stale search.
+  const cameFromExplore = searchParams.get("from") === "explore";
+  const exploreTab = searchParams.get("tab") || "";
 
   const isOnlineResult = id === "online";
 
@@ -254,7 +258,15 @@ export default function ResultDetail() {
   return (
     <Layout>
       <div className="max-w-4xl mx-auto pb-16">
-        {isOnlineResult && savedSearchQuery !== null && (
+        {cameFromExplore ? (
+          <button
+            onClick={() => setLocation(exploreTab ? `/explorar?tab=${exploreTab}` : "/explorar")}
+            className="mb-6 inline-flex items-center gap-2 bg-white text-black font-display text-sm uppercase px-4 py-2.5 border-4 border-black rounded-lg comic-shadow-sm hover:bg-secondary transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" strokeWidth={3} />
+            Voltar para Explorar
+          </button>
+        ) : isOnlineResult && savedSearchQuery !== null && (
           <button
             onClick={() => setLocation("/?restore=1")}
             className="mb-6 inline-flex items-center gap-2 bg-white text-black font-display text-sm uppercase px-4 py-2.5 border-4 border-black rounded-lg comic-shadow-sm hover:bg-secondary transition-colors"

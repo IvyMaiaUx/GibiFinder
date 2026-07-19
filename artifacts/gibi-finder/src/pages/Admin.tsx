@@ -188,10 +188,12 @@ function itemType(item: any): "gibi" | "hq" | "manga" {
   const genres: string[] = (item?.genres || []).map((x: string) => (x || "").toLowerCase());
   const isBiblioteca = provs.includes("biblioteca-br");
   if (isBiblioteca) {
+    // A gibi title hint always wins (fixes Turma da Mônica mistagged as HQ).
+    const t = (item?.title || "").toLowerCase();
+    if (GIBI_TITLE_HINTS.some(k => t.includes(k))) return "gibi";
     if (genres.includes("hq")) return "hq";
     if (genres.some(g => g.includes("gibi") || g.includes("nacional"))) return "gibi";
-    const t = (item?.title || "").toLowerCase();
-    return GIBI_TITLE_HINTS.some(k => t.includes(k)) ? "gibi" : "hq";
+    return "hq";
   }
   if (provs.some(p => MANGA_PROVIDER_IDS.includes(p))) return "manga";
   return "hq";
