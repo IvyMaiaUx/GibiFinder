@@ -1,7 +1,18 @@
-import { useState } from "react";
-import { X, RotateCcw, Sparkles } from "lucide-react";
+import { useState, createContext, useContext } from "react";
+import { X, RotateCcw, Sparkles, Search, Save, Trash2, Monitor, Smartphone } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useReaderSettings, type ReaderSettings, type ReadingMode } from "./useReaderSettings";
+import {
+  useReaderSettings, BUILTIN_PROFILES, getCustomProfiles,
+  saveCustomProfile, deleteCustomProfile,
+  type ReaderSettings, type ReadingMode, type ReaderProfile,
+} from "./useReaderSettings";
+import { usePlatform } from "./usePlatform";
+
+// Search query + current platform, read by every Row so options filter/hide
+// consistently across the ONE settings system (no separate mobile panel).
+const PanelCtx = createContext<{ query: string; isDesktop: boolean; isMobile: boolean }>(
+  { query: "", isDesktop: true, isMobile: false },
+);
 
 interface ReaderSettingsPanelProps {
   open: boolean;
@@ -27,14 +38,27 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Row({ label, children, soon }: { label: string; children: React.ReactNode; soon?: boolean }) {
+function Row({ label, children, soon, platform, hint }: {
+  label: string; children: React.ReactNode; soon?: boolean;
+  platform?: "desktop" | "mobile"; hint?: string;
+}) {
+  const { query, isDesktop, isMobile } = useContext(PanelCtx);
+  // Only show where it makes sense (no separate mobile panel).
+  if (platform === "desktop" && !isDesktop) return null;
+  if (platform === "mobile" && !isMobile) return null;
+  if (query && !label.toLowerCase().includes(query) && !(hint || "").toLowerCase().includes(query)) return null;
   return (
-    <div className={cn("flex items-center justify-between gap-3", soon && "opacity-40")}>
-      <span className="font-sans text-sm text-white/80 flex items-center gap-1.5">
-        {label}
-        {soon && <span className="text-3xs uppercase bg-white/10 text-white/60 px-1.5 py-0.5 rounded">em breve</span>}
-      </span>
-      {children}
+    <div className={cn("flex items-start justify-between gap-3", soon && "opacity-40")}>
+      <div className="min-w-0">
+        <span className="font-sans text-sm text-white/85 flex items-center gap-1.5">
+          {label}
+          {platform === "desktop" && <Monitor className="w-3 h-3 text-white/40" />}
+          {platform === "mobile" && <Smartphone className="w-3 h-3 text-white/40" />}
+          {soon && <span className="text-3xs uppercase bg-white/10 text-white/60 px-1.5 py-0.5 rounded">em breve</span>}
+        </span>
+        {hint && <span className="block text-2xs text-white/35 mt-0.5 leading-tight">{hint}</span>}
+      </div>
+      <div className="shrink-0 pt-0.5">{children}</div>
     </div>
   );
 }
@@ -82,26 +106,78 @@ export function ReaderSettingsPanel({
   open, onClose, workId, workTitle, readingMode, onSetReadingMode, onEnterImmersion,
 }: ReaderSettingsPanelProps) {
   const { settings, update, clearWork, hasWorkOverride } = useReaderSettings(workId);
+  const platform = usePlatform();
+  const [query, setQuery] = useState("");
+  const [profileTick, setProfileTick] = useState(0);
   // Which layer edits target: global defaults or just this work.
   const [scope, setScope] = useState<"global" | "work">(hasWorkOverride ? "work" : "global");
+  const targetScope: "global" | "work" = workId ? scope : "global";
   const set = <K extends keyof ReaderSettings>(key: K, val: ReaderSettings[K]) =>
-    update({ [key]: val } as Partial<ReaderSettings>, workId ? scope : "global");
+    update({ [key]: val } as Partial<ReaderSettings>, targetScope);
+
+  const applyProfile = (p: ReaderProfile) => {
+    const rest: Partial<ReaderSettings> = { ...p.settings };
+    if (rest.readingMode === "scroll" || rest.readingMode === "page") onSetReadingMode(rest.readingMode);
+    delete rest.readingMode;
+    update(rest, targetScope);
+  };
+  const customProfiles = getCustomProfiles();
+  void profileTick;
 
   if (!open) return null;
 
   return (
+    <PanelCtx.Provider value={{ query: query.trim().toLowerCase(), isDesktop: platform.isDesktop, isMobile: platform.isMobile }}>
     <div className="fixed inset-0 z-[130] flex justify-end" role="dialog" aria-label="Configurações do leitor">
       <div className="absolute inset-0 bg-black/60 animate-in fade-in duration-150" onClick={onClose} />
       <div className="relative w-full max-w-sm h-full bg-zinc-950 border-l-2 border-white/10 shadow-2xl overflow-y-auto overscroll-contain animate-in slide-in-from-right duration-200">
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-zinc-950/95 backdrop-blur px-5 py-4 border-b border-white/10 flex items-center justify-between">
-          <h3 className="font-display text-lg text-white uppercase tracking-wide">Configurações</h3>
-          <button onClick={onClose} className="text-white/60 hover:text-white p-1" aria-label="Fechar">
-            <X className="w-5 h-5" strokeWidth={3} />
-          </button>
+        {/* Header + search */}
+        <div className="sticky top-0 z-10 bg-zinc-950/95 backdrop-blur px-5 py-4 border-b border-white/10 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-display text-lg text-white uppercase tracking-wide">Configurações</h3>
+            <button onClick={onClose} className="text-white/60 hover:text-white p-1" aria-label="Fechar">
+              <X className="w-5 h-5" strokeWidth={3} />
+            </button>
+          </div>
+          <div className="relative">
+            <Search className="w-4 h-4 text-white/30 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar configuração…"
+              className="w-full bg-white/5 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-primary"
+            />
+          </div>
         </div>
 
         <div className="px-5 pb-10">
+          {/* Reading profiles / presets */}
+          {!query && (
+            <div className="py-4 border-b border-white/10">
+              <h4 className="font-display text-2xs uppercase tracking-widest text-white/40 mb-2">Perfis</h4>
+              <div className="flex flex-wrap gap-1.5">
+                {[...BUILTIN_PROFILES, ...customProfiles].map(p => (
+                  <button key={p.id} onClick={() => applyProfile(p)}
+                    className="group flex items-center gap-1 bg-white/5 hover:bg-primary hover:text-white border border-white/10 rounded-full px-2.5 py-1 text-2xs font-bold text-white/80">
+                    {p.icon && <span>{p.icon}</span>}{p.name}
+                    {!p.builtin && (
+                      <span onClick={(e) => { e.stopPropagation(); deleteCustomProfile(p.id); setProfileTick(t => t + 1); }}
+                        className="text-white/40 hover:text-red-300"><Trash2 className="w-3 h-3" /></span>
+                    )}
+                  </button>
+                ))}
+                <button
+                  onClick={() => {
+                    const name = window.prompt("Nome do perfil?");
+                    if (name?.trim()) { saveCustomProfile(name.trim(), `custom-${name.trim().toLowerCase().replace(/\s+/g, "-")}`); setProfileTick(t => t + 1); }
+                  }}
+                  className="flex items-center gap-1 bg-white/5 hover:bg-white/15 border border-dashed border-white/20 rounded-full px-2.5 py-1 text-2xs font-bold text-white/60">
+                  <Save className="w-3 h-3" /> Salvar atual
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Scope selector (only when a work is open) */}
           {workId && (
             <div className="py-4 border-b border-white/10">
@@ -280,8 +356,11 @@ export function ReaderSettingsPanel({
                 options={[{ label: "3", value: 3 }, { label: "7", value: 7 }, { label: "12", value: 12 }]}
               />
             </Row>
-            <Row label="Economia de memória">
+            <Row label="Economia de memória" hint="Menos páginas na memória em obras gigantes">
               <Toggle on={settings.memorySaver} onChange={(v) => set("memorySaver", v)} />
+            </Row>
+            <Row label="Manter tela ligada" hint="Impede a tela de apagar durante a leitura">
+              <Toggle on={settings.keepAwake} onChange={(v) => set("keepAwake", v)} />
             </Row>
             <Row label="Qualidade" soon>
               <Segmented
@@ -294,10 +373,11 @@ export function ReaderSettingsPanel({
           </Section>
 
           <p className="pt-4 text-3xs text-white/30 font-sans flex items-center gap-1.5">
-            <Sparkles className="w-3 h-3" /> Modo Webtoon e temas do leitor chegam nas próximas atualizações.
+            <Sparkles className="w-3 h-3" /> Vibração, brilho, botões de volume e sincronização chegam nas próximas atualizações.
           </p>
         </div>
       </div>
     </div>
+    </PanelCtx.Provider>
   );
 }

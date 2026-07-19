@@ -258,6 +258,25 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     return () => { document.body.style.overflow = prev; };
   }, [showReader]);
 
+  // Keep the screen awake while reading (Wake Lock). It auto-releases when the
+  // tab is hidden, so re-acquire on visibility change.
+  useEffect(() => {
+    if (!showReader || !settings.keepAwake) return;
+    const nav = navigator as Navigator & { wakeLock?: { request: (t: "screen") => Promise<{ release: () => Promise<void> }> } };
+    if (!nav.wakeLock) return;
+    let lock: { release: () => Promise<void> } | null = null;
+    let cancelled = false;
+    const acquire = async () => { try { lock = await nav.wakeLock!.request("screen"); } catch { /* ignore */ } };
+    acquire();
+    const onVis = () => { if (document.visibilityState === "visible" && !cancelled) acquire(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVis);
+      try { lock?.release?.(); } catch { /* ignore */ }
+    };
+  }, [showReader, settings.keepAwake]);
+
   // Auto-hide the interface: whenever the chrome (header/bottom bar) is showing,
   // fade it out after a few seconds so the reading area is unobstructed. A tap
   // brings it back. `isFullscreen === true` means chrome hidden (immersive).

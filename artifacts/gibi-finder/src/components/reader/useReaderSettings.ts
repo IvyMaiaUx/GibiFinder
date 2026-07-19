@@ -45,6 +45,8 @@ export interface ReaderSettings {
   preloadAhead: number;
   memorySaver: boolean;
   quality: ImageQuality;
+  /** Keep the screen on while reading (Wake Lock, mobile + desktop). */
+  keepAwake: boolean;
   // Layout
   pageGap: number;
   animations: boolean;
@@ -73,6 +75,7 @@ export const READER_SETTINGS_DEFAULTS: ReaderSettings = {
   preloadAhead: 7,
   memorySaver: false,
   quality: "auto",
+  keepAwake: false,
   pageGap: 8,
   animations: true,
 };
@@ -189,6 +192,45 @@ function getEffective(workId?: string): ReaderSettings {
  * Returns [settings, update, hasWorkOverride]. `update(patch, "work")` writes to
  * the per-work layer; `update(patch)` (or "global") writes the global defaults.
  */
+/* ---- Reading profiles (presets) ---- */
+export interface ReaderProfile {
+  id: string;
+  name: string;
+  icon?: string;
+  builtin?: boolean;
+  settings: Partial<ReaderSettings>;
+}
+
+export const BUILTIN_PROFILES: ReaderProfile[] = [
+  { id: "manga", name: "Mangá", icon: "📖", builtin: true, settings: { readingMode: "page", direction: "rtl", theme: "amoled", fitMode: "width", immersion: "cinema", doublePage: "auto" } },
+  { id: "hq", name: "HQ", icon: "📚", builtin: true, settings: { readingMode: "page", direction: "ltr", theme: "dark", doublePage: "always", fitMode: "whole" } },
+  { id: "webtoon", name: "Webtoon", icon: "📱", builtin: true, settings: { readingMode: "scroll", direction: "ltr", theme: "dark", fitMode: "width" } },
+  { id: "night", name: "Noturno", icon: "🌙", builtin: true, settings: { theme: "amoled", autoHideMs: 2000 } },
+  { id: "day", name: "Dia", icon: "☀️", builtin: true, settings: { theme: "light", autoHideMs: 4000 } },
+];
+
+const PROFILES_KEY = "gibi-finder:reader-profiles";
+const PROFILE_FIELDS: (keyof ReaderSettings)[] = [
+  "readingMode", "direction", "fitMode", "doublePage", "splitMode", "theme",
+  "autoHideMs", "maxZoom", "rememberZoom", "doubleTapZoom", "preloadAhead",
+  "immersion", "customBg", "customUi", "barOpacity", "shadow",
+];
+
+export function getCustomProfiles(): ReaderProfile[] {
+  return readJson<ReaderProfile[]>(PROFILES_KEY, []);
+}
+export function saveCustomProfile(name: string, id: string): ReaderProfile {
+  const snapshot: Partial<ReaderSettings> = {};
+  for (const f of PROFILE_FIELDS) (snapshot as Record<string, unknown>)[f] = globalSettings[f];
+  const profile: ReaderProfile = { id, name, settings: snapshot };
+  const list = getCustomProfiles().filter(p => p.id !== id);
+  try { localStorage.setItem(PROFILES_KEY, JSON.stringify([...list, profile])); } catch { /* ignore */ }
+  return profile;
+}
+export function deleteCustomProfile(id: string) {
+  try { localStorage.setItem(PROFILES_KEY, JSON.stringify(getCustomProfiles().filter(p => p.id !== id))); } catch { /* ignore */ }
+}
+
 export function useReaderSettings(workId?: string) {
   const settings = useSyncExternalStore(
     subscribe,
