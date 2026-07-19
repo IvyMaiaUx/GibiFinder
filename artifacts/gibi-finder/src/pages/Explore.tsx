@@ -333,8 +333,11 @@ export default function Explore() {
   const matchesNsfw = (item: UnifiedCatalogItem) =>
     (isNsfw ? isAdultItem(item) : !isAdultItem(item)) && hasReadableSource(item.sources, empties) && matchesType(item);
 
-  const filteredPopular = popular.filter(matchesNsfw);
-  const filteredLatest = latest.filter(matchesNsfw);
+  // Respect the active type tab (HQ / Gibi / Mangá) so, e.g., the HQ tab never
+  // mixes in gibis or manga.
+  const filteredPopular = popular.filter(i => matchesNsfw(i) && matchesType(i));
+  const filteredLatest = latest.filter(i => matchesNsfw(i) && matchesType(i));
+  const visibleSuggestions = suggestions.filter(i => matchesNsfw(i) && matchesType(i));
 
   // Featured/hero: the highest-rated popular item that has a cover + description.
   const hero = filteredPopular.find(i => i.coverUrl && i.description) || filteredPopular[0];
@@ -569,9 +572,9 @@ export default function Explore() {
               );
             })()}
 
-            {suggestions.length >= MIN_ROW_ITEMS && (
+            {visibleSuggestions.length >= MIN_ROW_ITEMS && (
               <Row title="✨ Sugestões pra você">
-                {suggestions.map(item => {
+                {visibleSuggestions.map(item => {
                   const src = item.sources?.[0];
                   return (
                     <CatalogCard key={`sug-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} />
