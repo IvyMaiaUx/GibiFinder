@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, EyeOff, MessageSquare, Bug, Lightbulb, Archive, Trophy, AlertTriangle, User, RefreshCw, ChevronLeft, ChevronRight, Search } from "lucide-react";
@@ -177,9 +177,12 @@ const PAGE_SIZE = 48;
 // Brazilian-gibi title hints — fallback when an item carries no genre tag.
 const GIBI_TITLE_HINTS = ["monica", "mônica", "cebolinha", "magali", "cascao", "cascão", "chico bento", "almanaque", "turma da", "penadinho", "pelezinho", "ronaldinho", "menino maluquinho", "disney", "mickey", "pato donald", "tio patinhas"];
 
+const MANGA_PROVIDER_IDS = ["mangadex", "mangaplus", "mangafire", "mugiwaras", "slimeread", "bato", "hqnow"];
+
 // Mirrors the app's Explore typeOf: a biblioteca-br item is HQ when tagged "hq",
-// otherwise it's a Gibi (with a title-hint fallback for untagged items).
-function itemType(item: any): "gibi" | "hq" {
+// otherwise it's a Gibi (with a title-hint fallback for untagged items). Items
+// from the manga aggregators are classified Mangá.
+function itemType(item: any): "gibi" | "hq" | "manga" {
   const provs: string[] = (item?.sources || []).map((s: any) => s?.providerId);
   const genres: string[] = (item?.genres || []).map((x: string) => (x || "").toLowerCase());
   const isBiblioteca = provs.includes("biblioteca-br");
@@ -189,7 +192,30 @@ function itemType(item: any): "gibi" | "hq" {
     const t = (item?.title || "").toLowerCase();
     return GIBI_TITLE_HINTS.some(k => t.includes(k)) ? "gibi" : "hq";
   }
+  if (provs.some(p => MANGA_PROVIDER_IDS.includes(p))) return "manga";
   return "hq";
+}
+
+const TYPE_LABEL: Record<string, string> = { hq: "HQ", gibi: "Gibi", manga: "Mangá" };
+
+function FilterSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="border-4 border-black bg-white p-3">
+      <p className="font-display text-xs uppercase tracking-wider text-black/50 mb-2">{title}</p>
+      <div className="space-y-1">{children}</div>
+    </div>
+  );
+}
+
+function FilterRow({ active, onClick, label, count, dot }: { active: boolean; onClick: () => void; label: string; count?: number; dot?: string }) {
+  return (
+    <button onClick={onClick}
+      className={`w-full flex items-center gap-2 px-2 py-1.5 border-2 font-sans font-bold text-sm transition-colors ${active ? "bg-secondary border-black text-black" : "border-transparent text-gray-500 hover:bg-muted hover:text-black"}`}>
+      {dot && <span>{dot}</span>}
+      <span className="flex-1 text-left truncate">{label}</span>
+      {count !== undefined && <span className={`text-2xs font-bold px-1.5 border ${active ? "border-black bg-white" : "border-gray-300 bg-muted text-gray-500"}`}>{count}</span>}
+    </button>
+  );
 }
 
 function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebuild, rebuilding, diag }: { adminKey: string; items: any[]; loading: boolean; onReload: () => void; byProvider: Record<string, number>; onRebuild: () => void; rebuilding: boolean; diag?: any }) {
@@ -198,7 +224,7 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
   const [selected, setSelected] = useState<any | null>(null);
   // filters
   const [q, setQ] = useState("");
-  const [fType, setFType] = useState<"all" | "hq" | "gibi">("all");
+  const [fType, setFType] = useState<"all" | "hq" | "gibi" | "manga">("all");
   const [fProv, setFProv] = useState<string>("all");
   const [fStatus, setFStatus] = useState<"all" | "edited" | "hidden" | "clean" | "no-cover" | "no-synopsis" | "incomplete">("all");
   const [page, setPage] = useState(0);
@@ -259,6 +285,7 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
 
   const nHq = items.filter(it => itemType(it) === "hq").length;
   const nGibi = items.filter(it => itemType(it) === "gibi").length;
+  const nManga = items.filter(it => itemType(it) === "manga").length;
   const nHidden = items.filter(it => overrides[keyOf(it)]?.hidden).length;
   const nEdited = items.filter(it => { const o = overrides[keyOf(it)]; return o && !o.hidden; }).length;
   // Curation queue counts (Modo Curadoria)
@@ -268,8 +295,6 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageItems = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
-
-  const selClass = "border-4 border-black px-2 py-2 font-sans font-bold text-sm bg-white focus:outline-none focus:ring-4 focus:ring-secondary";
 
   // Full-page work editor (no popup) — replaces the list while an item is open.
   if (selected) {
@@ -351,101 +376,134 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
         );
       })()}
 
-      {/* Filter bar */}
-      <div className="flex flex-wrap gap-2 items-stretch">
-        <div className="flex-1 min-w-[200px] relative">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Filtrar por título…"
-            className="w-full border-4 border-black pl-9 pr-3 py-2 font-sans font-bold text-black bg-white focus:outline-none focus:ring-4 focus:ring-secondary" />
-        </div>
-        <select value={fType} onChange={e => setFType(e.target.value as any)} className={selClass}>
-          <option value="all">Tipo: todos</option>
-          <option value="hq">HQ</option>
-          <option value="gibi">Gibi</option>
-        </select>
-        <select value={fProv} onChange={e => setFProv(e.target.value)} className={selClass}>
-          <option value="all">Provedor: todos</option>
-          {providers.map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <select value={fStatus} onChange={e => setFStatus(e.target.value as any)} className={selClass}>
-          <option value="all">Status: todos</option>
-          <option value="clean">Originais</option>
-          <option value="edited">Editados</option>
-          <option value="hidden">Escondidos</option>
-          <option value="no-cover">Sem capa</option>
-          <option value="no-synopsis">Sem sinopse</option>
-          <option value="incomplete">Incompletos</option>
-        </select>
+      {/* Search (instant) */}
+      <div className="relative">
+        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por título… (instantâneo)"
+          className="w-full border-4 border-black pl-9 pr-3 py-2 font-sans font-bold text-black bg-white focus:outline-none focus:ring-4 focus:ring-secondary" />
       </div>
 
-      {/* Modo Curadoria — fila de tarefas por atenção */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <span className="font-display text-sm text-black/60">CURADORIA:</span>
-        <button onClick={() => setFStatus(fStatus === "no-cover" ? "all" : "no-cover")}
-          className={`text-xs font-bold border-4 border-black px-2.5 py-1 ${fStatus === "no-cover" ? "bg-primary text-white" : "bg-white hover:bg-muted"}`}>🟥 {nNoCover} sem capa</button>
-        <button onClick={() => setFStatus(fStatus === "no-synopsis" ? "all" : "no-synopsis")}
-          className={`text-xs font-bold border-4 border-black px-2.5 py-1 ${fStatus === "no-synopsis" ? "bg-primary text-white" : "bg-white hover:bg-muted"}`}>🟧 {nNoSyn} sem sinopse</button>
-        <button onClick={() => setFStatus(fStatus === "incomplete" ? "all" : "incomplete")}
-          className={`text-xs font-bold border-4 border-black px-2.5 py-1 ${fStatus === "incomplete" ? "bg-primary text-white" : "bg-white hover:bg-muted"}`}>🟨 {nIncomplete} incompletos</button>
-      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[210px_1fr] gap-4">
+        {/* Filter rail */}
+        <aside className="space-y-3">
+          <FilterSection title="Tipo">
+            <FilterRow active={fType === "all"} onClick={() => setFType("all")} label="Todos" count={items.length} />
+            <FilterRow active={fType === "hq"} onClick={() => setFType("hq")} label="HQ" count={nHq} />
+            <FilterRow active={fType === "gibi"} onClick={() => setFType("gibi")} label="Gibi" count={nGibi} />
+            <FilterRow active={fType === "manga"} onClick={() => setFType("manga")} label="Mangá" count={nManga} />
+          </FilterSection>
+          <FilterSection title="Curadoria">
+            <FilterRow active={fStatus === "no-cover"} onClick={() => setFStatus(fStatus === "no-cover" ? "all" : "no-cover")} label="Sem capa" count={nNoCover} dot="🟥" />
+            <FilterRow active={fStatus === "no-synopsis"} onClick={() => setFStatus(fStatus === "no-synopsis" ? "all" : "no-synopsis")} label="Sem sinopse" count={nNoSyn} dot="🟧" />
+            <FilterRow active={fStatus === "incomplete"} onClick={() => setFStatus(fStatus === "incomplete" ? "all" : "incomplete")} label="Incompletos" count={nIncomplete} dot="🟨" />
+          </FilterSection>
+          <FilterSection title="Status">
+            <FilterRow active={fStatus === "all"} onClick={() => setFStatus("all")} label="Todos" />
+            <FilterRow active={fStatus === "clean"} onClick={() => setFStatus("clean")} label="Originais" />
+            <FilterRow active={fStatus === "edited"} onClick={() => setFStatus("edited")} label="Editados" count={nEdited} />
+            <FilterRow active={fStatus === "hidden"} onClick={() => setFStatus("hidden")} label="Ocultos" count={nHidden} />
+          </FilterSection>
+          <FilterSection title="Provider">
+            <FilterRow active={fProv === "all"} onClick={() => setFProv("all")} label="Todos" />
+            {providers.map(p => <FilterRow key={p} active={fProv === p} onClick={() => setFProv(p)} label={p} count={byProvider[p]} />)}
+          </FilterSection>
+        </aside>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-24"><Loader2 className="w-12 h-12 animate-spin text-primary" /></div>
-      ) : (
-        <>
-          <p className="font-sans font-bold text-gray-500 text-sm">
-            {filtered.length} resultado{filtered.length !== 1 ? "s" : ""}
-            {filtered.length > PAGE_SIZE && ` · página ${page + 1}/${totalPages}`}
-          </p>
+        {/* Table */}
+        <div className="min-w-0 space-y-3">
+          {loading ? (
+            <div className="flex items-center justify-center py-24"><Loader2 className="w-12 h-12 animate-spin text-primary" /></div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <p className="font-sans font-bold text-gray-500 text-sm">
+                  {filtered.length} resultado{filtered.length !== 1 ? "s" : ""}
+                  {filtered.length > PAGE_SIZE && ` · página ${page + 1}/${totalPages}`}
+                </p>
+                {(fType !== "all" || fStatus !== "all" || fProv !== "all" || q) && (
+                  <button onClick={() => { setFType("all"); setFStatus("all"); setFProv("all"); setQ(""); }}
+                    className="text-2xs font-bold uppercase border-2 border-black px-2 py-1 hover:bg-muted">Limpar filtros</button>
+                )}
+              </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {pageItems.map((item, i) => {
-              const k = keyOf(item);
-              const ov = overrides[k];
-              const cover = ov?.coverUrl || item.coverUrl;
-              const title = ov?.title || item.title;
-              const prov = item.sources?.[0]?.providerId;
-              const q = scoreItem(item, ov);
-              return (
-                <div key={k || i} className={`bg-white border-4 border-black flex gap-3 p-3 ${ov?.hidden ? "opacity-50" : ""}`}>
-                  <button onClick={() => setSelected(item)} className="flex gap-3 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity" title="Abrir página da obra">
-                    <div className="w-12 h-16 border-2 border-black shrink-0 bg-muted overflow-hidden">
-                      {cover ? <SafeImage src={cover} alt={title} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-secondary/30" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-display text-base text-black leading-tight line-clamp-2">{title}</h4>
-                      <p className="text-xs font-bold text-gray-500 truncate">{prov} · {itemType(item) === "gibi" ? "Gibi" : "HQ"}</p>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span className="inline-flex items-center gap-1 text-2xs font-bold border-2 border-black px-1.5" style={{ background: qualityColor(q.score), color: "#fff" }} title={q.checks.filter(c => !c.ok).map(c => c.hint).join(" · ") || "Completo"}>
-                          {q.score}%
-                        </span>
-                        {ov && <span className="text-2xs font-bold bg-secondary/60 border border-black px-1.5">{ov.hidden ? "ESCONDIDO" : "EDITADO"}</span>}
-                      </div>
-                    </div>
-                  </button>
-                  <div className="flex flex-col gap-1 shrink-0">
-                    <button onClick={() => save(item, { hidden: !ov?.hidden })} title={ov?.hidden ? "Mostrar" : "Esconder"} className="p-2 border-2 border-black hover:bg-secondary">{ov?.hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
-                    <button onClick={() => setSelected(item)} title="Abrir página da obra" className="p-2 border-2 border-black hover:bg-secondary"><Pencil className="w-4 h-4" /></button>
-                    {ov && <button onClick={() => removeOverride(item)} title="Restaurar original" className="p-2 border-2 border-black hover:bg-primary hover:text-white"><Trash2 className="w-4 h-4" /></button>}
-                  </div>
+              <div className="border-4 border-black bg-white overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[720px]">
+                  <thead>
+                    <tr className="border-b-4 border-black font-display text-2xs uppercase tracking-wider text-gray-500 bg-muted/50">
+                      <th className="py-2 px-2 w-12"></th>
+                      <th className="py-2 px-2">Nome</th>
+                      <th className="py-2 px-2 w-16">Tipo</th>
+                      <th className="py-2 px-2 w-28">Provider</th>
+                      <th className="py-2 px-2 w-16 text-center">Score</th>
+                      <th className="py-2 px-2 w-16 text-center">Leituras</th>
+                      <th className="py-2 px-2 w-16 text-center">Favoritos</th>
+                      <th className="py-2 px-2 w-24">Status</th>
+                      <th className="py-2 px-2 w-24 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y-2 divide-gray-100">
+                    {pageItems.map((item, i) => {
+                      const k = keyOf(item);
+                      const ov = overrides[k];
+                      const cover = ov?.coverUrl || item.coverUrl;
+                      const title = ov?.title || item.title;
+                      const prov = item.sources?.[0]?.providerId;
+                      const nSources = item.sources?.length || 0;
+                      const qs = scoreItem(item, ov);
+                      const t = itemType(item);
+                      return (
+                        <tr key={k || i} className={`hover:bg-secondary/10 cursor-pointer ${ov?.hidden ? "opacity-50" : ""}`} onClick={() => setSelected(item)}>
+                          <td className="py-1.5 px-2">
+                            <div className="w-9 h-12 border-2 border-black bg-muted overflow-hidden">
+                              {cover ? <SafeImage src={cover} alt={title} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-secondary/30" />}
+                            </div>
+                          </td>
+                          <td className="py-1.5 px-2 min-w-0">
+                            <p className="font-sans font-bold text-black text-sm leading-tight line-clamp-2">{title}</p>
+                          </td>
+                          <td className="py-1.5 px-2"><span className="text-2xs font-bold uppercase bg-muted border-2 border-black px-1.5 py-0.5">{TYPE_LABEL[t]}</span></td>
+                          <td className="py-1.5 px-2">
+                            <span className="text-xs font-bold text-gray-600">{prov}</span>
+                            {nSources > 1 && <span className="text-2xs text-gray-400"> +{nSources - 1}</span>}
+                          </td>
+                          <td className="py-1.5 px-2 text-center">
+                            <span className="inline-block text-2xs font-bold border-2 border-black px-1.5 py-0.5 text-white" style={{ background: qualityColor(qs.score) }} title={qs.checks.filter(c => !c.ok).map(c => c.hint).join(" · ") || "Completo"}>{qs.score}%</span>
+                          </td>
+                          <td className="py-1.5 px-2 text-center text-gray-300 font-bold" title="Com telemetria de leitura">—</td>
+                          <td className="py-1.5 px-2 text-center text-gray-300 font-bold" title="Com telemetria de leitura">—</td>
+                          <td className="py-1.5 px-2">
+                            {ov?.hidden ? <span className="text-2xs font-bold bg-red-200 border-2 border-black px-1.5">Oculto</span>
+                              : ov ? <span className="text-2xs font-bold bg-secondary border-2 border-black px-1.5">Editado</span>
+                                : <span className="text-2xs font-bold text-gray-400">Original</span>}
+                          </td>
+                          <td className="py-1.5 px-2" onClick={e => e.stopPropagation()}>
+                            <div className="flex gap-1 justify-end">
+                              <button onClick={() => save(item, { hidden: !ov?.hidden })} title={ov?.hidden ? "Mostrar" : "Esconder"} className="p-1.5 border-2 border-black hover:bg-secondary">{ov?.hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}</button>
+                              <button onClick={() => setSelected(item)} title="Abrir página da obra" className="p-1.5 border-2 border-black hover:bg-secondary"><Pencil className="w-3.5 h-3.5" /></button>
+                              {ov && <button onClick={() => removeOverride(item)} title="Restaurar original" className="p-1.5 border-2 border-black hover:bg-primary hover:text-white"><Trash2 className="w-3.5 h-3.5" /></button>}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {filtered.length === 0 && <p className="text-center text-gray-400 py-12 font-display">Nenhum item com esses filtros.</p>}
+              </div>
+
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-3 pt-1">
+                  <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+                    className="border-4 border-black p-2 hover:bg-muted disabled:opacity-30"><ChevronLeft className="w-5 h-5" /></button>
+                  <span className="font-display text-lg">{page + 1} / {totalPages}</span>
+                  <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
+                    className="border-4 border-black p-2 hover:bg-muted disabled:opacity-30"><ChevronRight className="w-5 h-5" /></button>
                 </div>
-              );
-            })}
-          </div>
-
-          {filtered.length === 0 && <p className="text-center text-gray-400 py-12 font-display">Nenhum item com esses filtros.</p>}
-
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-3 pt-2">
-              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
-                className="border-4 border-black p-2 hover:bg-muted disabled:opacity-30"><ChevronLeft className="w-5 h-5" /></button>
-              <span className="font-display text-lg">{page + 1} / {totalPages}</span>
-              <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
-                className="border-4 border-black p-2 hover:bg-muted disabled:opacity-30"><ChevronRight className="w-5 h-5" /></button>
-            </div>
+              )}
+            </>
           )}
-        </>
-      )}
+        </div>
+      </div>
     </div>
   );
 }

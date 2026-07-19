@@ -26,7 +26,7 @@ export interface ObraSavePatch { title?: string | null; description?: string | n
 interface Props {
   item: any;
   override: any;
-  type: "hq" | "gibi";
+  type: "hq" | "gibi" | "manga";
   onBack: () => void;
   onSave: (patch: ObraSavePatch) => Promise<void>;
   onToggleHide: () => Promise<void>;
@@ -106,7 +106,7 @@ export function CatalogObraPage({ item, override, type, onBack, onSave, onToggle
         <div className="flex-1 min-w-0">
           <h1 className="font-display text-3xl text-black leading-tight break-words">{curTitle || "(sem título)"}</h1>
           <div className="flex flex-wrap items-center gap-2 mt-2">
-            <span className="text-2xs font-bold uppercase bg-muted border-2 border-black px-2 py-0.5">{type === "gibi" ? "Gibi" : "HQ"}</span>
+            <span className="text-2xs font-bold uppercase bg-muted border-2 border-black px-2 py-0.5">{type === "gibi" ? "Gibi" : type === "manga" ? "Mangá" : "HQ"}</span>
             <span className="text-2xs font-bold uppercase border-2 border-black px-2 py-0.5 text-white" style={{ background: qualityColor(q.score) }}>{q.score}%</span>
             {hidden && <span className="text-2xs font-bold uppercase bg-red-200 border-2 border-black px-2 py-0.5">Escondida</span>}
             {override && !hidden && <span className="text-2xs font-bold uppercase bg-secondary border-2 border-black px-2 py-0.5">Editada</span>}
@@ -151,7 +151,7 @@ export function CatalogObraPage({ item, override, type, onBack, onSave, onToggle
                   <input value={title} onChange={e => setTitle(e.target.value)} className={inp} />
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div><span className={lbl}>Tipo</span><p className="font-sans font-bold">{type === "gibi" ? "Gibi" : "HQ"}</p></div>
+                  <div><span className={lbl}>Tipo</span><p className="font-sans font-bold">{type === "gibi" ? "Gibi" : type === "manga" ? "Mangá" : "HQ"}</p></div>
                   <div><span className={lbl}>Slug</span><p className="font-mono text-xs break-all">{slug}</p></div>
                 </div>
                 <div>
