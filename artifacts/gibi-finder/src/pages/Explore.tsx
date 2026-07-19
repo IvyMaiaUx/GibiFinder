@@ -304,10 +304,12 @@ export default function Explore() {
       })
       .catch(() => { /* ignore */ });
 
-    // Max speed: scope the row searches to the curated Drive library only, which
-    // is fully cached (Supabase + memory) — so each search returns in ~1s and all
-    // rows load in parallel. (Batcave/Jon Domingues HQs stay findable via search.)
-    const scope = GIBI_PROVIDER_IDS.join(",");
+    // Completeness first: HQ rows include the HQ providers (Batcave, Jon Domingues,
+    // etc.) so franchises like Coringa / Lanterna Verde / Justiceiro — which live
+    // there, not in the Drive library — don't vanish. Gibi is Drive-only (fast).
+    const scope = typeFilter === "hq"
+      ? [...HQ_PROVIDER_IDS, ...GIBI_PROVIDER_IDS].join(",")
+      : GIBI_PROVIDER_IDS.join(",");
 
     const fetchSeries = (term: string) =>
       fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(term)}&nsfw=${isNsfw}&providers=${encodeURIComponent(scope)}`)
