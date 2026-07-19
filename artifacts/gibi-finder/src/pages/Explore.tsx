@@ -321,7 +321,8 @@ export default function Explore() {
     setViewAllPage(1);
     setViewAllLoading(true);
     const endpoint = viewAllKind === "franchise"
-      ? `${BASE}/api/providers/search?query=${encodeURIComponent(viewAllGenre)}&nsfw=${isNsfw}`
+      // Scope franchise "Ver tudo" to the cached Drive library for instant results.
+      ? `${BASE}/api/providers/search?query=${encodeURIComponent(viewAllGenre)}&nsfw=${isNsfw}&providers=${encodeURIComponent(GIBI_PROVIDER_IDS.join(","))}`
       : `${BASE}/api/providers/by-genre?genre=${encodeURIComponent(viewAllGenre)}&nsfw=${isNsfw}`;
     fetch(endpoint)
       .then(r => (r.ok ? r.json() : []))
