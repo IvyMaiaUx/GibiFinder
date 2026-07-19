@@ -94,9 +94,17 @@ function extractSynopsis(html: string): string {
 }
 
 async function fetchText(url: string): Promise<string> {
-  const res = await fetch(url, { headers: HEADERS });
-  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
-  return await res.text();
+  // Bound each request so a slow/hanging source can't blow the whole batch's
+  // serverless time budget (Vercel kills at 30s -> the action looks "broken").
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const res = await fetch(url, { headers: HEADERS, signal: ctrl.signal });
+    if (!res.ok) throw new Error(`${url} -> ${res.status}`);
+    return await res.text();
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 /**

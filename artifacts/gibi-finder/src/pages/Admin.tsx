@@ -247,7 +247,12 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
     setFilling(true);
     try {
       const data = await adminRequest("/api/admin/catalog/autofill-synopsis", adminKey, "POST", { limit: 12 });
-      toast({ title: `Sinopses: +${data.filled} de ${data.scanned}`, description: `Faltam ~${data.remaining}. Clique de novo para continuar.` });
+      toast({
+        title: `Sinopses: +${data.filled} de ${data.scanned}`,
+        description: data.filled === 0
+          ? `A fonte (HQ) não cobre estes títulos. Faltam ~${data.remaining}. Clique de novo — o lote é aleatório e vai achando os HQs.`
+          : `Faltam ~${data.remaining}. Clique de novo para continuar.`,
+      });
       onReload();
       await loadOverrides();
     } catch (e) {

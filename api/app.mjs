@@ -57672,9 +57672,15 @@ function extractSynopsis(html) {
   return "";
 }
 async function fetchText(url) {
-  const res = await fetch(url, { headers: HEADERS2 });
-  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
-  return await res.text();
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 6e3);
+  try {
+    const res = await fetch(url, { headers: HEADERS2, signal: ctrl.signal });
+    if (!res.ok) throw new Error(`${url} -> ${res.status}`);
+    return await res.text();
+  } finally {
+    clearTimeout(t);
+  }
 }
 async function scrapeComicSynopsis(title) {
   const clean = title.trim();
@@ -58325,7 +58331,7 @@ router3.post("/admin/catalog/autofill-synopsis", async (req, res) => {
     const shuffled = [...missing].sort(() => Math.random() - 0.5).slice(0, limit);
     let filled = 0;
     const results = [];
-    const CONC = 4;
+    const CONC = 6;
     for (let i = 0; i < shuffled.length; i += CONC) {
       await Promise.all(shuffled.slice(i, i + CONC).map(async (it) => {
         const s = it.sources[0];

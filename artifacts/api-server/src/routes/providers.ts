@@ -752,7 +752,7 @@ router.post("/admin/catalog/autofill-synopsis", async (req: Request, res: Respon
 
     let filled = 0;
     const results: { title: string; ok: boolean }[] = [];
-    const CONC = 4;
+    const CONC = 6;
     for (let i = 0; i < shuffled.length; i += CONC) {
       await Promise.all(shuffled.slice(i, i + CONC).map(async (it) => {
         const s = it.sources![0];
