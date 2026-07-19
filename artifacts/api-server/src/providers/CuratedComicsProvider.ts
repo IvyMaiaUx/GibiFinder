@@ -127,9 +127,24 @@ function categoryGenre(title: string, isNational: boolean): string {
   return GIBI_TITLE_KEYWORDS.some(k => t.includes(k)) ? "Gibi Nacional" : "HQ";
 }
 
+// Common words that shouldn't broaden a search ("the boys" must not match every
+// title that merely contains "the" or mentions "boys" in its description).
+const QUERY_STOPWORDS = new Set([
+  "the", "a", "o", "as", "os", "um", "uma", "de", "da", "do", "das", "dos",
+  "e", "em", "no", "na", "and", "of", "le", "la", "el", "los", "las",
+]);
+
 function matchesQuery(query: string, item: CuratedItem): boolean {
   const terms = normalizeText(query).split(/\s+/).filter(Boolean);
   if (terms.length === 0) return true;
+  const title = normalizeText(item.title || "");
+  // Distinctive terms (dropping stopwords) must appear in the TITLE. This keeps
+  // "the boys" from matching anything that only has "boys" in the description.
+  const distinctive = terms.filter(t => !QUERY_STOPWORDS.has(t));
+  if (distinctive.length > 0) {
+    return distinctive.every(term => title.includes(term));
+  }
+  // Query was only stopwords — fall back to the broad title+description match.
   const haystack = normalizeText([item.title, item.description || "", ...(item.genres || [])].join(" "));
   return terms.every(term => haystack.includes(term));
 }

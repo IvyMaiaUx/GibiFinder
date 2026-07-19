@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, EyeOff, MessageSquare, Bug, Lightbulb, Archive, Trophy, AlertTriangle, User, RefreshCw, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { Check, X, BookOpen, Lock, Loader2, Pencil, Trash2, Plus, Eye, EyeOff, MessageSquare, Bug, Lightbulb, Archive, Trophy, AlertTriangle, User, RefreshCw, ChevronLeft, ChevronRight, Search, RotateCcw } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { useToast } from "@/hooks/use-toast";
 import { SafeImage } from "@/components/ui/SafeImage";
@@ -198,6 +198,17 @@ function itemType(item: any): "gibi" | "hq" | "manga" {
 
 const TYPE_LABEL: Record<string, string> = { hq: "HQ", gibi: "Gibi", manga: "Mangá" };
 
+// Near-duplicate key: drops accents, parenthetical/bracket annotations (year,
+// scan tags) and punctuation, keeping digits. Catches "The Boys" vs "The Boys
+// (2020)" without flagging different issues (#1 vs #2 keep distinct numbers).
+function dupeKey(title: string): string {
+  return (title || "")
+    .toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[[(][^\])]*[\])]/g, " ")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
 function FilterSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="border-4 border-black bg-white p-3">
@@ -222,11 +233,12 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
   const { toast } = useToast();
   const [overrides, setOverrides] = useState<Record<string, any>>({});
   const [selected, setSelected] = useState<any | null>(null);
+  const [confirmDel, setConfirmDel] = useState<any | null>(null);
   // filters
   const [q, setQ] = useState("");
   const [fType, setFType] = useState<"all" | "hq" | "gibi" | "manga">("all");
   const [fProv, setFProv] = useState<string>("all");
-  const [fStatus, setFStatus] = useState<"all" | "edited" | "hidden" | "clean" | "no-cover" | "no-synopsis" | "incomplete">("all");
+  const [fStatus, setFStatus] = useState<"all" | "edited" | "hidden" | "clean" | "no-cover" | "no-synopsis" | "incomplete" | "duplicates">("all");
   const [page, setPage] = useState(0);
 
   const keyOf = (item: any) => { const s = item?.sources?.[0]; return s ? `${s.providerId}:${s.id}` : ""; };
@@ -264,11 +276,28 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
     try { await adminRequest(`/api/admin/catalog-overrides/${encodeURIComponent(keyOf(item))}`, adminKey, "DELETE"); await loadOverrides(); toast({ title: "Restaurado ao original" }); } catch { /* */ }
   };
 
+  // "Deletar" um item de catálogo = esconder permanente (não dá pra apagar o
+  // arquivo na origem; some do app pra sempre e continua sumido após reconstruir).
+  const deleteItem = async (item: any) => {
+    await save(item, { hidden: true });
+    setConfirmDel(null);
+    toast({ title: "Gibi removido do catálogo" });
+  };
+
   // Provider list for the filter dropdown
   const providers = Array.from(new Set(items.map(it => it.sources?.[0]?.providerId).filter(Boolean))).sort();
 
+  // Near-duplicate detection: items whose base title (year/tags/punctuation
+  // stripped) collides with another item's.
+  const dupCount: Record<string, number> = {};
+  for (const it of items) {
+    const dk = dupeKey(overrides[keyOf(it)]?.title || it.title);
+    if (dk) dupCount[dk] = (dupCount[dk] || 0) + 1;
+  }
+  const isDup = (it: any) => { const dk = dupeKey(overrides[keyOf(it)]?.title || it.title); return !!dk && dupCount[dk] > 1; };
+
   const nq = q.trim().toLowerCase();
-  const filtered = items.filter(it => {
+  let filtered = items.filter(it => {
     const ov = overrides[keyOf(it)];
     const title = (ov?.title || it.title || "").toLowerCase();
     if (nq && !title.includes(nq)) return false;
@@ -280,8 +309,13 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
     if (fStatus === "no-cover" && (ov?.coverUrl || it.coverUrl)) return false;
     if (fStatus === "no-synopsis" && String(ov?.description || it.description || "").trim().length >= 60) return false;
     if (fStatus === "incomplete" && scoreItem(it, ov).score >= 100) return false;
+    if (fStatus === "duplicates" && !isDup(it)) return false;
     return true;
   });
+  // When viewing duplicates, group identical titles together so pairs are adjacent.
+  if (fStatus === "duplicates") {
+    filtered = [...filtered].sort((a, b) => dupeKey(overrides[keyOf(a)]?.title || a.title).localeCompare(dupeKey(overrides[keyOf(b)]?.title || b.title)));
+  }
 
   const nHq = items.filter(it => itemType(it) === "hq").length;
   const nGibi = items.filter(it => itemType(it) === "gibi").length;
@@ -292,6 +326,7 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
   const nNoCover = items.filter(it => { const o = overrides[keyOf(it)]; return !(o?.coverUrl || it.coverUrl); }).length;
   const nNoSyn = items.filter(it => { const o = overrides[keyOf(it)]; return String(o?.description || it.description || "").trim().length < 60; }).length;
   const nIncomplete = items.filter(it => scoreItem(it, overrides[keyOf(it)]).score < 100).length;
+  const nDup = items.filter(isDup).length;
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageItems = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
@@ -396,6 +431,7 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
             <FilterRow active={fStatus === "no-cover"} onClick={() => setFStatus(fStatus === "no-cover" ? "all" : "no-cover")} label="Sem capa" count={nNoCover} dot="🟥" />
             <FilterRow active={fStatus === "no-synopsis"} onClick={() => setFStatus(fStatus === "no-synopsis" ? "all" : "no-synopsis")} label="Sem sinopse" count={nNoSyn} dot="🟧" />
             <FilterRow active={fStatus === "incomplete"} onClick={() => setFStatus(fStatus === "incomplete" ? "all" : "incomplete")} label="Incompletos" count={nIncomplete} dot="🟨" />
+            <FilterRow active={fStatus === "duplicates"} onClick={() => setFStatus(fStatus === "duplicates" ? "all" : "duplicates")} label="Duplicados" count={nDup} dot="🟦" />
           </FilterSection>
           <FilterSection title="Status">
             <FilterRow active={fStatus === "all"} onClick={() => setFStatus("all")} label="Todos" />
@@ -480,7 +516,8 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
                             <div className="flex gap-1 justify-end">
                               <button onClick={() => save(item, { hidden: !ov?.hidden })} title={ov?.hidden ? "Mostrar" : "Esconder"} className="p-1.5 border-2 border-black hover:bg-secondary">{ov?.hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}</button>
                               <button onClick={() => setSelected(item)} title="Abrir página da obra" className="p-1.5 border-2 border-black hover:bg-secondary"><Pencil className="w-3.5 h-3.5" /></button>
-                              {ov && <button onClick={() => removeOverride(item)} title="Restaurar original" className="p-1.5 border-2 border-black hover:bg-primary hover:text-white"><Trash2 className="w-3.5 h-3.5" /></button>}
+                              {ov && <button onClick={() => removeOverride(item)} title="Restaurar original" className="p-1.5 border-2 border-black hover:bg-secondary"><RotateCcw className="w-3.5 h-3.5" /></button>}
+                              <button onClick={() => setConfirmDel(item)} title="Deletar do catálogo" className="p-1.5 border-2 border-black hover:bg-primary hover:text-white"><Trash2 className="w-3.5 h-3.5" /></button>
                             </div>
                           </td>
                         </tr>
@@ -504,6 +541,22 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
           )}
         </div>
       </div>
+
+      {/* Confirmar deleção (= esconder permanente para itens de catálogo) */}
+      {confirmDel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setConfirmDel(null)} />
+          <div className="relative bg-white border-4 border-black comic-shadow max-w-sm w-full p-6 z-10">
+            <h3 className="font-display text-2xl text-black mb-2">DELETAR GIBI</h3>
+            <p className="font-sans font-bold text-gray-700 text-sm mb-1">Remover <b>“{overrides[keyOf(confirmDel)]?.title || confirmDel.title}”</b> do catálogo?</p>
+            <p className="font-sans text-xs text-gray-500 mb-5">Some do app para todos. Como o arquivo vem do Drive, isso é um "esconder permanente" (continua sumido mesmo após reconstruir). Dá pra reverter em Ocultos → Restaurar.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmDel(null)} className="flex-1 border-4 border-black py-2 font-display hover:bg-muted">CANCELAR</button>
+              <button onClick={() => deleteItem(confirmDel)} className="flex-1 bg-primary text-white border-4 border-black py-2 font-display comic-shadow flex items-center justify-center gap-2"><Trash2 className="w-4 h-4" strokeWidth={3} /> DELETAR</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -56518,9 +56518,39 @@ function categoryGenre(title, isNational) {
   const t = normalizeText(title);
   return GIBI_TITLE_KEYWORDS.some((k) => t.includes(k)) ? "Gibi Nacional" : "HQ";
 }
+var QUERY_STOPWORDS = /* @__PURE__ */ new Set([
+  "the",
+  "a",
+  "o",
+  "as",
+  "os",
+  "um",
+  "uma",
+  "de",
+  "da",
+  "do",
+  "das",
+  "dos",
+  "e",
+  "em",
+  "no",
+  "na",
+  "and",
+  "of",
+  "le",
+  "la",
+  "el",
+  "los",
+  "las"
+]);
 function matchesQuery(query, item) {
   const terms = normalizeText(query).split(/\s+/).filter(Boolean);
   if (terms.length === 0) return true;
+  const title = normalizeText(item.title || "");
+  const distinctive = terms.filter((t) => !QUERY_STOPWORDS.has(t));
+  if (distinctive.length > 0) {
+    return distinctive.every((term) => title.includes(term));
+  }
   const haystack = normalizeText([item.title, item.description || "", ...item.genres || []].join(" "));
   return terms.every((term) => haystack.includes(term));
 }
