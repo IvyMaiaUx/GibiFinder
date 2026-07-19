@@ -20,6 +20,9 @@ export interface DiagInfo {
   scrollVirtualized: boolean;
   doublePage: string;
   spreadDetected: boolean;
+  split: string;
+  splitActive: boolean;
+  viewport: string;
   aspect: number;
   orientation: string;
   resume: boolean;
@@ -189,9 +192,11 @@ export function ReaderDiagnostics({ open, onClose, diag, onReloadChapter, onClea
               <Line k="Aspect" v={diag.aspect ? diag.aspect.toFixed(2) : "N/D"} />
               <Line k="Orientação" v={diag.orientation} />
             </Group>
-            <Group title="Página dupla">
-              <Line k="Modo" v={diag.doublePage} />
+            <Group title="Página dupla / Split">
+              <Line k="Página dupla" v={diag.doublePage} />
               <Line k="Spread detect." v={diag.spreadDetected ? "Sim" : "Não"} />
+              <Line k="Dividido" v={diag.splitActive ? diag.split : "Não"} />
+              <Line k="Viewport" v={diag.viewport} />
             </Group>
             <Group title="Rede / Provider">
               <Line k="Provider" v={diag.provider ?? "-"} />

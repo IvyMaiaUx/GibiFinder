@@ -13,6 +13,7 @@ export type ReadingMode = "scroll" | "page" | "double" | "webtoon";
 export type ReadingDirection = "ltr" | "rtl";
 export type FitMode = "width" | "height" | "whole" | "auto";
 export type DoublePageMode = "never" | "always" | "auto";
+export type SplitMode = "off" | "manual";
 export type ImageQuality = "auto" | "high" | "original";
 export type ReaderTheme = "dark" | "amoled" | "light" | "custom";
 
@@ -21,6 +22,7 @@ export interface ReaderSettings {
   direction: ReadingDirection;
   fitMode: FitMode;
   doublePage: DoublePageMode;
+  splitMode: SplitMode;
   // Zoom
   rememberZoom: boolean;
   maxZoom: number;
@@ -50,6 +52,7 @@ export const READER_SETTINGS_DEFAULTS: ReaderSettings = {
   direction: "ltr",
   fitMode: "width",
   doublePage: "auto",
+  splitMode: "manual",
   rememberZoom: false,
   maxZoom: 4,
   doubleTapZoom: true,

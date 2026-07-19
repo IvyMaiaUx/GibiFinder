@@ -146,6 +146,16 @@ export function ReaderSettingsPanel({
                 ]}
               />
             </Row>
+            <Row label="Dividir spread">
+              <Segmented
+                value={settings.splitMode}
+                onChange={(v) => set("splitMode", v)}
+                options={[
+                  { label: "Off", value: "off" },
+                  { label: "Manual", value: "manual" },
+                ]}
+              />
+            </Row>
             <Row label="Direção">
               <Segmented
                 value={settings.direction}

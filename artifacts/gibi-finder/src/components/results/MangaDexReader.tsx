@@ -17,7 +17,8 @@ import {
   ZoomOut,
   ChevronsLeft,
   ChevronsRight,
-  Settings
+  Settings,
+  Scissors
 } from "lucide-react";
 import { cn, proxyPdfUrl, proxyCoverUrl } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
@@ -131,6 +132,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   const [showReader, setShowReader] = useState(false);
   const [readerMode, setReaderMode] = useState<"page" | "scroll">("scroll");
   const [error, setError] = useState<string | null>(null);
+  // Split-spread: which page indices are split (persisted per work+chapter) and
+  // which half is currently shown (0 = first in reading order, 1 = second).
+  const [splitSet, setSplitSet] = useState<Set<number>>(new Set());
+  const [splitSide, setSplitSide] = useState<0 | 1>(0);
 
   // Reader preferences (global + per-work overrides) — Phase 4, Priority 1.
   const workId = selectedResult?.id || mangaTitle || undefined;
@@ -752,6 +757,29 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     }
   }, [doubleActive, currentGroup, currentPage]);
 
+  // ---- Split-spread (manual) ----
+  // Renders two virtual pages (A/B) from the SAME <img> via a CSS crop — no new
+  // files, no second image. Persisted per work + chapter.
+  const splitKey = selectedChapter ? `gibi-finder:reader-split:${workId || ""}:${selectedChapter.id}` : null;
+  useEffect(() => {
+    if (!splitKey) { setSplitSet(new Set()); setSplitSide(0); return; }
+    try {
+      const raw = localStorage.getItem(splitKey);
+      setSplitSet(new Set(raw ? (JSON.parse(raw) as number[]) : []));
+    } catch { setSplitSet(new Set()); }
+    setSplitSide(0);
+  }, [splitKey]);
+  const isSplitActive = (idx: number) => settings.splitMode !== "off" && splitSet.has(idx);
+  const toggleSplit = (idx: number) => {
+    setSplitSet(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      try { if (splitKey) localStorage.setItem(splitKey, JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+    setSplitSide(0);
+  };
+
   // Preloader: once near the end of the chapter, prefetch the next chapter's page
   // list and warm its first images so advancing never shows a loading spinner.
   useEffect(() => {
@@ -785,31 +813,40 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // mode it advances a whole spread at a time.
   const goToNextPage = useCallback(() => {
     if (readerMode === "page") {
+      // Split-spread: first half -> second half before moving on.
+      if (isSplitActive(currentPage) && splitSide === 0) { setSplitSide(1); return; }
+      const land = (idx: number) => { setCurrentPage(idx); setSplitSide(0); };
       if (spreads) {
         const gi = spreads.findIndex(g => g.includes(currentPage));
         const next = gi > -1 ? spreads[gi + 1] : null;
-        if (next) setCurrentPage(next[0]);
+        if (next) land(next[0]);
         else if (nextChapter) readChapter(nextChapter);
-      } else if (currentPage < pages.length - 1) setCurrentPage(currentPage + 1);
+      } else if (currentPage < pages.length - 1) land(currentPage + 1);
       else if (nextChapter) readChapter(nextChapter);
     } else {
       scrollContainerRef.current?.scrollBy({ top: scrollContainerRef.current.clientHeight * 0.9, behavior: "smooth" });
     }
-  }, [readerMode, currentPage, pages.length, nextChapter, spreads]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readerMode, currentPage, pages.length, nextChapter, spreads, splitSide, splitSet, settings.splitMode]);
 
   const goToPrevPage = useCallback(() => {
     if (readerMode === "page") {
+      // Split-spread: second half -> first half before moving on.
+      if (isSplitActive(currentPage) && splitSide === 1) { setSplitSide(0); return; }
+      // Landing on a split page from the previous one shows its LAST half.
+      const land = (idx: number) => { setCurrentPage(idx); setSplitSide(isSplitActive(idx) ? 1 : 0); };
       if (spreads) {
         const gi = spreads.findIndex(g => g.includes(currentPage));
         const prev = gi > 0 ? spreads[gi - 1] : null;
-        if (prev) setCurrentPage(prev[0]);
+        if (prev) land(prev[0]);
         else if (prevChapter) readChapter(prevChapter);
-      } else if (currentPage > 0) setCurrentPage(currentPage - 1);
+      } else if (currentPage > 0) land(currentPage - 1);
       else if (prevChapter) readChapter(prevChapter);
     } else {
       scrollContainerRef.current?.scrollBy({ top: -scrollContainerRef.current.clientHeight * 0.9, behavior: "smooth" });
     }
-  }, [readerMode, currentPage, prevChapter, spreads]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readerMode, currentPage, prevChapter, spreads, splitSide, splitSet, settings.splitMode]);
 
   // Keyboard shortcuts: ← → ↑ ↓ Space Home End Esc.
   useEffect(() => {
@@ -850,6 +887,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   const goToPage = useCallback((idx: number) => {
     const clamped = Math.max(0, Math.min(idx, pages.length - 1));
     setCurrentPage(clamped);
+    setSplitSide(0);
     if (readerMode === "scroll") {
       resumingRef.current = true;
       pageRefs.current[clamped]?.scrollIntoView({ behavior: "auto", block: "start" });
@@ -1605,24 +1643,44 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                     }
                   }}
                 >
-                  {(doubleActive && currentGroup
-                    ? (rtl ? [...currentGroup].reverse() : currentGroup)
-                    : [currentPage]
-                  ).map((pi) => (
-                    <SafeImage
-                      key={pi}
-                      src={pages[pi]?.url}
-                      alt={`Página ${pages[pi]?.pageNumber}`}
-                      className={cn(
-                        "border-4 border-white/20 select-none pointer-events-none",
-                        doubleActive && currentGroup && currentGroup.length === 2
-                          ? "max-h-[88vh] max-w-[50%] object-contain" // double: keep proportion, no stretch
-                          : fitClass(fitFor(pi)),
-                      )}
-                      style={{ zoom }}
-                      onLoad={(e) => recordAspect(pi, e.currentTarget as HTMLImageElement)}
-                    />
-                  ))}
+                  {isSplitActive(currentPage) ? (
+                    // Split-spread: two virtual pages from the SAME image via a CSS
+                    // crop (translateX on a 2x-wide image inside an overflow box).
+                    (() => {
+                      const A = pageAspectRef.current[currentPage] || 1.4;
+                      const showLeft = rtl ? splitSide === 1 : splitSide === 0;
+                      return (
+                        <div className="relative overflow-hidden border-4 border-white/20" style={{ height: "88vh", width: `min(96vw, calc(88vh * ${A / 2}))` }}>
+                          <SafeImage
+                            src={pages[currentPage]?.url}
+                            alt={`Página ${pages[currentPage]?.pageNumber} (${showLeft ? "esquerda" : "direita"})`}
+                            className="absolute top-0 left-0 h-full max-w-none select-none pointer-events-none"
+                            style={{ transform: `translateX(${showLeft ? "0%" : "-50%"})`, transformOrigin: "left top", zoom }}
+                            onLoad={(e) => recordAspect(currentPage, e.currentTarget as HTMLImageElement)}
+                          />
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    (doubleActive && currentGroup
+                      ? (rtl ? [...currentGroup].reverse() : currentGroup)
+                      : [currentPage]
+                    ).map((pi) => (
+                      <SafeImage
+                        key={pi}
+                        src={pages[pi]?.url}
+                        alt={`Página ${pages[pi]?.pageNumber}`}
+                        className={cn(
+                          "border-4 border-white/20 select-none pointer-events-none",
+                          doubleActive && currentGroup && currentGroup.length === 2
+                            ? "max-h-[88vh] max-w-[50%] object-contain" // double: keep proportion, no stretch
+                            : fitClass(fitFor(pi)),
+                        )}
+                        style={{ zoom }}
+                        onLoad={(e) => recordAspect(pi, e.currentTarget as HTMLImageElement)}
+                      />
+                    ))
+                  )}
 
                   {/* Left Edge Overlay Hint */}
                   <div className="absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-black/20 to-transparent opacity-0 group-hover:opacity-100 flex items-center pl-2 transition-opacity">
@@ -1646,6 +1704,18 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                 style={{ width: `${((currentPage + 1) / pages.length) * 100}%` }}
               />
             </div>
+          )}
+
+          {/* Split-spread action — only for wide (panorama) pages in page mode. */}
+          {!isFullscreen && readerMode === "page" && settings.splitMode !== "off" && isWidePage(currentPage) && (
+            <button
+              onClick={() => toggleSplit(currentPage)}
+              className="fixed top-16 left-1/2 -translate-x-1/2 z-[112] flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-2xs font-sans font-bold backdrop-blur-sm animate-in fade-in slide-in-from-top duration-200"
+              style={{ background: "var(--rd-surface)", color: "var(--rd-text)", borderColor: "var(--rd-border)" }}
+            >
+              <Scissors className="w-3.5 h-3.5" strokeWidth={2.5} />
+              {isSplitActive(currentPage) ? "Juntar página" : "Dividir página"}
+            </button>
           )}
 
           {/* Bottom bar (chrome) — page scrubber + chapter nav + zoom. Part of the
@@ -1744,6 +1814,9 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                 scrollVirtualized: readerMode === "scroll",
                 doublePage: settings.doublePage,
                 spreadDetected: aspect > 1.15,
+                split: settings.splitMode,
+                splitActive: isSplitActive(currentPage),
+                viewport: isSplitActive(currentPage) ? ((rtl ? splitSide === 1 : splitSide === 0) ? "Esquerda" : "Direita") : "—",
                 aspect,
                 orientation: aspect > 1.15 ? "Paisagem" : "Retrato",
                 resume: !!lastReadProgress,
