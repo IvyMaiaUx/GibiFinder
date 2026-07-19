@@ -253,3 +253,18 @@ CREATE TABLE IF NOT EXISTS catalog_overrides (
 );
 
 ALTER TABLE catalog_overrides DISABLE ROW LEVEL SECURITY;
+
+-- ============================================================
+-- Table: user_reader_settings (cross-device reader settings sync)
+-- Stores the syncable reader settings, custom profiles and per-work
+-- overrides for a logged-in user. Device-specific options stay local.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_reader_settings (
+  user_id UUID PRIMARY KEY REFERENCES user_profiles(id) ON DELETE CASCADE,
+  settings JSONB NOT NULL DEFAULT '{}'::jsonb,
+  profiles JSONB NOT NULL DEFAULT '[]'::jsonb,
+  work_overrides JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE user_reader_settings DISABLE ROW LEVEL SECURITY;

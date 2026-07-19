@@ -54172,6 +54172,44 @@ router2.get("/admin/users", async (req, res) => {
     res.status(500).json({ error: "server_error" });
   }
 });
+router2.get("/auth/reader-settings", async (req, res) => {
+  const userId = req.query.userId;
+  if (!userId || !supabase) {
+    res.json({});
+    return;
+  }
+  try {
+    const { data, error } = await supabase.from("user_reader_settings").select("settings, profiles, work_overrides").eq("user_id", userId).maybeSingle();
+    if (error || !data) {
+      res.json({});
+      return;
+    }
+    res.json({ settings: data.settings || void 0, profiles: data.profiles || void 0, workOverrides: data.work_overrides || void 0 });
+  } catch (err) {
+    req.log.error({ err }, "reader-settings get failed");
+    res.json({});
+  }
+});
+router2.post("/auth/reader-settings/upsert", async (req, res) => {
+  const { userId, settings, profiles, workOverrides } = req.body || {};
+  if (!userId || !supabase) {
+    res.json({ ok: false });
+    return;
+  }
+  try {
+    await supabase.from("user_reader_settings").upsert({
+      user_id: userId,
+      settings: settings ?? {},
+      profiles: profiles ?? [],
+      work_overrides: workOverrides ?? {},
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "reader-settings upsert failed");
+    res.status(500).json({ ok: false });
+  }
+});
 var gibi_default = router2;
 
 // src/routes/providers.ts

@@ -1713,5 +1713,43 @@ router.get("/admin/users", async (req: Request, res: Response) => {
   } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
 });
 
+// ---- Cross-device reader settings sync ----
+// GET /api/auth/reader-settings?userId= -> { settings, profiles, workOverrides }
+router.get("/auth/reader-settings", async (req: Request, res: Response) => {
+  const userId = req.query.userId as string;
+  if (!userId || !supabase) { res.json({}); return; }
+  try {
+    const { data, error } = await supabase
+      .from("user_reader_settings")
+      .select("settings, profiles, work_overrides")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error || !data) { res.json({}); return; }
+    res.json({ settings: data.settings || undefined, profiles: data.profiles || undefined, workOverrides: data.work_overrides || undefined });
+  } catch (err) {
+    req.log.error({ err }, "reader-settings get failed");
+    res.json({});
+  }
+});
+
+// POST /api/auth/reader-settings/upsert - { userId, settings, profiles, workOverrides }
+router.post("/auth/reader-settings/upsert", async (req: Request, res: Response) => {
+  const { userId, settings, profiles, workOverrides } = req.body || {};
+  if (!userId || !supabase) { res.json({ ok: false }); return; }
+  try {
+    await supabase.from("user_reader_settings").upsert({
+      user_id: userId,
+      settings: settings ?? {},
+      profiles: profiles ?? [],
+      work_overrides: workOverrides ?? {},
+      updated_at: new Date().toISOString(),
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "reader-settings upsert failed");
+    res.status(500).json({ ok: false });
+  }
+});
+
 export default router;
 

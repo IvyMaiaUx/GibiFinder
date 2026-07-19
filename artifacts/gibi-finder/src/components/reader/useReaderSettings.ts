@@ -1,4 +1,4 @@
-import { useSyncExternalStore, useCallback, type CSSProperties } from "react";
+import { useSyncExternalStore, useCallback, useEffect, useRef, type CSSProperties } from "react";
 
 /**
  * Reader preferences. Two layers, both persisted to localStorage and shared via a
@@ -259,4 +259,83 @@ export function useReaderSettings(workId?: string) {
   }, [workId]);
   const hasWorkOverride = !!(workId && workOverrides[workId]);
   return { settings, update, clearWork, hasWorkOverride };
+}
+
+/* ---- Cross-device sync (account) ---- */
+// Device-specific settings stay local; everything else syncs.
+const LOCAL_ONLY_FIELDS: (keyof ReaderSettings)[] = ["haptics", "tapZones", "brightness", "keepAwake"];
+
+function getSyncableSettings(): Partial<ReaderSettings> {
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(globalSettings) as (keyof ReaderSettings)[]) {
+    if (!LOCAL_ONLY_FIELDS.includes(k)) out[k as string] = globalSettings[k];
+  }
+  return out as Partial<ReaderSettings>;
+}
+
+export function getSyncPayload() {
+  return { settings: getSyncableSettings(), profiles: getCustomProfiles(), workOverrides };
+}
+
+let hydrating = false;
+export function hydrateFromAccount(data: {
+  settings?: Partial<ReaderSettings>;
+  profiles?: ReaderProfile[];
+  workOverrides?: Record<string, Partial<ReaderSettings>>;
+}) {
+  hydrating = true;
+  try {
+    if (data.settings) {
+      globalSettings = { ...globalSettings, ...data.settings };
+      try { localStorage.setItem(GLOBAL_KEY, JSON.stringify(globalSettings)); } catch { /* ignore */ }
+    }
+    if (Array.isArray(data.profiles)) {
+      try { localStorage.setItem(PROFILES_KEY, JSON.stringify(data.profiles)); } catch { /* ignore */ }
+    }
+    if (data.workOverrides) {
+      workOverrides = data.workOverrides;
+      try { localStorage.setItem(WORK_KEY, JSON.stringify(workOverrides)); } catch { /* ignore */ }
+    }
+    emit();
+  } finally {
+    hydrating = false;
+  }
+}
+
+const SYNC_BASE = typeof window !== "undefined" ? (import.meta.env.BASE_URL || "").replace(/\/$/, "") : "";
+
+/**
+ * Keeps the (cross-platform) reader settings + profiles + per-work overrides in
+ * sync with the account. Call once with the logged-in user id. Hydrates on login
+ * and pushes changes (debounced). Device-specific options stay local.
+ */
+export function useSettingsSync(userId?: string) {
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    if (!userId) return;
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch(`${SYNC_BASE}/api/auth/reader-settings?userId=${encodeURIComponent(userId)}`);
+        if (res.ok && active) hydrateFromAccount(await res.json());
+      } catch { /* ignore */ }
+    })();
+    const push = () => {
+      if (hydrating) return; // don't echo our own hydrate back
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => {
+        fetch(`${SYNC_BASE}/api/auth/reader-settings/upsert`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, ...getSyncPayload() }),
+        }).catch(() => { /* ignore */ });
+      }, 1500);
+    };
+    listeners.add(push);
+    return () => {
+      active = false;
+      if (timer.current) clearTimeout(timer.current);
+      listeners.delete(push);
+    };
+  }, [userId]);
 }
