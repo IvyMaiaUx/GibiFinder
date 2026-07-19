@@ -1,4 +1,4 @@
-import { useSyncExternalStore, useCallback } from "react";
+import { useSyncExternalStore, useCallback, type CSSProperties } from "react";
 
 /**
  * Reader preferences. Two layers, both persisted to localStorage and shared via a
@@ -14,7 +14,7 @@ export type ReadingDirection = "ltr" | "rtl";
 export type FitMode = "width" | "height" | "whole" | "auto";
 export type DoublePageMode = "never" | "always" | "auto";
 export type ImageQuality = "auto" | "high" | "original";
-export type ReaderTheme = "dark" | "amoled" | "light";
+export type ReaderTheme = "dark" | "amoled" | "light" | "custom";
 
 export interface ReaderSettings {
   readingMode: ReadingMode;
@@ -31,6 +31,11 @@ export interface ReaderSettings {
   showProgress: boolean;
   showBottomBar: boolean;
   theme: ReaderTheme;
+  // Custom theme knobs (used when theme === "custom").
+  customBg: string;   // reading background colour
+  customUi: string;   // text / controls tint
+  barOpacity: number; // chrome bars opacity, 0-100
+  shadow: number;     // shadow intensity, 0-100
   // Performance
   preloadAhead: number;
   memorySaver: boolean;
@@ -53,12 +58,53 @@ export const READER_SETTINGS_DEFAULTS: ReaderSettings = {
   showProgress: true,
   showBottomBar: true,
   theme: "dark",
+  customBg: "#0d0f14",
+  customUi: "#e6e6e6",
+  barOpacity: 90,
+  shadow: 60,
   preloadAhead: 7,
   memorySaver: false,
   quality: "auto",
   pageGap: 8,
   animations: true,
 };
+
+function hexToRgb(hex: string): string {
+  const m = hex.replace("#", "").match(/.{1,2}/g);
+  if (!m || m.length < 3) return "0,0,0";
+  const [r, g, b] = m.map(x => parseInt(x, 16));
+  return `${r},${g},${b}`;
+}
+
+/**
+ * Reader theme as CSS custom properties applied to the reader root. Every surface
+ * (bars, controls, slider, borders, shadows) reads from these vars, so switching
+ * theme is instant and never re-mounts anything. Themes are a design system, not
+ * just a background colour.
+ */
+export function readerThemeVars(s: ReaderSettings): CSSProperties {
+  let bg: string, textRgb: string, surfaceRgb: string, scheme: "dark" | "light";
+  switch (s.theme) {
+    case "light": bg = "#F7F6F2"; textRgb = "27,27,27"; surfaceRgb = "247,246,242"; scheme = "light"; break;
+    case "amoled": bg = "#000000"; textRgb = "212,212,212"; surfaceRgb = "0,0,0"; scheme = "dark"; break;
+    case "custom": bg = s.customBg; textRgb = hexToRgb(s.customUi); surfaceRgb = hexToRgb(s.customBg); scheme = "dark"; break;
+    default: bg = "#121212"; textRgb = "232,232,232"; surfaceRgb = "18,18,18"; scheme = "dark"; break;
+  }
+  const isLight = scheme === "light";
+  const borderRgb = isLight ? "0,0,0" : "255,255,255";
+  const shadowA = (s.shadow / 100) * (isLight ? 0.22 : 0.6);
+  return {
+    ["--rd-bg" as string]: bg,
+    ["--rd-text" as string]: `rgb(${textRgb})`,
+    ["--rd-muted" as string]: `rgba(${textRgb},0.5)`,
+    ["--rd-surface" as string]: `rgba(${surfaceRgb}, ${Math.max(0, Math.min(100, s.barOpacity)) / 100})`,
+    ["--rd-control" as string]: `rgba(${borderRgb}, ${isLight ? 0.06 : 0.1})`,
+    ["--rd-border" as string]: `rgba(${borderRgb}, 0.15)`,
+    ["--rd-shadow" as string]: `0 10px 34px rgba(0,0,0,${shadowA})`,
+    background: bg,
+    colorScheme: scheme,
+  } as CSSProperties;
+}
 
 const GLOBAL_KEY = "gibi-finder:reader-settings";
 const WORK_KEY = "gibi-finder:reader-work-settings";

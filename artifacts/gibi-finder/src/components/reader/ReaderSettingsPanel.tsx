@@ -202,6 +202,43 @@ export function ReaderSettingsPanel({
             </Row>
           </Section>
 
+          <Section title="Tema">
+            <Row label="Tema">
+              <Segmented
+                value={settings.theme}
+                onChange={(v) => set("theme", v)}
+                options={[
+                  { label: "Claro", value: "light" },
+                  { label: "Escuro", value: "dark" },
+                  { label: "AMOLED", value: "amoled" },
+                  { label: "Custom", value: "custom" },
+                ]}
+              />
+            </Row>
+            {settings.theme === "custom" && (
+              <>
+                <Row label="Cor do fundo">
+                  <input type="color" value={settings.customBg} onChange={(e) => set("customBg", e.target.value)}
+                    className="w-8 h-8 rounded bg-transparent border border-white/20 cursor-pointer" />
+                </Row>
+                <Row label="Cor da interface">
+                  <input type="color" value={settings.customUi} onChange={(e) => set("customUi", e.target.value)}
+                    className="w-8 h-8 rounded bg-transparent border border-white/20 cursor-pointer" />
+                </Row>
+              </>
+            )}
+            <Row label="Opacidade das barras">
+              <input type="range" min={40} max={100} value={settings.barOpacity}
+                onChange={(e) => set("barOpacity", Number(e.target.value))}
+                className="w-28 accent-primary cursor-pointer" />
+            </Row>
+            <Row label="Intensidade das sombras">
+              <input type="range" min={0} max={100} value={settings.shadow}
+                onChange={(e) => set("shadow", Number(e.target.value))}
+                className="w-28 accent-primary cursor-pointer" />
+            </Row>
+          </Section>
+
           <Section title="Desempenho">
             <Row label="Pré-carregar páginas">
               <Segmented

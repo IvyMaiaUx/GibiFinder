@@ -22,7 +22,7 @@ import {
 import { cn, proxyPdfUrl, proxyCoverUrl } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { useReaderZoom } from "@/components/reader/useReaderZoom";
-import { useReaderSettings } from "@/components/reader/useReaderSettings";
+import { useReaderSettings, readerThemeVars } from "@/components/reader/useReaderSettings";
 import { ReaderSettingsPanel } from "@/components/reader/ReaderSettingsPanel";
 import { useAuth } from "@/hooks/use-auth";
 import { getLocalProgress, saveReadingState, markChapterCompleted } from "@/lib/user-history";
@@ -1319,10 +1319,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
       {/* ==================== COMMON READER MODAL OVERLAY (images/iframe) ==================== */}
       {showReader && pages.length > 0 && selectedChapter && !pages[0]?.url?.startsWith("pdf:") && (
-        <div ref={readerRef} className="fixed inset-0 z-[100] bg-black/95 flex flex-col select-none" style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}>
+        <div ref={readerRef} data-reader-theme={settings.theme} className="fixed inset-0 z-[100] flex flex-col select-none" style={{ ...readerThemeVars(settings), WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}>
           {/* Header controls */}
           {!isFullscreen && (
-            <div className="bg-black border-b-4 border-white/20 p-3 sm:p-4 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 select-none animate-in fade-in slide-in-from-top duration-200">
+            <div className="border-b-2 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 select-none animate-in fade-in slide-in-from-top duration-200" style={{ background: "var(--rd-surface)", color: "var(--rd-text)", borderColor: "var(--rd-border)", backdropFilter: "blur(8px)" }}>
               {/* Left Column: Title & Thumbnail */}
               <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                 {(coverUrl || selectedResult?.coverUrl) && (
@@ -1337,11 +1337,11 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                     <span className="bg-primary text-white font-display text-3xs sm:text-2xs px-1.5 py-0.5 border border-white transform -rotate-1 hidden xxs:inline-block shrink-0 uppercase">
                       {selectedChapter.providerId}
                     </span>
-                    <h4 className="font-display text-sm sm:text-base md:text-xl leading-tight truncate text-white" title={selectedResult?.title || mangaTitle}>
+                    <h4 className="font-display text-sm sm:text-base md:text-xl leading-tight truncate text-[color:var(--rd-text)]" title={selectedResult?.title || mangaTitle}>
                       {selectedResult?.title || mangaTitle}
                     </h4>
                   </div>
-                  <p className="font-sans text-3xs sm:text-xs font-bold text-gray-400 mt-0.5">
+                  <p className="font-sans text-3xs sm:text-xs font-bold mt-0.5 text-[color:var(--rd-muted)]">
                     Capítulo {selectedChapter.chapterNum} · {currentPage + 1} / {pages.length}
                   </p>
                 </div>
@@ -1618,7 +1618,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
           {/* Thin reading-progress bar at the very top (chrome-independent). */}
           {settings.showProgress && !getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && pages.length > 1 && (
-            <div className={cn("fixed top-0 inset-x-0 z-[111] h-1 bg-white/10 flex", rtl && "justify-end")}>
+            <div className={cn("fixed top-0 inset-x-0 z-[111] h-1 flex", rtl && "justify-end")} style={{ background: "var(--rd-control)" }}>
               <div
                 className="h-full bg-primary transition-[width] duration-200"
                 style={{ width: `${((currentPage + 1) / pages.length) * 100}%` }}
@@ -1629,16 +1629,16 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
           {/* Bottom bar (chrome) — page scrubber + chapter nav + zoom. Part of the
               auto-hiding interface; a tap on the reading area brings it back. */}
           {settings.showBottomBar && !isFullscreen && !getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && (
-            <div className="fixed bottom-0 inset-x-0 z-[110] bg-black/85 backdrop-blur-sm border-t-2 border-white/10 px-3 sm:px-5 py-2.5 flex items-center gap-2 sm:gap-3 select-none animate-in fade-in slide-in-from-bottom duration-200">
+            <div className="fixed bottom-0 inset-x-0 z-[110] backdrop-blur-sm border-t-2 px-3 sm:px-5 py-2.5 flex items-center gap-2 sm:gap-3 select-none animate-in fade-in slide-in-from-bottom duration-200" style={{ background: "var(--rd-surface)", color: "var(--rd-text)", borderColor: "var(--rd-border)" }}>
               <button
                 onClick={() => prevChapter && readChapter(prevChapter)}
                 disabled={!prevChapter}
-                className="text-white/80 hover:text-white disabled:opacity-20 shrink-0 p-1"
+                className="opacity-70 hover:opacity-100 disabled:opacity-20 shrink-0 p-1"
                 title="Capítulo anterior"
               >
                 <ChevronsLeft className="w-5 h-5" strokeWidth={3} />
               </button>
-              <span className="text-white font-sans font-bold text-2xs sm:text-xs tabular-nums w-7 sm:w-8 text-right shrink-0">{currentPage + 1}</span>
+              <span className="font-sans font-bold text-2xs sm:text-xs tabular-nums w-7 sm:w-8 text-right shrink-0">{currentPage + 1}</span>
               <input
                 type="range"
                 dir={rtl ? "rtl" : "ltr"}
@@ -1649,18 +1649,18 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                 className="flex-1 h-1.5 accent-primary cursor-pointer"
                 aria-label="Navegar pelas páginas"
               />
-              <span className="text-white/50 font-sans font-bold text-2xs sm:text-xs tabular-nums w-7 sm:w-8 shrink-0">{pages.length}</span>
+              <span className="opacity-50 font-sans font-bold text-2xs sm:text-xs tabular-nums w-7 sm:w-8 shrink-0">{pages.length}</span>
               {!pages[currentPage]?.url?.startsWith("pdf:") && (
-                <div className="hidden xs:flex items-center gap-0.5 shrink-0 border-l border-white/10 pl-2 ml-1">
-                  <button onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} disabled={zoom <= 1} className="text-white/80 hover:text-white disabled:opacity-20 p-1" title="Menos zoom"><ZoomOut className="w-4 h-4" strokeWidth={3} /></button>
-                  <button onClick={() => setZoom(1)} className="text-white text-3xs font-bold tabular-nums w-9 text-center" title="Restaurar zoom">{Math.round(zoom * 100)}%</button>
-                  <button onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))} disabled={zoom >= 4} className="text-white/80 hover:text-white disabled:opacity-20 p-1" title="Mais zoom"><ZoomIn className="w-4 h-4" strokeWidth={3} /></button>
+                <div className="hidden xs:flex items-center gap-0.5 shrink-0 border-l pl-2 ml-1" style={{ borderColor: "var(--rd-border)" }}>
+                  <button onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} disabled={zoom <= 1} className="opacity-70 hover:opacity-100 disabled:opacity-20 p-1" title="Menos zoom"><ZoomOut className="w-4 h-4" strokeWidth={3} /></button>
+                  <button onClick={() => setZoom(1)} className="text-3xs font-bold tabular-nums w-9 text-center" title="Restaurar zoom">{Math.round(zoom * 100)}%</button>
+                  <button onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))} disabled={zoom >= 4} className="opacity-70 hover:opacity-100 disabled:opacity-20 p-1" title="Mais zoom"><ZoomIn className="w-4 h-4" strokeWidth={3} /></button>
                 </div>
               )}
               <button
                 onClick={() => nextChapter && readChapter(nextChapter)}
                 disabled={!nextChapter}
-                className="text-white/80 hover:text-white disabled:opacity-20 shrink-0 p-1"
+                className="opacity-70 hover:opacity-100 disabled:opacity-20 shrink-0 p-1"
                 title="Próximo capítulo"
               >
                 <ChevronsRight className="w-5 h-5" strokeWidth={3} />
