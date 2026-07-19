@@ -212,6 +212,26 @@ export function ReaderSettingsPanel({
             </Row>
           </Section>
 
+          <Section title="Imersão">
+            <Row label="Nível">
+              <Segmented
+                value={settings.immersion}
+                onChange={(v) => set("immersion", v)}
+                options={[
+                  { label: "Limpa", value: "clean" },
+                  { label: "Cinema", value: "cinema" },
+                  { label: "Imersão", value: "immersion" },
+                ]}
+              />
+            </Row>
+            <Row label="Bloquear menu de contexto">
+              <Toggle on={settings.blockContextMenu} onChange={(v) => set("blockContextMenu", v)} />
+            </Row>
+            <p className="text-3xs text-white/35 font-sans leading-relaxed">
+              Atalhos: <b>C</b> cinema · <b>I</b> imersão · <b>F</b> tela cheia · <b>H</b> mostrar/ocultar.
+            </p>
+          </Section>
+
           <Section title="Tema">
             <Row label="Tema">
               <Segmented

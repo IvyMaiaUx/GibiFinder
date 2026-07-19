@@ -18,7 +18,8 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Settings,
-  Scissors
+  Scissors,
+  Minimize2
 } from "lucide-react";
 import { cn, proxyPdfUrl, proxyCoverUrl } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
@@ -139,9 +140,60 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
   // Reader preferences (global + per-work overrides) — Phase 4, Priority 1.
   const workId = selectedResult?.id || mangaTitle || undefined;
-  const { settings, hasWorkOverride } = useReaderSettings(workId);
+  const { settings, update: updateSettings, hasWorkOverride } = useReaderSettings(workId);
   const [showSettings, setShowSettings] = useState(false);
   const [showDiag, setShowDiag] = useState(false);
+  // Immersion level (clean / cinema / immersion) + activity tracking for the
+  // auto-hiding cursor and the discrete cinema indicator.
+  const immersion = settings.immersion;
+  const [uiActive, setUiActive] = useState(true);
+  const activityTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Full chrome (top/bottom bars) shows only in the clean level; cinema/immersion
+  // hide it entirely. The cursor hides during inactivity in cinema/immersion.
+  const chromeVisible = immersion === "clean" ? !isFullscreen : false;
+  const cursorHidden = immersion !== "clean" && !uiActive;
+
+  // Activity tracking (cinema/immersion): reveal cursor + discrete indicator on
+  // movement/tap, hide after 2s (desktop) / 3s (touch).
+  useEffect(() => {
+    if (!showReader || immersion === "clean") { setUiActive(true); return; }
+    const coarse = typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
+    const hideMs = coarse ? 3000 : 2000;
+    const poke = () => {
+      setUiActive(true);
+      if (activityTimerRef.current) clearTimeout(activityTimerRef.current);
+      activityTimerRef.current = setTimeout(() => setUiActive(false), hideMs);
+    };
+    poke();
+    window.addEventListener("mousemove", poke);
+    window.addEventListener("touchstart", poke, { passive: true });
+    window.addEventListener("keydown", poke);
+    return () => {
+      if (activityTimerRef.current) clearTimeout(activityTimerRef.current);
+      window.removeEventListener("mousemove", poke);
+      window.removeEventListener("touchstart", poke);
+      window.removeEventListener("keydown", poke);
+    };
+  }, [showReader, immersion]);
+
+  // Immersion (level 3): native fullscreen on desktop + block drag / context menu.
+  useEffect(() => {
+    if (!showReader || immersion !== "immersion") return;
+    const el = readerRef.current;
+    const coarse = typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches;
+    if (!coarse && el?.requestFullscreen && !document.fullscreenElement) {
+      el.requestFullscreen().catch(() => { /* ignore */ });
+    }
+    const stopDrag = (e: Event) => e.preventDefault();
+    const stopCtx = (e: Event) => { if (settings.blockContextMenu) e.preventDefault(); };
+    el?.addEventListener("dragstart", stopDrag);
+    el?.addEventListener("contextmenu", stopCtx);
+    return () => {
+      el?.removeEventListener("dragstart", stopDrag);
+      el?.removeEventListener("contextmenu", stopCtx);
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => { /* ignore */ });
+    };
+  }, [showReader, immersion, settings.blockContextMenu]);
 
   // Ctrl+Shift+D toggles the engineering diagnostics overlay.
   useEffect(() => {
@@ -178,10 +230,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // fade it out after a few seconds so the reading area is unobstructed. A tap
   // brings it back. `isFullscreen === true` means chrome hidden (immersive).
   useEffect(() => {
-    if (!showReader || isFullscreen || !settings.autoHideMs) return;
+    if (!showReader || isFullscreen || !settings.autoHideMs || immersion !== "clean") return;
     const t = setTimeout(() => setIsFullscreen(true), settings.autoHideMs);
     return () => clearTimeout(t);
-  }, [showReader, isFullscreen, settings.autoHideMs]);
+  }, [showReader, isFullscreen, settings.autoHideMs, immersion]);
 
   const toggleChrome = useCallback(() => setIsFullscreen(prev => !prev), []);
 
@@ -875,13 +927,33 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
           if (readerMode === "page") setCurrentPage(pages.length - 1);
           else container?.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
           break;
+        case "h": case "H":
+          e.preventDefault();
+          if (immersion === "clean") setIsFullscreen(v => !v);
+          else setUiActive(a => !a);
+          break;
+        case "c": case "C":
+          e.preventDefault();
+          updateSettings({ immersion: immersion === "cinema" ? "clean" : "cinema" }, workId ? "work" : "global");
+          break;
+        case "i": case "I":
+          e.preventDefault();
+          updateSettings({ immersion: immersion === "immersion" ? "clean" : "immersion" }, workId ? "work" : "global");
+          break;
+        case "f": case "F": {
+          e.preventDefault();
+          const el = readerRef.current;
+          if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+          else el?.requestFullscreen?.().catch(() => {});
+          break;
+        }
         case "Escape":
           setShowReader(false); break;
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [showReader, pages.length, readerMode, goToNextPage, goToPrevPage, rtl]);
+  }, [showReader, pages.length, readerMode, goToNextPage, goToPrevPage, rtl, immersion, workId, updateSettings]);
 
   // Jump to a page from the bottom scrubber.
   const goToPage = useCallback((idx: number) => {
@@ -1379,9 +1451,9 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
       {/* ==================== COMMON READER MODAL OVERLAY (images/iframe) ==================== */}
       {showReader && pages.length > 0 && selectedChapter && !pages[0]?.url?.startsWith("pdf:") && (
-        <div ref={readerRef} data-reader-theme={settings.theme} className="fixed inset-0 z-[100] flex flex-col select-none" style={{ ...readerThemeVars(settings), WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}>
+        <div ref={readerRef} data-reader-theme={settings.theme} className="fixed inset-0 z-[100] flex flex-col select-none" style={{ ...readerThemeVars(settings), WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none", cursor: cursorHidden ? "none" : undefined }}>
           {/* Header controls */}
-          {!isFullscreen && (
+          {chromeVisible && (
             <div className="border-b-2 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 select-none animate-in fade-in slide-in-from-top duration-200" style={{ background: "var(--rd-surface)", color: "var(--rd-text)", borderColor: "var(--rd-border)", backdropFilter: "blur(8px)" }}>
               {/* Left Column: Title & Thumbnail */}
               <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
@@ -1707,7 +1779,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
           )}
 
           {/* Split-spread action — only for wide (panorama) pages in page mode. */}
-          {!isFullscreen && readerMode === "page" && settings.splitMode !== "off" && isWidePage(currentPage) && (
+          {chromeVisible && readerMode === "page" && settings.splitMode !== "off" && isWidePage(currentPage) && (
             <button
               onClick={() => toggleSplit(currentPage)}
               className="fixed top-16 left-1/2 -translate-x-1/2 z-[112] flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-2xs font-sans font-bold backdrop-blur-sm animate-in fade-in slide-in-from-top duration-200"
@@ -1718,9 +1790,42 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
             </button>
           )}
 
+          {/* Cinema/Immersion escape hatch — appears on activity so the reader can
+              always leave the immersive levels (chrome is hidden there). */}
+          {immersion !== "clean" && uiActive && (
+            <div className="fixed top-4 right-4 z-[113] flex gap-2 animate-in fade-in duration-200">
+              <button
+                onClick={() => setShowSettings(true)}
+                className="p-2 rounded-full border backdrop-blur-sm"
+                style={{ background: "var(--rd-surface)", color: "var(--rd-text)", borderColor: "var(--rd-border)" }}
+                title="Configurações"
+              >
+                <Settings className="w-4 h-4" strokeWidth={2.5} />
+              </button>
+              <button
+                onClick={() => updateSettings({ immersion: "clean" }, workId ? "work" : "global")}
+                className="p-2 rounded-full border backdrop-blur-sm"
+                style={{ background: "var(--rd-surface)", color: "var(--rd-text)", borderColor: "var(--rd-border)" }}
+                title="Sair da imersão"
+              >
+                <Minimize2 className="w-4 h-4" strokeWidth={2.5} />
+              </button>
+            </div>
+          )}
+
+          {/* Cinema: extremely discrete page indicator that fades with inactivity. */}
+          {immersion === "cinema" && !getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && (
+            <div
+              className={cn("fixed bottom-4 left-1/2 -translate-x-1/2 z-[112] px-3 py-1 rounded-full text-2xs font-sans font-bold pointer-events-none transition-opacity duration-300", uiActive ? "opacity-60" : "opacity-0")}
+              style={{ background: "var(--rd-surface)", color: "var(--rd-text)" }}
+            >
+              Página {currentPage + 1} • Cap. {selectedChapter?.chapterNum}
+            </div>
+          )}
+
           {/* Bottom bar (chrome) — page scrubber + chapter nav + zoom. Part of the
               auto-hiding interface; a tap on the reading area brings it back. */}
-          {settings.showBottomBar && !isFullscreen && !getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && (
+          {settings.showBottomBar && chromeVisible && !getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && (
             <div className="fixed bottom-0 inset-x-0 z-[110] backdrop-blur-sm border-t-2 px-3 sm:px-5 py-2.5 flex items-center gap-2 sm:gap-3 select-none animate-in fade-in slide-in-from-bottom duration-200" style={{ background: "var(--rd-surface)", color: "var(--rd-text)", borderColor: "var(--rd-border)" }}>
               <button
                 onClick={() => prevChapter && readChapter(prevChapter)}
@@ -1821,6 +1926,9 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                 orientation: aspect > 1.15 ? "Paisagem" : "Retrato",
                 resume: !!lastReadProgress,
                 perWork: hasWorkOverride,
+                immersion: settings.immersion,
+                fullscreen: typeof document !== "undefined" && !!document.fullscreenElement,
+                cursorHidden,
                 imgW: pageDimsRef.current[currentPage]?.w,
                 imgH: pageDimsRef.current[currentPage]?.h,
                 imgFormat: pages[currentPage]?.url?.match(/\.(webp|jpe?g|png|gif|avif)/i)?.[1]?.toUpperCase(),

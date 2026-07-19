@@ -27,6 +27,9 @@ export interface DiagInfo {
   orientation: string;
   resume: boolean;
   perWork: boolean;
+  immersion: string;
+  fullscreen: boolean;
+  cursorHidden: boolean;
   imgW?: number;
   imgH?: number;
   imgFormat?: string;
@@ -206,6 +209,12 @@ export function ReaderDiagnostics({ open, onClose, diag, onReloadChapter, onClea
               <Line k="Carregadas" v={readerStats.loaded} />
               <Line k="Falhas" v={<span className={readerStats.failed ? "text-red-400" : ""}>{readerStats.failed}</span>} />
               <Line k="Retries" v={readerStats.retried} />
+            </Group>
+            <Group title="Imersão">
+              <Line k="Cinema" v={diag.immersion === "cinema" ? "Ativo" : "Inativo"} />
+              <Line k="Imersão" v={diag.immersion === "immersion" ? "Ativo" : "Inativo"} />
+              <Line k="Fullscreen" v={diag.fullscreen ? "Sim" : "Não"} />
+              <Line k="Cursor" v={diag.cursorHidden ? "Oculto" : "Visível"} />
             </Group>
             <Group title="Estado">
               <Line k="Resume" v={diag.resume ? "Ativo" : "—"} />

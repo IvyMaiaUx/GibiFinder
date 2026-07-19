@@ -14,6 +14,7 @@ export type ReadingDirection = "ltr" | "rtl";
 export type FitMode = "width" | "height" | "whole" | "auto";
 export type DoublePageMode = "never" | "always" | "auto";
 export type SplitMode = "off" | "manual";
+export type ImmersionLevel = "clean" | "cinema" | "immersion";
 export type ImageQuality = "auto" | "high" | "original";
 export type ReaderTheme = "dark" | "amoled" | "light" | "custom";
 
@@ -33,6 +34,8 @@ export interface ReaderSettings {
   showProgress: boolean;
   showBottomBar: boolean;
   theme: ReaderTheme;
+  immersion: ImmersionLevel;
+  blockContextMenu: boolean;
   // Custom theme knobs (used when theme === "custom").
   customBg: string;   // reading background colour
   customUi: string;   // text / controls tint
@@ -61,6 +64,8 @@ export const READER_SETTINGS_DEFAULTS: ReaderSettings = {
   showProgress: true,
   showBottomBar: true,
   theme: "dark",
+  immersion: "clean",
+  blockContextMenu: false,
   customBg: "#0d0f14",
   customUi: "#e6e6e6",
   barOpacity: 90,
