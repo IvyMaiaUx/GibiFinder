@@ -283,12 +283,10 @@ export default function Explore() {
     setCuratedRows([]);
     setCuratedLoading(true);
 
-    // Scope each row's search to the providers that actually hold HQ/Gibi content
-    // (skip the slow manga providers), so the searches hit the cached curated
-    // library and return almost instantly — letting us fire them all in parallel.
-    const scope = typeFilter === "hq"
-      ? [...HQ_PROVIDER_IDS, ...GIBI_PROVIDER_IDS].join(",")
-      : GIBI_PROVIDER_IDS.join(",");
+    // Max speed: scope the row searches to the curated Drive library only, which
+    // is fully cached (Supabase + memory) — so each search returns in ~1s and all
+    // rows load in parallel. (Batcave/Jon Domingues HQs stay findable via search.)
+    const scope = GIBI_PROVIDER_IDS.join(",");
 
     const fetchSeries = (term: string) =>
       fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(term)}&nsfw=${isNsfw}&providers=${encodeURIComponent(scope)}`)
