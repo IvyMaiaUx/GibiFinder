@@ -146,12 +146,11 @@ export function ReaderSettingsPanel({
                 ]}
               />
             </Row>
-            <Row label="Direção" soon>
+            <Row label="Direção">
               <Segmented
                 value={settings.direction}
                 onChange={(v) => set("direction", v)}
-                disabled
-                options={[{ label: "→ LTR", value: "ltr" }, { label: "RTL ←", value: "rtl" }]}
+                options={[{ label: "→ LTR", value: "ltr" }, { label: "Mangá ←", value: "rtl" }]}
               />
             </Row>
             <Row label="Ajuste">
@@ -224,7 +223,7 @@ export function ReaderSettingsPanel({
           </Section>
 
           <p className="pt-4 text-3xs text-white/30 font-sans flex items-center gap-1.5">
-            <Sparkles className="w-3 h-3" /> Modos Dupla/Webtoon, RTL e temas chegam nas próximas atualizações.
+            <Sparkles className="w-3 h-3" /> Webtoon, ajuste altura/auto e temas chegam nas próximas atualizações.
           </p>
         </div>
       </div>

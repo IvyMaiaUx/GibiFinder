@@ -782,10 +782,12 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
       const container = scrollContainerRef.current;
       switch (e.key) {
         case "ArrowRight":
+          e.preventDefault(); (rtl ? goToPrevPage : goToNextPage)(); break;
+        case "ArrowLeft":
+          e.preventDefault(); (rtl ? goToNextPage : goToPrevPage)(); break;
         case "ArrowDown":
         case " ":
           e.preventDefault(); goToNextPage(); break;
-        case "ArrowLeft":
         case "ArrowUp":
           e.preventDefault(); goToPrevPage(); break;
         case "Home":
@@ -804,7 +806,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [showReader, pages.length, readerMode, goToNextPage, goToPrevPage]);
+  }, [showReader, pages.length, readerMode, goToNextPage, goToPrevPage, rtl]);
 
   // Jump to a page from the bottom scrubber.
   const goToPage = useCallback((idx: number) => {
@@ -1533,11 +1535,12 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                 <div
                   className="flex-1 flex items-center justify-center w-full gap-0.5 relative group cursor-pointer"
                   onClick={(e) => {
-                    // Three tap zones: left = previous, right = next, centre = toggle UI.
+                    // Three tap zones. Physical side → logical page depends on the
+                    // reading direction: LTR left = previous / RTL left = next.
                     const rect = e.currentTarget.getBoundingClientRect();
                     const x = e.clientX - rect.left;
-                    if (x < rect.width * 0.33) goToPrevPage();
-                    else if (x > rect.width * 0.67) goToNextPage();
+                    if (x < rect.width * 0.33) (rtl ? goToNextPage : goToPrevPage)();
+                    else if (x > rect.width * 0.67) (rtl ? goToPrevPage : goToNextPage)();
                     else toggleChrome();
                   }}
                   onTouchStart={(e) => {
@@ -1553,8 +1556,9 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                     const dx = t.clientX - s.x;
                     const dy = t.clientY - s.y;
                     if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-                      if (dx < 0) goToNextPage();
-                      else goToPrevPage();
+                      // Swipe left: next in LTR, previous in RTL (and vice-versa).
+                      if (dx < 0) (rtl ? goToPrevPage : goToNextPage)();
+                      else (rtl ? goToNextPage : goToPrevPage)();
                     }
                   }}
                 >
@@ -1591,7 +1595,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
           {/* Thin reading-progress bar at the very top (chrome-independent). */}
           {settings.showProgress && !getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && pages.length > 1 && (
-            <div className="fixed top-0 inset-x-0 z-[111] h-1 bg-white/10">
+            <div className={cn("fixed top-0 inset-x-0 z-[111] h-1 bg-white/10 flex", rtl && "justify-end")}>
               <div
                 className="h-full bg-primary transition-[width] duration-200"
                 style={{ width: `${((currentPage + 1) / pages.length) * 100}%` }}
@@ -1614,6 +1618,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               <span className="text-white font-sans font-bold text-2xs sm:text-xs tabular-nums w-7 sm:w-8 text-right shrink-0">{currentPage + 1}</span>
               <input
                 type="range"
+                dir={rtl ? "rtl" : "ltr"}
                 min={0}
                 max={Math.max(0, pages.length - 1)}
                 value={currentPage}
