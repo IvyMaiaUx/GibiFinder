@@ -112,22 +112,29 @@ async function fetchText(url: string): Promise<string> {
  * blog (search -> best-matching post -> "Sinopse:" paragraph). Returns "" when
  * nothing suitable is found (e.g. for manga the blog doesn't cover).
  */
-export async function scrapeComicSynopsis(title: string): Promise<string> {
+export type SynopsisReason = "ok" | "empty-title" | "no-terms" | "no-match" | "no-synopsis" | "fetch-error";
+
+export async function scrapeComicSynopsisDetailed(title: string): Promise<{ synopsis: string; reason: SynopsisReason }> {
   const clean = title.trim();
-  if (!clean) return "";
+  if (!clean) return { synopsis: "", reason: "empty-title" };
   try {
     // Search with a normalized query (drop "ler online" noise, keep name + issue)
     // so the blog's search actually returns the matching post.
     const { words, issue } = titleTokens(clean);
-    if (words.length === 0) return "";
+    if (words.length === 0) return { synopsis: "", reason: "no-terms" };
     const query = [...words, issue].filter(Boolean).join(" ");
     const searchHtml = await fetchText(`${BASE}/?s=${encodeURIComponent(query)}`);
     const link = pickBestLink(searchHtml, clean);
-    if (!link) return "";
+    if (!link) return { synopsis: "", reason: "no-match" };
     const postHtml = await fetchText(link);
-    return extractSynopsis(postHtml);
+    const synopsis = extractSynopsis(postHtml);
+    return synopsis ? { synopsis, reason: "ok" } : { synopsis: "", reason: "no-synopsis" };
   } catch (err) {
     logger.warn({ err, title }, "synopsis scrape failed");
-    return "";
+    return { synopsis: "", reason: "fetch-error" };
   }
+}
+
+export async function scrapeComicSynopsis(title: string): Promise<string> {
+  return (await scrapeComicSynopsisDetailed(title)).synopsis;
 }

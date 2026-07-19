@@ -247,10 +247,16 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
     setFilling(true);
     try {
       const data = await adminRequest("/api/admin/catalog/autofill-synopsis", adminKey, "POST", { limit: 12 });
+      const r = data.reasons || {};
+      const parts: string[] = [];
+      if (r["no-match"]) parts.push(`${r["no-match"]} sem correspondência na fonte`);
+      if (r["no-synopsis"]) parts.push(`${r["no-synopsis"]} achou o post mas sem sinopse`);
+      if (r["fetch-error"]) parts.push(`${r["fetch-error"]} erro de conexão`);
+      const why = parts.length ? ` — ${parts.join(" · ")}` : "";
       toast({
         title: `Sinopses: +${data.filled} de ${data.scanned}`,
         description: data.filled === 0
-          ? `A fonte (HQ) não cobre estes títulos. Faltam ~${data.remaining}. Clique de novo — o lote é aleatório e vai achando os HQs.`
+          ? `Nenhuma preenchida${why}. Faltam ~${data.remaining}. A fonte é focada em HQ; clique de novo (lote aleatório) que vai achando os HQs.`
           : `Faltam ~${data.remaining}. Clique de novo para continuar.`,
       });
       onReload();

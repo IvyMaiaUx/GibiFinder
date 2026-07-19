@@ -3,7 +3,7 @@ import { logger } from "../lib/logger";
 import { ProviderManager } from "../providers/ProviderManager";
 import { getOverrides, applyOverrides, overrideKey, upsertOverride } from "../lib/catalogOverrides";
 import { hasDriveKey } from "../lib/driveKeys";
-import { scrapeComicSynopsis } from "../lib/synopsisScraper";
+import { scrapeComicSynopsisDetailed } from "../lib/synopsisScraper";
 
 const router = Router();
 
@@ -751,12 +751,15 @@ router.post("/admin/catalog/autofill-synopsis", async (req: Request, res: Respon
     const shuffled = [...missing].sort(() => Math.random() - 0.5).slice(0, limit);
 
     let filled = 0;
-    const results: { title: string; ok: boolean }[] = [];
+    const results: { title: string; ok: boolean; reason: string }[] = [];
+    const reasons: Record<string, number> = {};
     const CONC = 6;
     for (let i = 0; i < shuffled.length; i += CONC) {
       await Promise.all(shuffled.slice(i, i + CONC).map(async (it) => {
         const s = it.sources![0];
-        const syn = (await scrapeComicSynopsis(it.title).catch(() => "")).trim();
+        const { synopsis, reason } = await scrapeComicSynopsisDetailed(it.title).catch(() => ({ synopsis: "", reason: "fetch-error" as const }));
+        reasons[reason] = (reasons[reason] || 0) + 1;
+        const syn = synopsis.trim();
         if (syn.length >= 40) {
           const cur = overrides.get(overrideKey(s.providerId, s.id));
           await upsertOverride({
@@ -767,13 +770,13 @@ router.post("/admin/catalog/autofill-synopsis", async (req: Request, res: Respon
             title: cur?.title ?? null,
           });
           filled++;
-          results.push({ title: it.title, ok: true });
+          results.push({ title: it.title, ok: true, reason });
         } else {
-          results.push({ title: it.title, ok: false });
+          results.push({ title: it.title, ok: false, reason });
         }
       }));
     }
-    res.json({ totalMissing: missing.length, scanned: shuffled.length, filled, remaining: Math.max(0, missing.length - filled), results });
+    res.json({ totalMissing: missing.length, scanned: shuffled.length, filled, remaining: Math.max(0, missing.length - filled), reasons, results });
   } catch (err) {
     logger.error({ err }, "autofill synopsis failed");
     res.status(500).json({ error: "autofill_failed", message: err instanceof Error ? err.message : String(err) });

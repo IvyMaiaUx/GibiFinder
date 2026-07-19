@@ -57740,22 +57740,26 @@ async function fetchText(url) {
     clearTimeout(t);
   }
 }
-async function scrapeComicSynopsis(title) {
+async function scrapeComicSynopsisDetailed(title) {
   const clean = title.trim();
-  if (!clean) return "";
+  if (!clean) return { synopsis: "", reason: "empty-title" };
   try {
     const { words, issue } = titleTokens(clean);
-    if (words.length === 0) return "";
+    if (words.length === 0) return { synopsis: "", reason: "no-terms" };
     const query = [...words, issue].filter(Boolean).join(" ");
     const searchHtml = await fetchText(`${BASE}/?s=${encodeURIComponent(query)}`);
     const link = pickBestLink(searchHtml, clean);
-    if (!link) return "";
+    if (!link) return { synopsis: "", reason: "no-match" };
     const postHtml = await fetchText(link);
-    return extractSynopsis(postHtml);
+    const synopsis = extractSynopsis(postHtml);
+    return synopsis ? { synopsis, reason: "ok" } : { synopsis: "", reason: "no-synopsis" };
   } catch (err) {
     logger.warn({ err, title }, "synopsis scrape failed");
-    return "";
+    return { synopsis: "", reason: "fetch-error" };
   }
+}
+async function scrapeComicSynopsis(title) {
+  return (await scrapeComicSynopsisDetailed(title)).synopsis;
 }
 
 // src/routes/providers.ts
@@ -58389,11 +58393,14 @@ router3.post("/admin/catalog/autofill-synopsis", async (req, res) => {
     const shuffled = [...missing].sort(() => Math.random() - 0.5).slice(0, limit);
     let filled = 0;
     const results = [];
+    const reasons = {};
     const CONC = 6;
     for (let i = 0; i < shuffled.length; i += CONC) {
       await Promise.all(shuffled.slice(i, i + CONC).map(async (it) => {
         const s = it.sources[0];
-        const syn = (await scrapeComicSynopsis(it.title).catch(() => "")).trim();
+        const { synopsis, reason } = await scrapeComicSynopsisDetailed(it.title).catch(() => ({ synopsis: "", reason: "fetch-error" }));
+        reasons[reason] = (reasons[reason] || 0) + 1;
+        const syn = synopsis.trim();
         if (syn.length >= 40) {
           const cur = overrides.get(overrideKey(s.providerId, s.id));
           await upsertOverride({
@@ -58405,13 +58412,13 @@ router3.post("/admin/catalog/autofill-synopsis", async (req, res) => {
             title: cur?.title ?? null
           });
           filled++;
-          results.push({ title: it.title, ok: true });
+          results.push({ title: it.title, ok: true, reason });
         } else {
-          results.push({ title: it.title, ok: false });
+          results.push({ title: it.title, ok: false, reason });
         }
       }));
     }
-    res.json({ totalMissing: missing.length, scanned: shuffled.length, filled, remaining: Math.max(0, missing.length - filled), results });
+    res.json({ totalMissing: missing.length, scanned: shuffled.length, filled, remaining: Math.max(0, missing.length - filled), reasons, results });
   } catch (err) {
     logger.error({ err }, "autofill synopsis failed");
     res.status(500).json({ error: "autofill_failed", message: err instanceof Error ? err.message : String(err) });
