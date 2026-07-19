@@ -598,28 +598,6 @@ export default function Explore() {
               </Row>
             )}
 
-            {filteredPopular.length > 0 && (
-              <Row title="🔥 Mais populares">
-                {filteredPopular.slice(0, 20).map(item => {
-                  const src = item.sources?.[0];
-                  return (
-                    <CatalogCard key={item.id} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} />
-                  );
-                })}
-              </Row>
-            )}
-
-            {filteredLatest.length > 0 && (
-              <Row title="🆕 Novidades">
-                {filteredLatest.slice(0, 20).map(item => {
-                  const src = item.sources?.[0];
-                  return (
-                    <CatalogCard key={`new-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} />
-                  );
-                })}
-              </Row>
-            )}
-
             {/* Curated series/character rows for HQ and Gibi tabs */}
             {(typeFilter === "hq" || typeFilter === "gibi") && curatedLoading && curatedRows.length === 0 && (
               <div className="py-8 text-center text-gray-500 font-display flex items-center justify-center gap-2">
