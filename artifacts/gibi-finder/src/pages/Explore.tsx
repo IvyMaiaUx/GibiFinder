@@ -337,7 +337,6 @@ export default function Explore() {
   // mixes in gibis or manga.
   const filteredPopular = popular.filter(i => matchesNsfw(i) && matchesType(i));
   const filteredLatest = latest.filter(i => matchesNsfw(i) && matchesType(i));
-  const visibleSuggestions = suggestions.filter(i => matchesNsfw(i) && matchesType(i));
 
   // Featured/hero: the highest-rated popular item that has a cover + description.
   const hero = filteredPopular.find(i => i.coverUrl && i.description) || filteredPopular[0];
@@ -572,9 +571,9 @@ export default function Explore() {
               );
             })()}
 
-            {visibleSuggestions.length >= MIN_ROW_ITEMS && (
+            {suggestions.filter(matchesType).length >= MIN_ROW_ITEMS && (
               <Row title="✨ Sugestões pra você">
-                {visibleSuggestions.map(item => {
+                {suggestions.filter(matchesType).map(item => {
                   const src = item.sources?.[0];
                   return (
                     <CatalogCard key={`sug-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} />
