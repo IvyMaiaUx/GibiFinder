@@ -635,42 +635,72 @@ export class ProviderManager {
     return nsfw ? allResults.filter(result => result.isAdult) : allResults.filter(result => !result.isAdult);
   }
 
-  // Full curated catalog with no per-provider slice — powers the admin catalog
-  // browser. Providers exposing getAllItems (curated ones) return everything;
-  // the rest fall back to their popular catalog.
-  static async getFullCatalog(nsfw?: boolean): Promise<UnifiedSearchResult[]> {
+  // Collect raw (un-unified) items from every active provider, with a per-provider
+  // count and error map for diagnostics. Curated providers return everything
+  // (getAllItems); the rest fall back to their popular catalog. When forceCrawl is
+  // set, providers exposing forceRefresh re-crawl their sources from scratch.
+  private static async collectFullCatalogRaw(nsfw?: boolean, forceCrawl = false): Promise<{
+    raw: SearchResult[]; providerRaw: Record<string, number>; errors: Record<string, string>;
+  }> {
     const activeProviders = Array.from(this.providers.values()).filter(
       p => this.activeStates.get(p.id) === true
     );
-    const promises = activeProviders.map(p => {
-      const full = (p as Provider & { getAllItems?: () => Promise<SearchResult[]> }).getAllItems;
-      const source = full ? full.call(p) : p.getCatalog("popular", nsfw);
-      return this.withTimeout(
-        source.catch((err: unknown) => {
-          logger.error({ err }, `Error loading full catalog from ${p.name}:`);
-          return [] as SearchResult[];
-        }),
-        20000,
-        [] as SearchResult[]
-      );
-    });
-    const resultsArray = await Promise.all(promises);
-    return this.unifyCatalog(resultsArray.flat(), nsfw);
+    const providerRaw: Record<string, number> = {};
+    const errors: Record<string, string> = {};
+    const arrays = await Promise.all(activeProviders.map(async p => {
+      const anyP = p as Provider & {
+        getAllItems?: () => Promise<SearchResult[]>;
+        forceRefresh?: () => Promise<SearchResult[]>;
+      };
+      try {
+        let r: SearchResult[];
+        if (forceCrawl && anyP.forceRefresh) {
+          r = await anyP.forceRefresh();
+        } else if (anyP.getAllItems) {
+          // Curated crawl can be slow on a cold instance — give it more room than
+          // the fast aggregators so it isn't dropped by the timeout.
+          r = await this.withTimeout(anyP.getAllItems(), 25000, [] as SearchResult[]);
+        } else {
+          r = await this.withTimeout(p.getCatalog("popular", nsfw), 12000, [] as SearchResult[]);
+        }
+        providerRaw[p.id] = r.length;
+        return r;
+      } catch (err) {
+        errors[p.id] = err instanceof Error ? err.message : String(err);
+        providerRaw[p.id] = 0;
+        logger.error({ err }, `Full catalog collect failed for ${p.name}`);
+        return [] as SearchResult[];
+      }
+    }));
+    return { raw: arrays.flat(), providerRaw, errors };
   }
 
-  // Force a fresh crawl on every provider that supports forceRefresh (the curated
-  // ones), then return the rebuilt full catalog. Powers the admin rebuild action.
-  static async rebuildFullCatalog(nsfw?: boolean): Promise<UnifiedSearchResult[]> {
-    const activeProviders = Array.from(this.providers.values()).filter(
-      p => this.activeStates.get(p.id) === true
-    );
-    await Promise.all(activeProviders.map(p => {
-      const refresh = (p as Provider & { forceRefresh?: () => Promise<SearchResult[]> }).forceRefresh;
-      return refresh
-        ? refresh.call(p).catch((err: unknown) => { logger.error({ err }, `Rebuild failed for ${p.name}`); return []; })
-        : Promise.resolve([]);
-    }));
-    return this.getFullCatalog(nsfw);
+  // Full curated catalog with no per-provider slice — powers the admin browser.
+  static async getFullCatalog(nsfw?: boolean): Promise<UnifiedSearchResult[]> {
+    const { raw } = await this.collectFullCatalogRaw(nsfw, false);
+    return this.unifyCatalog(raw, nsfw);
+  }
+
+  // Same as getFullCatalog but also returns diagnostics (per-provider raw counts,
+  // errors). forceCrawl re-crawls the curated sources first.
+  static async getFullCatalogDiag(nsfw?: boolean, forceCrawl = false): Promise<{
+    items: UnifiedSearchResult[]; providerRaw: Record<string, number>; errors: Record<string, string>;
+  }> {
+    const { raw, providerRaw, errors } = await this.collectFullCatalogRaw(nsfw, forceCrawl);
+    return { items: this.unifyCatalog(raw, nsfw), providerRaw, errors };
+  }
+
+  // Cache health for every provider that reports it (the curated ones). Lets the
+  // admin see whether the shared catalog cache is actually persisting.
+  static async curatedCacheStatus(): Promise<Record<string, unknown>> {
+    const out: Record<string, unknown> = {};
+    for (const p of this.providers.values()) {
+      const anyP = p as Provider & { cacheStatus?: () => Promise<unknown> };
+      if (typeof anyP.cacheStatus === "function") {
+        out[p.id] = await anyP.cacheStatus().catch(() => null);
+      }
+    }
+    return out;
   }
 
   // Fetch a large set of titles for a single genre, on demand. Providers with a

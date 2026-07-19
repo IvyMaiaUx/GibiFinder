@@ -56863,6 +56863,18 @@ var CuratedComicsProvider = class {
     const dynamicItems = await this.refreshCatalog();
     return [...STATIC_ITEMS, ...dynamicItems].map((item) => this.toSearchResult(item));
   }
+  // Diagnostics: is the shared Supabase cache persisting, how many items, when.
+  async cacheStatus() {
+    const remote = await this.loadRemoteCache();
+    return {
+      persisted: !!remote,
+      remoteCount: remote?.items.length ?? 0,
+      updatedAt: remote ? new Date(remote.updatedAt).toISOString() : null,
+      memCount: this.catalogCache?.items.length ?? 0,
+      staticCount: STATIC_ITEMS.length,
+      driveKey: hasDriveKey()
+    };
+  }
 };
 
 // src/providers/ProviderManager.ts
@@ -57387,42 +57399,60 @@ var ProviderManager = class {
     }));
     return nsfw ? allResults.filter((result) => result.isAdult) : allResults.filter((result) => !result.isAdult);
   }
-  // Full curated catalog with no per-provider slice — powers the admin catalog
-  // browser. Providers exposing getAllItems (curated ones) return everything;
-  // the rest fall back to their popular catalog.
-  static async getFullCatalog(nsfw) {
+  // Collect raw (un-unified) items from every active provider, with a per-provider
+  // count and error map for diagnostics. Curated providers return everything
+  // (getAllItems); the rest fall back to their popular catalog. When forceCrawl is
+  // set, providers exposing forceRefresh re-crawl their sources from scratch.
+  static async collectFullCatalogRaw(nsfw, forceCrawl = false) {
     const activeProviders = Array.from(this.providers.values()).filter(
       (p) => this.activeStates.get(p.id) === true
     );
-    const promises = activeProviders.map((p) => {
-      const full = p.getAllItems;
-      const source = full ? full.call(p) : p.getCatalog("popular", nsfw);
-      return this.withTimeout(
-        source.catch((err) => {
-          logger.error({ err }, `Error loading full catalog from ${p.name}:`);
-          return [];
-        }),
-        2e4,
-        []
-      );
-    });
-    const resultsArray = await Promise.all(promises);
-    return this.unifyCatalog(resultsArray.flat(), nsfw);
-  }
-  // Force a fresh crawl on every provider that supports forceRefresh (the curated
-  // ones), then return the rebuilt full catalog. Powers the admin rebuild action.
-  static async rebuildFullCatalog(nsfw) {
-    const activeProviders = Array.from(this.providers.values()).filter(
-      (p) => this.activeStates.get(p.id) === true
-    );
-    await Promise.all(activeProviders.map((p) => {
-      const refresh = p.forceRefresh;
-      return refresh ? refresh.call(p).catch((err) => {
-        logger.error({ err }, `Rebuild failed for ${p.name}`);
+    const providerRaw = {};
+    const errors = {};
+    const arrays = await Promise.all(activeProviders.map(async (p) => {
+      const anyP = p;
+      try {
+        let r;
+        if (forceCrawl && anyP.forceRefresh) {
+          r = await anyP.forceRefresh();
+        } else if (anyP.getAllItems) {
+          r = await this.withTimeout(anyP.getAllItems(), 25e3, []);
+        } else {
+          r = await this.withTimeout(p.getCatalog("popular", nsfw), 12e3, []);
+        }
+        providerRaw[p.id] = r.length;
+        return r;
+      } catch (err) {
+        errors[p.id] = err instanceof Error ? err.message : String(err);
+        providerRaw[p.id] = 0;
+        logger.error({ err }, `Full catalog collect failed for ${p.name}`);
         return [];
-      }) : Promise.resolve([]);
+      }
     }));
-    return this.getFullCatalog(nsfw);
+    return { raw: arrays.flat(), providerRaw, errors };
+  }
+  // Full curated catalog with no per-provider slice — powers the admin browser.
+  static async getFullCatalog(nsfw) {
+    const { raw } = await this.collectFullCatalogRaw(nsfw, false);
+    return this.unifyCatalog(raw, nsfw);
+  }
+  // Same as getFullCatalog but also returns diagnostics (per-provider raw counts,
+  // errors). forceCrawl re-crawls the curated sources first.
+  static async getFullCatalogDiag(nsfw, forceCrawl = false) {
+    const { raw, providerRaw, errors } = await this.collectFullCatalogRaw(nsfw, forceCrawl);
+    return { items: this.unifyCatalog(raw, nsfw), providerRaw, errors };
+  }
+  // Cache health for every provider that reports it (the curated ones). Lets the
+  // admin see whether the shared catalog cache is actually persisting.
+  static async curatedCacheStatus() {
+    const out = {};
+    for (const p of this.providers.values()) {
+      const anyP = p;
+      if (typeof anyP.cacheStatus === "function") {
+        out[p.id] = await anyP.cacheStatus().catch(() => null);
+      }
+    }
+    return out;
   }
   // Fetch a large set of titles for a single genre, on demand. Providers with a
   // real genre filter (MangaDex) use it; others contribute their catalog matches.
@@ -58045,7 +58075,7 @@ router3.delete("/providers/custom/:id", (req, res) => {
     res.status(500).json({ error: "delete_custom_failed", message: err instanceof Error ? err.message : String(err) });
   }
 });
-function serializeAdminCatalog(items) {
+function serializeAdminCatalog(items, diag) {
   const byProvider = {};
   for (const it of items) {
     const pid = it.sources?.[0]?.providerId || "unknown";
@@ -58054,6 +58084,7 @@ function serializeAdminCatalog(items) {
   return {
     total: items.length,
     byProvider,
+    diag,
     items: items.map((it) => ({
       id: it.id,
       title: it.title,
@@ -58067,7 +58098,9 @@ function serializeAdminCatalog(items) {
 router3.get("/admin/catalog", async (req, res) => {
   if (!requireAdmin2(req, res)) return;
   try {
-    res.json(serializeAdminCatalog(await ProviderManager.getFullCatalog(false)));
+    const { items, providerRaw, errors } = await ProviderManager.getFullCatalogDiag(false, false);
+    const cache3 = await ProviderManager.curatedCacheStatus();
+    res.json(serializeAdminCatalog(items, { providerRaw, errors, driveKey: hasDriveKey(), cache: cache3 }));
   } catch (err) {
     logger.error({ err }, "admin catalog failed");
     res.status(500).json({ error: "catalog_failed", message: err instanceof Error ? err.message : String(err) });
@@ -58076,7 +58109,9 @@ router3.get("/admin/catalog", async (req, res) => {
 router3.post("/admin/catalog/rebuild", async (req, res) => {
   if (!requireAdmin2(req, res)) return;
   try {
-    res.json(serializeAdminCatalog(await ProviderManager.rebuildFullCatalog(false)));
+    const { items, providerRaw, errors } = await ProviderManager.getFullCatalogDiag(false, true);
+    const cache3 = await ProviderManager.curatedCacheStatus();
+    res.json(serializeAdminCatalog(items, { providerRaw, errors, driveKey: hasDriveKey(), cache: cache3 }));
   } catch (err) {
     logger.error({ err }, "admin catalog rebuild failed");
     res.status(500).json({ error: "rebuild_failed", message: err instanceof Error ? err.message : String(err) });

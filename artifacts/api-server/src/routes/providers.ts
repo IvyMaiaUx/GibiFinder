@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { logger } from "../lib/logger";
 import { ProviderManager } from "../providers/ProviderManager";
 import { getOverrides, applyOverrides, overrideKey } from "../lib/catalogOverrides";
+import { hasDriveKey } from "../lib/driveKeys";
 
 const router = Router();
 
@@ -672,7 +673,10 @@ router.delete("/providers/custom/:id", (req: Request, res: Response) => {
 
 // Serialize the full catalog for the admin browser, with a per-provider count
 // breakdown so the admin can see where items come from (drives vs providers).
-function serializeAdminCatalog(items: Awaited<ReturnType<typeof ProviderManager.getFullCatalog>>) {
+function serializeAdminCatalog(
+  items: Awaited<ReturnType<typeof ProviderManager.getFullCatalog>>,
+  diag: { providerRaw: Record<string, number>; errors: Record<string, string>; driveKey: boolean; cache: Record<string, unknown> },
+) {
   const byProvider: Record<string, number> = {};
   for (const it of items) {
     const pid = it.sources?.[0]?.providerId || "unknown";
@@ -681,6 +685,7 @@ function serializeAdminCatalog(items: Awaited<ReturnType<typeof ProviderManager.
   return {
     total: items.length,
     byProvider,
+    diag,
     items: items.map(it => ({
       id: it.id,
       title: it.title,
@@ -695,11 +700,14 @@ function serializeAdminCatalog(items: Awaited<ReturnType<typeof ProviderManager.
 // GET /api/admin/catalog — full curated catalog for the admin browser.
 // Returns raw items (overrides are NOT applied) so the admin can see and manage
 // hidden/edited items. Each item carries its sources[] so the override key
-// (providerId:itemId) can be derived on the client.
+// (providerId:itemId) can be derived on the client. Includes diagnostics so the
+// admin can see why the curated (Drive) library may be empty.
 router.get("/admin/catalog", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   try {
-    res.json(serializeAdminCatalog(await ProviderManager.getFullCatalog(false)));
+    const { items, providerRaw, errors } = await ProviderManager.getFullCatalogDiag(false, false);
+    const cache = await ProviderManager.curatedCacheStatus();
+    res.json(serializeAdminCatalog(items, { providerRaw, errors, driveKey: hasDriveKey(), cache }));
   } catch (err) {
     logger.error({ err }, "admin catalog failed");
     res.status(500).json({ error: "catalog_failed", message: err instanceof Error ? err.message : String(err) });
@@ -712,7 +720,9 @@ router.get("/admin/catalog", async (req: Request, res: Response) => {
 router.post("/admin/catalog/rebuild", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   try {
-    res.json(serializeAdminCatalog(await ProviderManager.rebuildFullCatalog(false)));
+    const { items, providerRaw, errors } = await ProviderManager.getFullCatalogDiag(false, true);
+    const cache = await ProviderManager.curatedCacheStatus();
+    res.json(serializeAdminCatalog(items, { providerRaw, errors, driveKey: hasDriveKey(), cache }));
   } catch (err) {
     logger.error({ err }, "admin catalog rebuild failed");
     res.status(500).json({ error: "rebuild_failed", message: err instanceof Error ? err.message : String(err) });

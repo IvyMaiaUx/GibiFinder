@@ -9,6 +9,7 @@ import { ProviderInspectorPanel } from "@/pages/ProviderInspector";
 import { AdminShell, type AdminModule } from "@/components/admin/AdminShell";
 import { AdminDashboard, type DashboardStats } from "@/components/admin/AdminDashboard";
 import { AdminPlaceholder } from "@/components/admin/AdminPlaceholder";
+import { scoreItem, qualityColor } from "@/components/admin/quality";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const STORAGE_KEY = "gibi_admin_key";
@@ -190,7 +191,7 @@ function itemType(item: any): "gibi" | "hq" {
   return "hq";
 }
 
-function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebuild, rebuilding }: { adminKey: string; items: any[]; loading: boolean; onReload: () => void; byProvider: Record<string, number>; onRebuild: () => void; rebuilding: boolean }) {
+function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebuild, rebuilding, diag }: { adminKey: string; items: any[]; loading: boolean; onReload: () => void; byProvider: Record<string, number>; onRebuild: () => void; rebuilding: boolean; diag?: any }) {
   const { toast } = useToast();
   const [overrides, setOverrides] = useState<Record<string, any>>({});
   const [editing, setEditing] = useState<any | null>(null);
@@ -299,6 +300,40 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
         </div>
       )}
 
+      {/* Diagnostics — why the curated (Drive) library may be empty */}
+      {diag && (() => {
+        const bib = diag.cache?.["biblioteca-br"];
+        const bibRaw = diag.providerRaw?.["biblioteca-br"] ?? 0;
+        const driveKey = !!diag.driveKey;
+        const persisted = !!bib?.persisted;
+        const problems: string[] = [];
+        if (!driveKey) problems.push("Chave da API do Google Drive ausente no servidor (GOOGLE_DRIVE_API_KEY) — sem ela, os Drives não são listados.");
+        if (!persisted) problems.push("A tabela curated_cache não está persistindo no Supabase — rode o SQL de schema. Sem cache, cada carga refaz o crawl e pode estourar o tempo limite.");
+        if (driveKey && bibRaw === 0) problems.push("O crawl dos Drives retornou 0 itens (pode ter estourado o tempo). Clique RECONSTRUIR para forçar um novo crawl.");
+        const ok = problems.length === 0;
+        return (
+          <div className={`border-4 border-black p-3 ${ok ? "bg-green-50" : "bg-yellow-50"}`}>
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <span className="font-display text-sm">DIAGNÓSTICO</span>
+              <span className={`text-2xs font-bold px-2 py-0.5 border-2 border-black ${driveKey ? "bg-green-200" : "bg-red-200"}`}>Drive API {driveKey ? "OK" : "AUSENTE"}</span>
+              <span className={`text-2xs font-bold px-2 py-0.5 border-2 border-black ${persisted ? "bg-green-200" : "bg-red-200"}`}>Cache {persisted ? `persistido (${bib?.remoteCount ?? 0})` : "não persistido"}</span>
+              <span className="text-2xs font-bold px-2 py-0.5 border-2 border-black bg-white">biblioteca-br cru: {bibRaw}</span>
+              {bib?.updatedAt && <span className="text-2xs font-bold text-gray-500">atualizado {new Date(bib.updatedAt).toLocaleString("pt-BR")}</span>}
+            </div>
+            {ok ? (
+              <p className="font-sans font-bold text-green-700 text-xs">Tudo certo com as fontes do catálogo. ✅</p>
+            ) : (
+              <ul className="list-disc pl-5 space-y-0.5">
+                {problems.map((p, i) => <li key={i} className="font-sans font-bold text-yellow-800 text-xs">{p}</li>)}
+              </ul>
+            )}
+            {diag.errors && Object.keys(diag.errors).length > 0 && (
+              <p className="font-sans font-bold text-red-600 text-2xs mt-1">Erros: {Object.entries(diag.errors).map(([k, v]) => `${k}: ${v}`).join(" · ")}</p>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Filter bar */}
       <div className="flex flex-wrap gap-2 items-stretch">
         <div className="flex-1 min-w-[200px] relative">
@@ -347,7 +382,14 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
                   <div className="flex-1 min-w-0">
                     <h4 className="font-display text-base text-black leading-tight line-clamp-2">{title}</h4>
                     <p className="text-xs font-bold text-gray-500 truncate">{prov} · {itemType(item) === "gibi" ? "Gibi" : "HQ"}</p>
-                    {ov && <span className="inline-block mt-1 text-2xs font-bold bg-secondary/60 border border-black px-1.5">{ov.hidden ? "ESCONDIDO" : "EDITADO"}</span>}
+                    <div className="flex items-center gap-1.5 mt-1">
+                      {(() => { const q = scoreItem(item, ov); return (
+                        <span className="inline-flex items-center gap-1 text-2xs font-bold border-2 border-black px-1.5" style={{ background: qualityColor(q.score), color: "#fff" }} title={q.checks.filter(c => !c.ok).map(c => c.hint).join(" · ") || "Completo"}>
+                          {q.score}%
+                        </span>
+                      ); })()}
+                      {ov && <span className="text-2xs font-bold bg-secondary/60 border border-black px-1.5">{ov.hidden ? "ESCONDIDO" : "EDITADO"}</span>}
+                    </div>
                   </div>
                   <div className="flex flex-col gap-1 shrink-0">
                     <button onClick={() => save(item, { hidden: !ov?.hidden })} title={ov?.hidden ? "Mostrar" : "Esconder"} className="p-2 border-2 border-black hover:bg-secondary">{ov?.hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
@@ -769,7 +811,7 @@ export default function Admin() {
             ))}
           </div>
 
-          {catalogView === "library" && <CatalogManager adminKey={adminKey} items={catalogItems} loading={loadingCatalog} onReload={reloadCatalog} byProvider={catalogData?.byProvider || {}} onRebuild={rebuildCatalog} rebuilding={rebuildingCatalog} />}
+          {catalogView === "library" && <CatalogManager adminKey={adminKey} items={catalogItems} loading={loadingCatalog} onReload={reloadCatalog} byProvider={catalogData?.byProvider || {}} onRebuild={rebuildCatalog} rebuilding={rebuildingCatalog} diag={(catalogData as any)?.diag} />}
 
           {catalogView === "pending" && (
           loadingPending ? (

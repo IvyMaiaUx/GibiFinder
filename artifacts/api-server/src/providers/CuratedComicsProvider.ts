@@ -574,4 +574,17 @@ export class CuratedComicsProvider implements Provider {
     const dynamicItems = await this.refreshCatalog();
     return [...STATIC_ITEMS, ...dynamicItems].map(item => this.toSearchResult(item));
   }
+
+  // Diagnostics: is the shared Supabase cache persisting, how many items, when.
+  async cacheStatus(): Promise<{ persisted: boolean; remoteCount: number; updatedAt: string | null; memCount: number; staticCount: number; driveKey: boolean }> {
+    const remote = await this.loadRemoteCache();
+    return {
+      persisted: !!remote,
+      remoteCount: remote?.items.length ?? 0,
+      updatedAt: remote ? new Date(remote.updatedAt).toISOString() : null,
+      memCount: this.catalogCache?.items.length ?? 0,
+      staticCount: STATIC_ITEMS.length,
+      driveKey: hasDriveKey(),
+    };
+  }
 }
