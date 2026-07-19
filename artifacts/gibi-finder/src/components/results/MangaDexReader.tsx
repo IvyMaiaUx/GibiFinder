@@ -187,6 +187,14 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     }
   }, []);
 
+  // Tie native fullscreen (F key / Immersion, desktop only) to the chrome-hidden
+  // state so entering fullscreen hides the header/bars and exiting shows them.
+  useEffect(() => {
+    const onFs = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+
   // Immersion (level 3): block image drag / context menu; exit fullscreen on leave.
   useEffect(() => {
     if (!showReader || immersion !== "immersion") return;
