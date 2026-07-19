@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { proxyCoverUrl } from "@/lib/utils";
+import { bumpStat } from "@/components/reader/readerStats";
 
 interface SafeImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   src?: string;
@@ -7,7 +8,7 @@ interface SafeImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   className?: string;
 }
 
-export function SafeImage({ src, alt, className, ...props }: SafeImageProps) {
+export function SafeImage({ src, alt, className, onLoad, ...props }: SafeImageProps) {
   const [currentSrc, setCurrentSrc] = useState<string | undefined>(undefined);
   const [retryStage, setRetryStage] = useState<0 | 1 | 2>(0); // 0: proxied, 1: original direct, 2: failed placeholder
 
@@ -24,10 +25,12 @@ export function SafeImage({ src, alt, className, ...props }: SafeImageProps) {
   const handleError = () => {
     if (retryStage === 0 && src) {
       // Stage 1 failed (proxy). Fall back to Stage 2 (original URL directly in browser)
+      bumpStat("retried");
       setCurrentSrc(src);
       setRetryStage(1);
     } else {
       // Stage 2 also failed. Go to Stage 3 (placeholder)
+      bumpStat("failed");
       setRetryStage(2);
     }
   };
@@ -41,12 +44,13 @@ export function SafeImage({ src, alt, className, ...props }: SafeImageProps) {
   }
 
   return (
-    <img 
-      src={currentSrc} 
-      alt={alt} 
+    <img
+      src={currentSrc}
+      alt={alt}
       className={className}
       referrerPolicy="no-referrer"
       {...props}
+      onLoad={(e) => { bumpStat("loaded"); onLoad?.(e); }}
       onError={handleError}
     />
   );

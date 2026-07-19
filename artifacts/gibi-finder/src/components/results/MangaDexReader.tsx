@@ -24,6 +24,8 @@ import { SafeImage } from "@/components/ui/SafeImage";
 import { useReaderZoom } from "@/components/reader/useReaderZoom";
 import { useReaderSettings, readerThemeVars } from "@/components/reader/useReaderSettings";
 import { ReaderSettingsPanel } from "@/components/reader/ReaderSettingsPanel";
+import { ReaderDiagnostics, type DiagInfo } from "@/components/reader/ReaderDiagnostics";
+import { logRequest } from "@/components/reader/readerStats";
 import { useAuth } from "@/hooks/use-auth";
 import { getLocalProgress, saveReadingState, markChapterCompleted } from "@/lib/user-history";
 import { markSourceEmpty, markSourceHasChapters } from "@/lib/empty-sources";
@@ -91,9 +93,12 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // Smart double-page: aspect ratio (w/h) of each page, learned on load, so we can
   // detect spreads/covers/panoramas and pair only genuine portrait pages.
   const pageAspectRef = useRef<Record<number, number>>({});
+  const pageDimsRef = useRef<Record<number, { w: number; h: number }>>({});
+  const lastFetchMsRef = useRef<number | null>(null);
   const [aspectVersion, setAspectVersion] = useState(0);
   const recordAspect = (idx: number, img: HTMLImageElement) => {
     const a = img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 0;
+    if (a) pageDimsRef.current[idx] = { w: img.naturalWidth, h: img.naturalHeight };
     if (a && Math.abs((pageAspectRef.current[idx] ?? 0) - a) > 0.01) {
       pageAspectRef.current[idx] = a;
       setAspectVersion(v => v + 1);
@@ -129,8 +134,21 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
   // Reader preferences (global + per-work overrides) — Phase 4, Priority 1.
   const workId = selectedResult?.id || mangaTitle || undefined;
-  const { settings } = useReaderSettings(workId);
+  const { settings, hasWorkOverride } = useReaderSettings(workId);
   const [showSettings, setShowSettings] = useState(false);
+  const [showDiag, setShowDiag] = useState(false);
+
+  // Ctrl+Shift+D toggles the engineering diagnostics overlay.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === "D" || e.key === "d")) {
+        e.preventDefault();
+        setShowDiag(v => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // In-reader zoom (pinch + double-tap) — extracted into a reusable hook (Phase 1),
   // now driven by the user's zoom settings.
@@ -286,7 +304,11 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
       let data = prefetchedPagesRef.current[chapter.id];
       if (!data) {
         const url = `${BASE}/api/providers/pages?providerId=${chapter.providerId}&chapterId=${encodeURIComponent(chapter.id)}`;
+        const t0 = performance.now();
         const res = await fetch(url);
+        const ms = Math.round(performance.now() - t0);
+        lastFetchMsRef.current = ms;
+        logRequest({ url, kind: "pages", ms, status: res.status, at: Date.now() });
         if (!res.ok) throw new Error("Erro ao carregar páginas do capítulo");
         data = await res.json() as Page[];
       }
@@ -1694,6 +1716,57 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
             workTitle={selectedResult?.title || mangaTitle}
             readingMode={readerMode}
             onSetReadingMode={setReaderMode}
+          />
+
+          {/* Engineering diagnostics (Ctrl+Shift+D) */}
+          <ReaderDiagnostics
+            open={showDiag}
+            onClose={() => setShowDiag(false)}
+            diag={((): DiagInfo => {
+              const winSize = Math.min(pages.length, vWinEnd - vWinStart + 1);
+              const shownInPage = currentGroup?.length ?? 1;
+              const aspect = pageAspectRef.current[currentPage] ?? 0;
+              return {
+                mode: readerMode,
+                direction: settings.direction,
+                fit: settings.fitMode,
+                theme: settings.theme,
+                zoom,
+                page: currentPage + 1,
+                total: pages.length,
+                chapterNum: selectedChapter?.chapterNum,
+                provider: selectedSource?.providerId || selectedChapter?.providerId,
+                engine: selectedSource?.providerId || selectedChapter?.providerId,
+                pageUrl: pages[currentPage]?.url,
+                rendered: readerMode === "scroll" ? winSize : shownInPage,
+                virtualized: Math.max(0, pages.length - (readerMode === "scroll" ? winSize : shownInPage)),
+                preload: V_AHEAD,
+                scrollVirtualized: readerMode === "scroll",
+                doublePage: settings.doublePage,
+                spreadDetected: aspect > 1.15,
+                aspect,
+                orientation: aspect > 1.15 ? "Paisagem" : "Retrato",
+                resume: !!lastReadProgress,
+                perWork: hasWorkOverride,
+                imgW: pageDimsRef.current[currentPage]?.w,
+                imgH: pageDimsRef.current[currentPage]?.h,
+                imgFormat: pages[currentPage]?.url?.match(/\.(webp|jpe?g|png|gif|avif)/i)?.[1]?.toUpperCase(),
+                lastFetchMs: lastFetchMsRef.current ?? undefined,
+              };
+            })()}
+            onReloadChapter={() => {
+              if (selectedChapter) {
+                delete prefetchedPagesRef.current[selectedChapter.id];
+                readChapter(selectedChapter, currentPage);
+              }
+            }}
+            onClearCache={() => {
+              prefetchedPagesRef.current = {};
+              pageHeightsRef.current = {};
+              pageAspectRef.current = {};
+              pageDimsRef.current = {};
+            }}
+            onTestProvider={() => { if (selectedSource) loadChapters(selectedSource); }}
           />
         </div>
       )}
