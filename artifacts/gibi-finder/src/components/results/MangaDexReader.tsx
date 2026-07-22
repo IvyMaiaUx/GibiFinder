@@ -212,6 +212,13 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     };
   }, []);
 
+  // Scroll mode + native fullscreen is unstable on mobile (browser exits on overscroll).
+  // Exit native fullscreen when switching to scroll mode so the CSS-only chrome
+  // hide/show is used instead — avoids unexpected fullscreen exits mid-scroll.
+  useEffect(() => {
+    if (readerMode === "scroll") exitReaderFullscreen();
+  }, [readerMode, exitReaderFullscreen]);
+
   // Immersion (level 3): block image drag / context menu; exit fullscreen on leave.
   useEffect(() => {
     if (!showReader || immersion !== "immersion") return;

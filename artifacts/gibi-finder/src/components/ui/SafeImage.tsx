@@ -11,7 +11,10 @@ interface SafeImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
 }
 
 export function SafeImage({ src, alt, className, onLoad, onBroken, ...props }: SafeImageProps) {
-  const [currentSrc, setCurrentSrc] = useState<string | undefined>(undefined);
+  // Lazy-init with the proxied URL so the <img> renders on first paint without
+  // going through an intermediate undefined→url transition (eliminates the brief
+  // white/placeholder flash when the component mounts or remounts).
+  const [currentSrc, setCurrentSrc] = useState<string | undefined>(() => src ? proxyCoverUrl(src) : undefined);
   const [retryStage, setRetryStage] = useState<0 | 1 | 2>(0); // 0: proxied, 1: original direct, 2: failed placeholder
 
   useEffect(() => {

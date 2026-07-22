@@ -54045,38 +54045,47 @@ router2.post("/auth/history/reading/upsert", async (req, res) => {
     return;
   }
   try {
-    await supabase.from("user_reading_progress").delete().eq("user_id", userId).eq("progress_key", progressKey);
-    await supabase.from("user_reading_progress").insert({
-      user_id: userId,
-      progress_key: progressKey,
-      chapter_id: progress.chapterId,
-      chapter_num: progress.chapterNum || "",
-      page_number: progress.pageNumber || 1,
-      title: progress.title,
-      cover_url: progress.coverUrl || null,
-      provider_id: progress.providerId || null,
-      manga_id: progress.mangaId || null,
-      language: progress.language || null,
-      updated_at: progress.updatedAt || (/* @__PURE__ */ new Date()).toISOString()
-    });
-    await supabase.from("user_reading_history").delete().eq("user_id", userId).eq("item_id", historyItem.id);
-    const { error } = await supabase.from("user_reading_history").insert({
-      user_id: userId,
-      item_id: historyItem.id,
-      title: historyItem.title,
-      cover_url: historyItem.coverUrl || null,
-      chapter_id: historyItem.chapterId,
-      chapter_num: historyItem.chapterNum || "",
-      chapter_title: historyItem.chapterTitle || null,
-      provider_id: historyItem.providerId,
-      manga_id: historyItem.mangaId || null,
-      language: historyItem.language || null,
-      page_number: historyItem.pageNumber || 1,
-      timestamp: historyItem.timestamp || Date.now()
-    });
-    if (error) {
-      req.log.error({ err: error }, "db error");
-      res.status(500).json({ error: "db_error" });
+    const { error: progressErr } = await supabase.from("user_reading_progress").upsert(
+      {
+        user_id: userId,
+        progress_key: progressKey,
+        chapter_id: progress.chapterId,
+        chapter_num: progress.chapterNum || "",
+        page_number: progress.pageNumber || 1,
+        title: progress.title,
+        cover_url: progress.coverUrl || null,
+        provider_id: progress.providerId || null,
+        manga_id: progress.mangaId || null,
+        language: progress.language || null,
+        updated_at: progress.updatedAt || (/* @__PURE__ */ new Date()).toISOString()
+      },
+      { onConflict: "user_id,progress_key" }
+    );
+    if (progressErr) {
+      req.log.error({ err: progressErr }, "db error on progress upsert");
+      res.status(500).json({ error: "db_error", detail: progressErr.message });
+      return;
+    }
+    const { error: historyErr } = await supabase.from("user_reading_history").upsert(
+      {
+        user_id: userId,
+        item_id: historyItem.id,
+        title: historyItem.title,
+        cover_url: historyItem.coverUrl || null,
+        chapter_id: historyItem.chapterId,
+        chapter_num: historyItem.chapterNum || "",
+        chapter_title: historyItem.chapterTitle || null,
+        provider_id: historyItem.providerId,
+        manga_id: historyItem.mangaId || null,
+        language: historyItem.language || null,
+        page_number: historyItem.pageNumber || 1,
+        timestamp: historyItem.timestamp || Date.now()
+      },
+      { onConflict: "user_id,item_id" }
+    );
+    if (historyErr) {
+      req.log.error({ err: historyErr }, "db error on history upsert");
+      res.status(500).json({ error: "db_error", detail: historyErr.message });
       return;
     }
     res.json({ success: true });

@@ -399,12 +399,19 @@ export default function Explore() {
 
   // Read / reading / favorite status (for badges + suggestions), keyed by source.
   const keyOf = (providerId: string, mangaId: string) => `${providerId}:${mangaId}`;
+  // Exclude progress entries whose current chapter is already completed so the
+  // badge shows "LIDO" (not "LENDO") for a finished work — matching Colecao.tsx.
+  const _completedForBadge = getLocalCompleted();
+  const completedChapterKeysForBadge = new Set(
+    _completedForBadge.map(c => `${c.providerId}|${c.mangaId}|${c.chapterId}`)
+  );
   const readingKeys = new Set(
     Object.values(getLocalProgress())
       .filter((p): p is NonNullable<typeof p> => !!p?.providerId && !!p?.mangaId)
+      .filter(p => !completedChapterKeysForBadge.has(`${p.providerId}|${p.mangaId}|${p.chapterId}`))
       .map(p => keyOf(p.providerId!, p.mangaId!))
   );
-  const readKeys = new Set(getLocalCompleted().map(c => keyOf(c.providerId, c.mangaId)));
+  const readKeys = new Set(_completedForBadge.map(c => keyOf(c.providerId, c.mangaId)));
   const favKeys = new Set(getFavorites().map(f => keyOf(f.providerId, f.mangaId)));
   const interactedKeys = new Set([...readingKeys, ...readKeys, ...favKeys]);
 
