@@ -12,6 +12,7 @@ import { OrionProvider } from "./OrionProvider";
 import { WordPressComicProvider } from "./WordPressComicProvider";
 import { SlimeReadProvider } from "./SlimeReadProvider";
 import { CuratedComicsProvider } from "./CuratedComicsProvider";
+import { InternetArchiveProvider } from "./InternetArchiveProvider";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -76,6 +77,7 @@ export class ProviderManager {
     ["eightmuses", true],
     ["nhentai", true],
     ["biblioteca-br", true],
+    ["internet-archive", true],
     ["bato", false],
     ["hqnow", false]
   ]);
@@ -117,7 +119,8 @@ export class ProviderManager {
     this.registerProvider(new EightMusesProvider());
     this.registerProvider(new NHentaiProvider());
     this.registerProvider(new CuratedComicsProvider("biblioteca-br", "Biblioteca BR", "pt"));
-    
+    this.registerProvider(new InternetArchiveProvider());
+
     // Register stub/future providers
     this.registerProvider(new StubProvider("bato", "Bato", "multi"));
     this.registerProvider(new StubProvider("hqnow", "HQ Now", "pt"));
