@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { syncReadingHistory, syncSearchHistory } from "@/lib/user-history";
+import { syncReadingHistory, syncSearchHistory, getSyncedCompleted } from "@/lib/user-history";
 import { setToken, clearToken, authHeaders } from "@/lib/authToken";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -124,7 +124,8 @@ export function useAuth() {
     await Promise.all([
       syncFavorites(userId),
       syncSearchHistory(userId),
-      syncReadingHistory(userId)
+      syncReadingHistory(userId),
+      getSyncedCompleted(userId).catch(() => {})
     ]);
   };
 
