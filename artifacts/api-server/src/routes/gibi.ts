@@ -1887,5 +1887,45 @@ router.post("/auth/reader-settings/upsert", async (req: Request, res: Response) 
   }
 });
 
+// GET /api/admin/stats/manga?mangaId=X&providerId=Y
+router.get("/admin/stats/manga", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  const { mangaId, providerId } = req.query as Record<string, string>;
+  if (!mangaId) { res.status(400).json({ error: "missing_mangaId" }); return; }
+  if (!supabase) { res.status(503).json({ error: "supabase_unavailable" }); return; }
+  try {
+    let histQuery = supabase.from("user_reading_history").select("user_id, timestamp, chapter_id").eq("manga_id", mangaId);
+    if (providerId) histQuery = histQuery.eq("provider_id", providerId);
+    const { data: hist } = await histQuery;
+
+    let favQuery = supabase.from("user_favorites").select("user_id").eq("manga_id", mangaId);
+    if (providerId) favQuery = favQuery.eq("provider_id", providerId);
+    const { data: favs } = await favQuery;
+
+    let compQuery = supabase.from("user_completed").select("user_id").eq("manga_id", mangaId);
+    if (providerId) compQuery = compQuery.eq("provider_id", providerId);
+    const { data: comp } = await compQuery;
+
+    const histRows: any[] = hist || [];
+    const uniqueReaderIds = new Set(histRows.map((r: any) => r.user_id));
+    const completedIds = new Set((comp || []).map((r: any) => r.user_id));
+    const uniqueReaders = uniqueReaderIds.size;
+    const completedCount = completedIds.size;
+    const abandonedCount = [...uniqueReaderIds].filter(id => !completedIds.has(id)).length;
+
+    res.json({
+      uniqueReaders,
+      totalReads: histRows.length,
+      favoritesCount: (favs || []).length,
+      completedCount,
+      abandonedCount,
+      completionRate: uniqueReaders > 0 ? Math.round(completedCount / uniqueReaders * 100) : 0,
+    });
+  } catch (err) {
+    req.log.error({ err }, "stats/manga failed");
+    res.status(500).json({ error: "stats_failed" });
+  }
+});
+
 export default router;
 

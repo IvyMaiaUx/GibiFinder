@@ -428,6 +428,7 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
         onSave={async (patch) => { await save(selected, patch); }}
         onToggleHide={async () => { await save(selected, { hidden: !ov?.hidden }); }}
         onRestore={async () => { await removeOverride(selected); }}
+        adminKey={adminKey}
       />
     );
   }

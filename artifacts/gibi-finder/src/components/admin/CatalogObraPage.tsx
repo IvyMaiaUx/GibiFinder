@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   ArrowLeft, Info, FileText, Image as ImageIcon, ListOrdered, Globe,
   BarChart3, Search, History, ScrollText, Eye, EyeOff, RotateCcw, Save,
   Sparkles, Loader2, Construction, Copy, Check as CheckIcon,
+  Users, BookOpen, Heart, Trophy, TrendingDown, RefreshCw,
 } from "lucide-react";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { scoreItem, qualityColor, type QualityResult } from "./quality";
@@ -17,13 +18,22 @@ const TABS: { key: ObraTab; label: string; icon: typeof Info; ready: boolean }[]
   { key: "capas", label: "Capas", icon: ImageIcon, ready: true },
   { key: "capitulos", label: "Capítulos", icon: ListOrdered, ready: true },
   { key: "providers", label: "Providers", icon: Globe, ready: true },
-  { key: "stats", label: "Estatísticas", icon: BarChart3, ready: false },
+  { key: "stats", label: "Estatísticas", icon: BarChart3, ready: true },
   { key: "seo", label: "SEO", icon: Search, ready: true },
   { key: "historico", label: "Histórico", icon: History, ready: true },
   { key: "logs", label: "Logs", icon: ScrollText, ready: false },
 ];
 
 export interface ObraSavePatch { title?: string | null; description?: string | null; coverUrl?: string | null; itemType?: string | null }
+
+interface MangaStats {
+  uniqueReaders: number;
+  totalReads: number;
+  favoritesCount: number;
+  completedCount: number;
+  abandonedCount: number;
+  completionRate: number;
+}
 
 interface Props {
   item: any;
@@ -33,6 +43,7 @@ interface Props {
   onSave: (patch: ObraSavePatch) => Promise<void>;
   onToggleHide: () => Promise<void>;
   onRestore: () => Promise<void>;
+  adminKey?: string;
 }
 
 function Soon({ title, note }: { title: string; note: string }) {
@@ -68,9 +79,13 @@ function QualityCard({ q }: { q: QualityResult }) {
   );
 }
 
-export function CatalogObraPage({ item, override, type, onBack, onSave, onToggleHide, onRestore }: Props) {
+export function CatalogObraPage({ item, override, type, onBack, onSave, onToggleHide, onRestore, adminKey }: Props) {
   const [tab, setTab] = useState<ObraTab>("info");
   const [saving, setSaving] = useState(false);
+
+  const [stats, setStats] = useState<MangaStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
 
   const curTitle = override?.title ?? item?.title ?? "";
   const curDesc = override?.description ?? item?.description ?? "";
@@ -100,6 +115,28 @@ export function CatalogObraPage({ item, override, type, onBack, onSave, onToggle
       .finally(() => setLoadingCh(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
+
+  const fetchStats = useCallback(async () => {
+    const s = sources[0];
+    if (!s || !adminKey) return;
+    setStatsLoading(true);
+    setStatsError(null);
+    try {
+      const params = new URLSearchParams({ mangaId: s.id, providerId: s.providerId });
+      const res = await fetch(`${BASE}/api/admin/stats/manga?${params}`, { headers: { "x-admin-key": adminKey } });
+      if (!res.ok) { setStatsError("Erro ao carregar estatísticas."); return; }
+      setStats(await res.json());
+    } catch {
+      setStatsError("Erro de conexão.");
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [sources, adminKey]);
+
+  useEffect(() => {
+    if (tab !== "stats" || stats !== null) return;
+    fetchStats();
+  }, [tab, stats, fetchStats]);
 
   const [copied, setCopied] = useState<string>("");
   const copy = (text: string, what: string) => {
@@ -354,7 +391,56 @@ export function CatalogObraPage({ item, override, type, onBack, onSave, onToggle
             </div>
           )}
 
-          {tab === "stats" && <Soon title="Estatísticas" note="Leituras, favoritos, tempo médio, conclusão e abandono — depende da telemetria de leitura." />}
+          {tab === "stats" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="font-display text-xl">Telemetria de Leitura</h2>
+                <button
+                  onClick={() => { setStats(null); fetchStats(); }}
+                  disabled={statsLoading}
+                  className="flex items-center gap-1.5 border-4 border-black px-3 py-1.5 font-display text-sm hover:bg-secondary disabled:opacity-50"
+                >
+                  {statsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" strokeWidth={2.5} />}
+                  Atualizar
+                </button>
+              </div>
+              {statsLoading && <div className="py-12 text-center"><Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" /></div>}
+              {statsError && <p className="font-sans font-bold text-red-600 text-sm">{statsError}</p>}
+              {!adminKey && <p className="font-sans font-bold text-gray-400 text-sm">Chave de admin necessária para carregar estatísticas.</p>}
+              {stats && !statsLoading && (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <div className="bg-white border-4 border-black p-4">
+                    <div className="flex items-center gap-2 text-gray-500 mb-1"><Users className="w-4 h-4" /><span className="font-display text-xs uppercase">Leitores únicos</span></div>
+                    <div className="font-display text-3xl">{stats.uniqueReaders}</div>
+                  </div>
+                  <div className="bg-white border-4 border-black p-4">
+                    <div className="flex items-center gap-2 text-gray-500 mb-1"><BookOpen className="w-4 h-4" /><span className="font-display text-xs uppercase">Total de leituras</span></div>
+                    <div className="font-display text-3xl">{stats.totalReads}</div>
+                  </div>
+                  <div className="bg-white border-4 border-black p-4">
+                    <div className="flex items-center gap-2 text-gray-500 mb-1"><Heart className="w-4 h-4" /><span className="font-display text-xs uppercase">Favoritos</span></div>
+                    <div className="font-display text-3xl">{stats.favoritesCount}</div>
+                  </div>
+                  <div className="bg-white border-4 border-black p-4">
+                    <div className="flex items-center gap-2 text-gray-500 mb-1"><Trophy className="w-4 h-4" /><span className="font-display text-xs uppercase">Concluíram</span></div>
+                    <div className="font-display text-3xl">{stats.completedCount}</div>
+                  </div>
+                  <div className="bg-white border-4 border-black p-4">
+                    <div className="flex items-center gap-2 text-gray-500 mb-1"><TrendingDown className="w-4 h-4" /><span className="font-display text-xs uppercase">Abandonaram</span></div>
+                    <div className="font-display text-3xl">{stats.abandonedCount}</div>
+                  </div>
+                  <div className="bg-white border-4 border-black p-4">
+                    <div className="flex items-center gap-2 text-gray-500 mb-1"><BarChart3 className="w-4 h-4" /><span className="font-display text-xs uppercase">Taxa de conclusão</span></div>
+                    <div className="font-display text-3xl">{stats.completionRate}%</div>
+                    <div className="mt-2 h-2 bg-muted border-2 border-black">
+                      <div className="h-full bg-primary" style={{ width: `${stats.completionRate}%` }} />
+                    </div>
+                  </div>
+                </div>
+              )}
+              <p className="font-sans font-bold text-gray-400 text-xs">Dados baseados no histórico de leitura. Tempo médio de leitura chega com a tabela de sessões (Fase 2).</p>
+            </div>
+          )}
           {tab === "logs" && <Soon title="Logs" note="Eventos técnicos desta obra (importação, sincronização, erros de provider) — depende do log do runtime." />}
         </div>
       </div>
