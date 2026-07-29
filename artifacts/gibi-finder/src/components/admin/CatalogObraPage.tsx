@@ -3,7 +3,7 @@ import {
   ArrowLeft, Info, FileText, Image as ImageIcon, ListOrdered, Globe,
   BarChart3, Search, History, ScrollText, Eye, EyeOff, RotateCcw, Save,
   Sparkles, Loader2, Construction, Copy, Check as CheckIcon,
-  Users, BookOpen, Heart, Trophy, TrendingDown, RefreshCw,
+  Users, BookOpen, Heart, Trophy, TrendingDown, RefreshCw, Clock,
 } from "lucide-react";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { scoreItem, qualityColor, type QualityResult } from "./quality";
@@ -33,6 +33,8 @@ interface MangaStats {
   completedCount: number;
   abandonedCount: number;
   completionRate: number;
+  avgSessionMs: number | null;
+  totalSessions: number;
 }
 
 interface Props {
@@ -408,7 +410,7 @@ export function CatalogObraPage({ item, override, type, onBack, onSave, onToggle
               {statsError && <p className="font-sans font-bold text-red-600 text-sm">{statsError}</p>}
               {!adminKey && <p className="font-sans font-bold text-gray-400 text-sm">Chave de admin necessária para carregar estatísticas.</p>}
               {stats && !statsLoading && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                   <div className="bg-white border-4 border-black p-4">
                     <div className="flex items-center gap-2 text-gray-500 mb-1"><Users className="w-4 h-4" /><span className="font-display text-xs uppercase">Leitores únicos</span></div>
                     <div className="font-display text-3xl">{stats.uniqueReaders}</div>
@@ -436,9 +438,22 @@ export function CatalogObraPage({ item, override, type, onBack, onSave, onToggle
                       <div className="h-full bg-primary" style={{ width: `${stats.completionRate}%` }} />
                     </div>
                   </div>
+                  <div className="bg-white border-4 border-black p-4">
+                    <div className="flex items-center gap-2 text-gray-500 mb-1"><Clock className="w-4 h-4" /><span className="font-display text-xs uppercase">Tempo médio</span></div>
+                    <div className="font-display text-3xl">
+                      {stats.avgSessionMs != null
+                        ? stats.avgSessionMs >= 3_600_000
+                          ? `${(stats.avgSessionMs / 3_600_000).toFixed(1)}h`
+                          : stats.avgSessionMs >= 60_000
+                          ? `${Math.round(stats.avgSessionMs / 60_000)}min`
+                          : `${Math.round(stats.avgSessionMs / 1_000)}s`
+                        : "—"}
+                    </div>
+                    <p className="font-sans text-2xs text-gray-400 font-bold mt-1">{stats.totalSessions} sessão(ões)</p>
+                  </div>
                 </div>
               )}
-              <p className="font-sans font-bold text-gray-400 text-xs">Dados baseados no histórico de leitura. Tempo médio de leitura chega com a tabela de sessões (Fase 2).</p>
+              <p className="font-sans font-bold text-gray-400 text-xs">Dados baseados no histórico de leitura. Sessões gravadas a partir do deploy desta versão (min. 15s de leitura).</p>
             </div>
           )}
           {tab === "logs" && <Soon title="Logs" note="Eventos técnicos desta obra (importação, sincronização, erros de provider) — depende do log do runtime." />}

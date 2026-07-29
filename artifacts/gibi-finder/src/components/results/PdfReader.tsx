@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { cn, drivePreviewUrl } from "@/lib/utils";
 import { saveReadingState, markChapterCompleted, type ReadingProgressItem } from "@/lib/user-history";
+import { createSession } from "@/lib/reading-session";
 import { useReaderSettings, readerThemeVars } from "@/components/reader/useReaderSettings";
 import { ReaderSettingsPanel } from "@/components/reader/ReaderSettingsPanel";
 import { useReaderZoom } from "@/components/reader/useReaderZoom";
@@ -69,6 +70,8 @@ export function PdfReader({
   const pageHeights = useRef<number[]>([]);
   const resumingRef = useRef(initialPage > 0);
   const didResumeRef = useRef(false);
+  const sessionRef = useRef<ReturnType<typeof createSession> | null>(null);
+  const currentPageRef = useRef(initialPage);
 
   const immersion = settings.immersion;
   const chromeVisible = immersion === "clean" ? !isFullscreen : false;
@@ -187,7 +190,24 @@ export function PdfReader({
     };
   }, [numPages, immersion, isFullscreen]);
 
-  const handleClose = () => { exitReaderFullscreen(); onClose(); };
+  useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
+
+  // Start session on mount, flush when the component unmounts.
+  useEffect(() => {
+    sessionRef.current = createSession({ providerId, mangaId, chapterId, chapterNum });
+    return () => {
+      sessionRef.current?.flush(currentPageRef.current);
+      sessionRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleClose = () => {
+    sessionRef.current?.flush(currentPageRef.current);
+    sessionRef.current = null;
+    exitReaderFullscreen();
+    onClose();
+  };
   const toggleChrome = useCallback(() => setIsFullscreen(prev => !prev), []);
   const haptic = () => { if (settings.haptics && typeof navigator.vibrate === "function") navigator.vibrate(6); };
 

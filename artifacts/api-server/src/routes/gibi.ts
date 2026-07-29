@@ -1887,6 +1887,29 @@ router.post("/auth/reader-settings/upsert", async (req: Request, res: Response) 
   }
 });
 
+// POST /api/auth/stats/session - record a completed reading session
+router.post("/auth/stats/session", async (req: Request, res: Response) => {
+  const userId = sessionUserId(req);
+  if (!userId || !supabase) { res.json({ ok: false }); return; }
+  const { providerId, mangaId, chapterId, chapterNum, durationMs, pagesRead } = req.body || {};
+  if (!providerId || !mangaId || !durationMs) { res.json({ ok: false }); return; }
+  try {
+    await supabase.from("reading_sessions").insert({
+      user_id: userId,
+      provider_id: providerId,
+      manga_id: mangaId,
+      chapter_id: chapterId || null,
+      chapter_num: chapterNum || null,
+      duration_ms: Math.round(Number(durationMs)),
+      pages_read: Math.round(Number(pagesRead)) || 0,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "stats/session insert failed");
+    res.json({ ok: false });
+  }
+});
+
 // GET /api/admin/stats/manga?mangaId=X&providerId=Y
 router.get("/admin/stats/manga", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
@@ -1913,6 +1936,14 @@ router.get("/admin/stats/manga", async (req: Request, res: Response) => {
     const completedCount = completedIds.size;
     const abandonedCount = [...uniqueReaderIds].filter(id => !completedIds.has(id)).length;
 
+    let sessQuery = supabase.from("reading_sessions").select("duration_ms").eq("manga_id", mangaId);
+    if (providerId) sessQuery = sessQuery.eq("provider_id", providerId);
+    const { data: sessions } = await sessQuery;
+    const sessionRows: any[] = sessions || [];
+    const avgSessionMs = sessionRows.length > 0
+      ? Math.round(sessionRows.reduce((s: number, r: any) => s + (r.duration_ms || 0), 0) / sessionRows.length)
+      : null;
+
     res.json({
       uniqueReaders,
       totalReads: histRows.length,
@@ -1920,6 +1951,8 @@ router.get("/admin/stats/manga", async (req: Request, res: Response) => {
       completedCount,
       abandonedCount,
       completionRate: uniqueReaders > 0 ? Math.round(completedCount / uniqueReaders * 100) : 0,
+      avgSessionMs,
+      totalSessions: sessionRows.length,
     });
   } catch (err) {
     req.log.error({ err }, "stats/manga failed");

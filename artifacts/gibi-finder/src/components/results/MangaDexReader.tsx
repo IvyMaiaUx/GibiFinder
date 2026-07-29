@@ -31,6 +31,7 @@ import { logRequest } from "@/components/reader/readerStats";
 import { useAuth } from "@/hooks/use-auth";
 import { getLocalProgress, saveReadingState, markChapterCompleted } from "@/lib/user-history";
 import { markSourceEmpty, markSourceHasChapters } from "@/lib/empty-sources";
+import { createSession } from "@/lib/reading-session";
 
 interface MangaDexReaderProps {
   mangaTitle: string;
@@ -97,6 +98,8 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   const pageAspectRef = useRef<Record<number, number>>({});
   const pageDimsRef = useRef<Record<number, { w: number; h: number }>>({});
   const lastFetchMsRef = useRef<number | null>(null);
+  const sessionRef = useRef<ReturnType<typeof createSession> | null>(null);
+  const currentPageRef = useRef(0);
   const [aspectVersion, setAspectVersion] = useState(0);
   const recordAspect = (idx: number, img: HTMLImageElement) => {
     const a = img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 0;
@@ -152,6 +155,15 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // hide it entirely. The cursor hides during inactivity in cinema/immersion.
   const chromeVisible = immersion === "clean" ? !isFullscreen : false;
   const cursorHidden = immersion !== "clean" && !uiActive;
+
+  useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
+
+  // Flush the active reading session when the reader closes.
+  useEffect(() => {
+    if (showReader) return;
+    sessionRef.current?.flush(currentPageRef.current);
+    sessionRef.current = null;
+  }, [showReader]);
 
   // Activity tracking (cinema/immersion): reveal cursor + discrete indicator on
   // movement/tap, hide after 2s (desktop) / 3s (touch).
@@ -390,6 +402,8 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     // as read so "Já Lidos" reflects sequential reading even without hitting the
     // very last page.
     if (showReader && selectedChapter && selectedChapter.id !== chapter.id) {
+      sessionRef.current?.flush(currentPageRef.current);
+      sessionRef.current = null;
       const prevNum = parseFloat(selectedChapter.chapterNum);
       const nextNum = parseFloat(chapter.chapterNum);
       if (!isNaN(prevNum) && !isNaN(nextNum) && nextNum > prevNum) {
@@ -445,6 +459,13 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
       setCurrentPage(startPage);
       setPages(data);
       setShowReader(true);
+
+      sessionRef.current = createSession({
+        providerId: chapter.providerId,
+        mangaId: selectedSource?.id || selectedResult?.id || mangaTitle,
+        chapterId: chapter.id,
+        chapterNum: chapter.chapterNum,
+      });
 
       // PDF chapters are handled by <PdfReader>, which manages its own resume;
       // skip the image-reader scroll machinery for them.
