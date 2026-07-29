@@ -46,7 +46,7 @@ export class NHentaiProvider implements Provider {
     if (!match) return null;
 
     const json = match[1].replace(/,\s*([}\]])/g, "$1");
-    return JSON.parse(json);
+    try { return JSON.parse(json); } catch { return null; }
   }
 
   private resolveUrl(value: string): string {

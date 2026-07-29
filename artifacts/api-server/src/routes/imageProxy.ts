@@ -5,17 +5,20 @@ import http from "http";
 
 const router = Router();
 
-function fetchImage(url: string, headers: any): Promise<{ status: number; headers: any; buffer: Buffer }> {
+function fetchImage(url: string, headers: any, redirects = 0): Promise<{ status: number; headers: any; buffer: Buffer }> {
   return new Promise((resolve, reject) => {
+    if (redirects > 5) {
+      reject(new Error("too_many_redirects"));
+      return;
+    }
     const client = url.startsWith("https") ? https : http;
     const req = client.get(url, { headers }, (res) => {
-      // Handle redirects
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        fetchImage(res.headers.location, headers).then(resolve).catch(reject);
+        fetchImage(res.headers.location, headers, redirects + 1).then(resolve).catch(reject);
         return;
       }
-      
       const chunks: any[] = [];
+      res.on("error", reject);
       res.on("data", (chunk) => chunks.push(chunk));
       res.on("end", () => {
         resolve({

@@ -635,7 +635,7 @@ export class ProviderManager {
       isAdult: this.isAdultResult(result)
     }));
 
-    return nsfw ? allResults.filter(result => result.isAdult) : allResults.filter(result => !result.isAdult);
+    return nsfw ? allResults : allResults.filter(result => !result.isAdult);
   }
 
   // Collect raw (un-unified) items from every active provider, with a per-provider

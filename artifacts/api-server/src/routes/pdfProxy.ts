@@ -31,6 +31,7 @@ function fetchBuffer(url: string, redirects = 0): Promise<FetchResult> {
         return;
       }
       const chunks: Buffer[] = [];
+      res.on("error", reject);
       res.on("data", (chunk) => chunks.push(chunk as Buffer));
       res.on("end", () => {
         resolve({ status: res.statusCode || 200, headers: res.headers, buffer: Buffer.concat(chunks) });

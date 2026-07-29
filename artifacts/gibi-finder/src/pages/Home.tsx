@@ -200,9 +200,17 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Ref to abort in-flight online searches when a new one starts or component unmounts.
+  const onlineSearchAbortRef = useRef<AbortController | null>(null);
+
   // Search online aggregator
   const searchByOnline = async (query: string) => {
     if (!query.trim()) return;
+    // Cancel any previous in-flight search.
+    onlineSearchAbortRef.current?.abort();
+    const controller = new AbortController();
+    onlineSearchAbortRef.current = controller;
+
     setOnlineSearching(true);
     setSearchedQuery(query);
     clearResults(); // Clear AI results if any
@@ -212,7 +220,7 @@ export default function Home() {
     setReleaseSort(null);
 
     try {
-      const res = await fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(query)}&nsfw=${isNsfw}`);
+      const res = await fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(query)}&nsfw=${isNsfw}`, { signal: controller.signal });
       if (res.ok) {
         const data = await res.json() as UnifiedSearchResult[];
         const hiddenCount = Number(res.headers.get("X-Adult-Results-Hidden") || "0");
@@ -240,11 +248,13 @@ export default function Home() {
       } else {
         setOnlineResults([]);
       }
-    } catch (err) {
-      console.error(err);
-      setOnlineResults([]);
+    } catch (err: any) {
+      if (err?.name !== "AbortError") {
+        console.error(err);
+        setOnlineResults([]);
+      }
     } finally {
-      setOnlineSearching(false);
+      if (!controller.signal.aborted) setOnlineSearching(false);
     }
   };
 
@@ -481,8 +491,8 @@ export default function Home() {
                                                  item.genres.some((g: string) => g.toLowerCase().includes("uncensored") || g.toLowerCase().includes("sem censura"));
                             return (
                               <div className="flex flex-wrap gap-1 mt-2">
-                                {item.genres.slice(0, 2).map((g: string, i: number) => (
-                                  <span key={i} className="bg-yellow-200 text-black text-3xs font-extrabold uppercase px-1.5 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]">
+                                {item.genres.slice(0, 2).map((g: string) => (
+                                  <span key={g} className="bg-yellow-200 text-black text-3xs font-extrabold uppercase px-1.5 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]">
                                     {g}
                                   </span>
                                 ))}

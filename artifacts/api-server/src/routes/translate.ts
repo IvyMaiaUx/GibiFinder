@@ -6,10 +6,11 @@ const router = Router();
 
 // Cache generated synopses by title.
 const synopsisCache = new Map<string, string>();
+const MAX_SYNOPSIS_CACHE = 500;
 
 // Simple in-memory cache so the same synopsis isn't re-translated repeatedly.
 const cache = new Map<string, string>();
-const MAX_CACHE = 3000;
+const MAX_TRANSLATION_CACHE = 3000;
 
 // POST /api/translate  { text } -> { text: <pt-br> }
 router.post("/translate", async (req: Request, res: Response) => {
@@ -24,7 +25,7 @@ router.post("/translate", async (req: Request, res: Response) => {
   }
   try {
     const translated = await translateToPortuguese(text);
-    if (cache.size >= MAX_CACHE) {
+    if (cache.size >= MAX_TRANSLATION_CACHE) {
       const oldest = cache.keys().next().value;
       if (oldest !== undefined) cache.delete(oldest);
     }
@@ -47,7 +48,7 @@ router.get("/synopsis", async (req: Request, res: Response) => {
   try {
     const text = await scrapeComicSynopsis(title);
     if (text) {
-      if (synopsisCache.size >= MAX_CACHE) {
+      if (synopsisCache.size >= MAX_SYNOPSIS_CACHE) {
         const oldest = synopsisCache.keys().next().value;
         if (oldest !== undefined) synopsisCache.delete(oldest);
       }

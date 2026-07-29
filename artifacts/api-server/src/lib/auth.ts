@@ -1,9 +1,12 @@
 import { scryptSync, randomBytes, timingSafeEqual, createHmac, createHash } from "crypto";
-import type { Request } from "express";
+import type { Request, Response } from "express";
 
-// Secret for signing session tokens. Reuses ADMIN_KEY when SESSION_SECRET isn't
-// set (both should be strong env values in production).
-const SESSION_SECRET = (process.env["SESSION_SECRET"] || process.env["ADMIN_KEY"] || "gibi-session-secret-change-me").trim();
+export const ADMIN_KEY = (process.env["ADMIN_KEY"] || "").trim();
+if (!ADMIN_KEY) {
+  throw new Error("ADMIN_KEY environment variable is required but was not set.");
+}
+
+const SESSION_SECRET = (process.env["SESSION_SECRET"] || ADMIN_KEY).trim();
 
 // ---- Passwords (scrypt, salted) with transparent legacy (unsalted SHA-256) support ----
 
@@ -49,6 +52,18 @@ export function verifyToken(token?: string | null): string | null {
     if (sig.length === expected.length && timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return userId;
   } catch { /* length mismatch */ }
   return null;
+}
+
+export function isAdmin(req: Request): boolean {
+  return req.headers["x-admin-key"] === ADMIN_KEY;
+}
+
+export function requireAdmin(req: Request, res: Response): boolean {
+  if (!isAdmin(req)) {
+    res.status(401).json({ error: "unauthorized", message: "Chave de administrador inválida" });
+    return false;
+  }
+  return true;
 }
 
 /** The authenticated user id from the request's session token, or null. */

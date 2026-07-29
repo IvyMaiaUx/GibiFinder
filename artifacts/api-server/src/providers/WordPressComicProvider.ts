@@ -125,7 +125,7 @@ export class WordPressComicProvider implements Provider {
   private cleanReadPageTitle(title: string): string {
     const clean = this.stripHtml(title).replace(/^ler\s+(?:online\s+)?/i, "").trim();
     if (/\([^)]*\)/.test(clean)) return clean;
-    return /#\s*\d+/.test(clean) ? `${clean} (2024)` : clean;
+    return /#\s*\d+/.test(clean) ? `${clean} (${new Date().getFullYear()})` : clean;
   }
 
   private getIssueNumber(title: string): string | null {
@@ -165,7 +165,13 @@ export class WordPressComicProvider implements Provider {
       const url = this.decodeHtml(match[1]);
       const label = this.stripHtml(match[2]);
       if (!/ler\s+(online|absolute|hq|quadrinho)|read\s+online/i.test(label) && !/\/ler-[^/]*|\/ler-online-/i.test(url)) continue;
-      if (!url.includes(this.baseUrl)) continue;
+      try {
+        const parsedUrl = new URL(url);
+        const parsedBase = new URL(this.baseUrl);
+        if (parsedUrl.hostname !== parsedBase.hostname) continue;
+      } catch {
+        continue;
+      }
       links.push({ title: label || "Ler Online", url });
     }
     return links;

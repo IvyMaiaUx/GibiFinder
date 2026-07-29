@@ -4,25 +4,11 @@ import { identifyFromImages, searchByText, searchByCharacter } from "../lib/gemi
 import { fetchFandomContext } from "../lib/fandom";
 import { supabase } from "../lib/supabase";
 import { nextDriveKey, hasDriveKey } from "../lib/driveKeys";
-import { hashPassword, verifyPassword, isLegacyHash, signToken, sessionUserId } from "../lib/auth";
+import { hashPassword, verifyPassword, isLegacyHash, signToken, sessionUserId, isAdmin, requireAdmin } from "../lib/auth";
 import { listOverrides, upsertOverride, deleteOverride, getOverrides, overrideKey, bulkHide, bulkRestore, bulkSetType } from "../lib/catalogOverrides";
 import { randomUUID } from "crypto";
 
 const router: IRouter = Router();
-
-const ADMIN_KEY = process.env["ADMIN_KEY"] || "gibi-admin-2024";
-
-function isAdmin(req: Request): boolean {
-  return req.headers["x-admin-key"] === ADMIN_KEY;
-}
-
-function requireAdmin(req: Request, res: Response): boolean {
-  if (!isAdmin(req)) {
-    res.status(401).json({ error: "unauthorized", message: "Chave de administrador inválida" });
-    return false;
-  }
-  return true;
-}
 
 interface ComicResultData {
   encontrado?: boolean;
@@ -172,9 +158,10 @@ async function searchCollection(terms: string[]): Promise<ComicResultData[]> {
       .select("*")
       .eq("status", "approved")
       .or(
-        terms.map(t =>
-          `titulo.ilike.%${t}%,revista.ilike.%${t}%,editora.ilike.%${t}%,descricao.ilike.%${t}%`
-        ).join(",")
+        terms.map(t => {
+          const safe = t.replace(/[%(),"'.*\\]/g, "").trim();
+          return `titulo.ilike.%${safe}%,revista.ilike.%${safe}%,editora.ilike.%${safe}%,descricao.ilike.%${safe}%`;
+        }).join(",")
       )
       .limit(10);
     if (error) { logger.error({ err: error }, "Collection search error:"); return driveMatches; }
@@ -215,8 +202,8 @@ async function searchCollectionByCharacter(character: string): Promise<ComicResu
 router.get("/colecao", async (req: Request, res: Response) => {
   const { q, editora, limit = "100", offset = "0" } = req.query as Record<string, string>;
   const terms = q ? q.split(/\s+/).map(term => term.replace(/[%(),]/g, "").trim()).filter(Boolean) : [];
-  const requestedLimit = parseInt(limit);
-  const requestedOffset = parseInt(offset);
+  const requestedLimit = Math.max(1, Math.min(500, parseInt(limit) || 100));
+  const requestedOffset = Math.max(0, parseInt(offset) || 0);
   const staticItems = searchDriveLibrary(terms)
     .filter(item => !editora || item.editora?.toLowerCase().includes(editora.toLowerCase()));
   if (!supabase) {
@@ -313,9 +300,11 @@ router.put("/colecao/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const body = req.body as Record<string, unknown>;
+    const ALLOWED = ["titulo", "revista", "editora", "ano", "numero", "personagens", "descricao", "imagem_url", "drive_url", "tags", "notas", "status"] as const;
+    const safeBody = Object.fromEntries(ALLOWED.filter(k => k in body).map(k => [k, body[k]]));
     const { data, error } = await supabase
       .from("gibis")
-      .update({ ...body, updated_at: new Date().toISOString() })
+      .update({ ...safeBody, updated_at: new Date().toISOString() })
       .eq("id", id)
       .select()
       .single();
@@ -379,6 +368,7 @@ router.put("/admin/review/:id", async (req: Request, res: Response) => {
       .select()
       .single();
     if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
+    if (!data) { res.status(404).json({ error: "not_found", message: "Gibi não encontrado" }); return; }
     res.json({ item: data, status });
   } catch (err) {
     res.status(500).json({ error: "review_error", message: err instanceof Error ? err.message : "Erro ao revisar" });
@@ -936,7 +926,11 @@ router.post("/identify", async (req: Request, res: Response) => {
     if (images.length > 3) {
       res.status(400).json({ error: "too_many_images", message: "Máximo de 3 imagens por busca" }); return;
     }
-    const geminiResult = await identifyFromImages(images) as ComicResultData;
+    const geminiRaw = await identifyFromImages(images);
+    if (!geminiRaw || typeof geminiRaw !== "object") {
+      res.status(502).json({ error: "gemini_error", message: "Resposta inválida do Gemini" }); return;
+    }
+    const geminiResult = geminiRaw as ComicResultData;
     const mainId = randomUUID();
     const mainResult = buildResult(geminiResult, mainId, "image", images);
     const relatedResults = (geminiResult.relatedResults || []).map((r) => buildResult(r, randomUUID(), "image"));
@@ -1066,13 +1060,14 @@ router.delete("/history/:id", async (req: Request, res: Response) => {
 router.get("/history", async (req: Request, res: Response) => {
   const { titulo, editora, limit = "50", offset = "0" } = req.query as Record<string, string>;
   if (!supabase) { res.json({ items: [], total: 0 }); return; }
+  const parsedLimit = Math.max(1, Math.min(200, parseInt(limit) || 50));
+  const parsedOffset = Math.max(0, parseInt(offset) || 0);
   try {
     let query = supabase
       .from("search_history")
       .select("*, result_feedback(id, is_correct)", { count: "exact" })
       .order("created_at", { ascending: false })
-      .limit(parseInt(limit))
-      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+      .range(parsedOffset, parsedOffset + parsedLimit - 1);
     if (titulo) query = query.ilike("titulo", `%${titulo}%`);
     if (editora) query = query.ilike("editora", `%${editora}%`);
     const { data, count, error } = await query;
@@ -1377,8 +1372,9 @@ router.post("/auth/favorites/sync", async (req: Request, res: Response) => {
   const { favorites } = req.body;
   if (!userId || !Array.isArray(favorites)) { res.status(400).json({ error: "bad_request" }); return; }
   try {
-    await supabase.from("user_favorites").delete().eq("user_id", userId);
-    
+    const { error: delErr } = await supabase.from("user_favorites").delete().eq("user_id", userId);
+    if (delErr) { req.log.error({ err: delErr }, "favorites delete error"); res.status(500).json({ error: "db_error" }); return; }
+
     if (favorites.length > 0) {
       const rows = favorites.map((f: any) => ({
         user_id: userId,
@@ -1389,7 +1385,8 @@ router.post("/auth/favorites/sync", async (req: Request, res: Response) => {
         description: f.description || null,
         timestamp: f.timestamp || Date.now()
       }));
-      await supabase.from("user_favorites").insert(rows);
+      const { error: insErr } = await supabase.from("user_favorites").insert(rows);
+      if (insErr) { req.log.error({ err: insErr }, "favorites insert error"); res.status(500).json({ error: "db_error" }); return; }
     }
     res.json({ success: true });
   } catch (err) {
@@ -1617,9 +1614,10 @@ router.post("/auth/history/reading/sync", async (req: Request, res: Response) =>
       if (item?.id) merged.set(item.id, item);
     }
     const mergedHistory = Array.from(merged.values()).sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0)).slice(0, 100);
-    await supabase.from("user_reading_history").delete().eq("user_id", userId);
+    const { error: delHistErr } = await supabase.from("user_reading_history").delete().eq("user_id", userId);
+    if (delHistErr) { req.log.error({ err: delHistErr }, "reading history delete error"); res.status(500).json({ error: "db_error" }); return; }
     if (mergedHistory.length > 0) {
-      await supabase.from("user_reading_history").insert(mergedHistory.map((item: any) => ({
+      const { error: insHistErr } = await supabase.from("user_reading_history").insert(mergedHistory.map((item: any) => ({
         user_id: userId,
         item_id: item.id,
         title: item.title,
@@ -1633,10 +1631,12 @@ router.post("/auth/history/reading/sync", async (req: Request, res: Response) =>
         page_number: item.pageNumber || 1,
         timestamp: item.timestamp || Date.now()
       })));
+      if (insHistErr) { req.log.error({ err: insHistErr }, "reading history insert error"); res.status(500).json({ error: "db_error" }); return; }
     }
 
     if (progress && typeof progress === "object") {
-      await supabase.from("user_reading_progress").delete().eq("user_id", userId);
+      const { error: delProgErr } = await supabase.from("user_reading_progress").delete().eq("user_id", userId);
+      if (delProgErr) { req.log.error({ err: delProgErr }, "reading progress delete error"); res.status(500).json({ error: "db_error" }); return; }
       const rows = Object.entries(progress).map(([key, item]: [string, any]) => ({
         user_id: userId,
         progress_key: key,
@@ -1650,7 +1650,10 @@ router.post("/auth/history/reading/sync", async (req: Request, res: Response) =>
         language: item.language || null,
         updated_at: item.updatedAt || new Date().toISOString()
       })).filter(row => row.chapter_id && row.title);
-      if (rows.length > 0) await supabase.from("user_reading_progress").insert(rows);
+      if (rows.length > 0) {
+        const { error: insProgErr } = await supabase.from("user_reading_progress").insert(rows);
+        if (insProgErr) { req.log.error({ err: insProgErr }, "reading progress insert error"); res.status(500).json({ error: "db_error" }); return; }
+      }
     }
 
     res.json({ success: true });
@@ -1665,8 +1668,10 @@ router.delete("/auth/history/reading/by-manga", async (req: Request, res: Respon
   const providerId = req.query.providerId as string;
   const mangaId = req.query.mangaId as string;
   if (!userId || !providerId || !mangaId) { res.status(400).json({ error: "missing_params" }); return; }
-  await supabase.from("user_reading_history").delete().eq("user_id", userId).eq("provider_id", providerId).eq("manga_id", mangaId);
-  await supabase.from("user_reading_progress").delete().eq("user_id", userId).eq("provider_id", providerId).eq("manga_id", mangaId);
+  const { error: e1 } = await supabase.from("user_reading_history").delete().eq("user_id", userId).eq("provider_id", providerId).eq("manga_id", mangaId);
+  if (e1) { req.log.error({ err: e1 }, "db error"); res.status(500).json({ error: "db_error" }); return; }
+  const { error: e2 } = await supabase.from("user_reading_progress").delete().eq("user_id", userId).eq("provider_id", providerId).eq("manga_id", mangaId);
+  if (e2) { req.log.error({ err: e2 }, "db error"); res.status(500).json({ error: "db_error" }); return; }
   res.json({ success: true });
 });
 

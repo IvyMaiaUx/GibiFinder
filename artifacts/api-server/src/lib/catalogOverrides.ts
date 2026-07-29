@@ -30,34 +30,42 @@ export function overrideKey(providerId: string, itemId: string): string {
 let cache: Map<string, CatalogOverride> | null = null;
 let fetchedAt = 0;
 const TTL_MS = 60_000;
+let inflightFetch: Promise<Map<string, CatalogOverride>> | null = null;
 
 export async function getOverrides(force = false): Promise<Map<string, CatalogOverride>> {
   const now = Date.now();
   if (!force && cache && now - fetchedAt < TTL_MS) return cache;
   if (!supabase) return cache ?? new Map();
-  try {
-    const { data, error } = await supabase.from("catalog_overrides").select("*");
-    if (error) return cache ?? new Map();
-    const map = new Map<string, CatalogOverride>();
-    for (const r of (data || []) as Record<string, unknown>[]) {
-      map.set(String(r.id), {
-        id: String(r.id),
-        providerId: String(r.provider_id),
-        itemId: String(r.item_id),
-        hidden: !!r.hidden,
-        coverUrl: (r.cover_url as string) || undefined,
-        description: (r.description as string) || undefined,
-        title: (r.title as string) || undefined,
-        itemType: (r.item_type as string) || undefined,
-      });
+  // Dedup concurrent fetches: return the in-flight promise instead of firing a second DB call.
+  if (!force && inflightFetch) return inflightFetch;
+  inflightFetch = (async () => {
+    try {
+      const { data, error } = await supabase.from("catalog_overrides").select("*");
+      if (error) return cache ?? new Map();
+      const map = new Map<string, CatalogOverride>();
+      for (const r of (data || []) as Record<string, unknown>[]) {
+        map.set(String(r.id), {
+          id: String(r.id),
+          providerId: String(r.provider_id),
+          itemId: String(r.item_id),
+          hidden: !!r.hidden,
+          coverUrl: (r.cover_url as string) || undefined,
+          description: (r.description as string) || undefined,
+          title: (r.title as string) || undefined,
+          itemType: (r.item_type as string) || undefined,
+        });
+      }
+      cache = map;
+      fetchedAt = Date.now();
+      return map;
+    } catch (err) {
+      logger.warn({ err }, "failed to load catalog_overrides");
+      return cache ?? new Map();
+    } finally {
+      inflightFetch = null;
     }
-    cache = map;
-    fetchedAt = now;
-    return map;
-  } catch (err) {
-    logger.warn({ err }, "failed to load catalog_overrides");
-    return cache ?? new Map();
-  }
+  })();
+  return inflightFetch;
 }
 
 export async function listOverrides(): Promise<CatalogOverride[]> {
@@ -180,12 +188,16 @@ export function applyOverrides<
     }
     if (ov) {
       if (ov.hidden) continue;
-      if (ov.coverUrl) item.coverUrl = ov.coverUrl;
-      if (ov.description) item.description = ov.description;
-      if (ov.title) item.title = ov.title;
+      // Shallow-copy to avoid mutating the cached source object.
+      const patched: T = { ...item };
+      if (ov.coverUrl) patched.coverUrl = ov.coverUrl;
+      if (ov.description) patched.description = ov.description;
+      if (ov.title) patched.title = ov.title;
       // Manual reclassification travels as a dedicated field the client's typeOf
       // reads first — no genre pollution, so it never shows up as a tag.
-      if (ov.itemType) (item as unknown as Record<string, unknown>).forcedType = ov.itemType;
+      if (ov.itemType) (patched as unknown as Record<string, unknown>).forcedType = ov.itemType;
+      out.push(patched);
+      continue;
     }
     out.push(item);
   }

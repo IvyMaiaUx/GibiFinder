@@ -66,8 +66,8 @@ export function ComicCard({ result, isMain = false }: ComicCardProps) {
                                      result.genres.some((g: string) => g.toLowerCase().includes("uncensored") || g.toLowerCase().includes("sem censura"));
                 return (
                   <div className="flex flex-wrap gap-1.5 mt-3">
-                    {result.genres.map((g: string, i: number) => (
-                      <span key={i} className="bg-yellow-200 text-black text-3xs font-extrabold uppercase px-2 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]">
+                    {result.genres.map((g: string) => (
+                      <span key={g} className="bg-yellow-200 text-black text-3xs font-extrabold uppercase px-2 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]">
                         {g}
                       </span>
                     ))}

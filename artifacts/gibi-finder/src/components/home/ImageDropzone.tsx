@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import { ImagePlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -15,11 +15,17 @@ export function ImageDropzone({ onImagesReady, isPending }: ImageDropzoneProps) 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const newFiles = [...files, ...acceptedFiles].slice(0, 3);
     setFiles(newFiles);
-    
-    // Create previews
-    const newPreviews = newFiles.map(file => URL.createObjectURL(file));
-    setPreviews(newPreviews);
+
+    // Revoke old object URLs before creating new ones to avoid memory leaks.
+    setPreviews(prev => {
+      prev.forEach(url => URL.revokeObjectURL(url));
+      return newFiles.map(file => URL.createObjectURL(file));
+    });
   }, [files]);
+
+  useEffect(() => {
+    return () => { previews.forEach(url => URL.revokeObjectURL(url)); };
+  }, [previews]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ 
     onDrop,

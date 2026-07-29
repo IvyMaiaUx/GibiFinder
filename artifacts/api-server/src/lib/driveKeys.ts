@@ -19,5 +19,7 @@ export function nextDriveKey(): string | undefined {
   const keys = driveKeyList();
   if (keys.length === 0) return undefined;
   index = (index + 1) % keys.length;
+  // Guard against stale index if the key list shrank (env hot-reload).
+  if (index >= keys.length) index = 0;
   return keys[index];
 }

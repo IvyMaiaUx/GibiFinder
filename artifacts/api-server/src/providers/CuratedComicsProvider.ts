@@ -483,7 +483,7 @@ export class CuratedComicsProvider implements Provider {
     }
     const remote = await this.loadRemoteCache();
     if (remote) {
-      this.catalogCache = { fetchedAt: remote.updatedAt, items: remote.items };
+      this.catalogCache = { fetchedAt: Date.now(), items: remote.items };
       const stale = now - remote.updatedAt > REMOTE_TTL_MS;
       if (stale && allowCrawl) return this.refreshCatalog();
       return remote.items;

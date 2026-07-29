@@ -68,28 +68,17 @@ export default function ResultDetail() {
   const [onlineDetails, setOnlineDetails] = useState<any | null>(null);
   const [loadingOnline, setLoadingOnline] = useState(false);
 
-  // Load details from provider if virtual view
-  const loadOnlineDetails = async () => {
-    if (!providerId || !mangaId) return;
-    setLoadingOnline(true);
-    try {
-      const res = await fetch(`${BASE}/api/providers/details?providerId=${providerId}&id=${encodeURIComponent(mangaId)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setOnlineDetails(data);
-      }
-    } catch (err) {
-      console.error("Failed to load online details:", err);
-    } finally {
-      setLoadingOnline(false);
-    }
-  };
-
   useEffect(() => {
-    if (isOnlineResult) {
-      loadOnlineDetails();
-    }
-  }, [id, providerId, mangaId]);
+    if (!isOnlineResult || !providerId || !mangaId) return;
+    const controller = new AbortController();
+    setLoadingOnline(true);
+    fetch(`${BASE}/api/providers/details?providerId=${providerId}&id=${encodeURIComponent(mangaId)}`, { signal: controller.signal })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data) setOnlineDetails(data); })
+      .catch(err => { if (err.name !== "AbortError") console.error("Failed to load online details:", err); })
+      .finally(() => setLoadingOnline(false));
+    return () => controller.abort();
+  }, [isOnlineResult, id, providerId, mangaId]);
 
   // Hook for database results
   const { data: dbData, isLoading: loadingDb, error: dbError } = useGetResult(id, {
@@ -164,26 +153,16 @@ export default function ResultDetail() {
   const [stats, setStats] = useState<any | null>(null);
   const [, setLoadingStats] = useState(false);
 
-  const loadStats = async () => {
-    if (!itemMangaId || !itemProviderId) return;
-    setLoadingStats(true);
-    try {
-      const res = await fetch(`${BASE}/api/providers/statistics?providerId=${itemProviderId}&id=${encodeURIComponent(itemMangaId)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setStats(data);
-      }
-    } catch (err) {
-      console.error("Failed to load statistics:", err);
-    } finally {
-      setLoadingStats(false);
-    }
-  };
-
   useEffect(() => {
-    if (itemMangaId) {
-      loadStats();
-    }
+    if (!itemMangaId) return;
+    const controller = new AbortController();
+    setLoadingStats(true);
+    fetch(`${BASE}/api/providers/statistics?providerId=${itemProviderId}&id=${encodeURIComponent(itemMangaId)}`, { signal: controller.signal })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data) setStats(data); })
+      .catch(err => { if (err.name !== "AbortError") console.error("Failed to load statistics:", err); })
+      .finally(() => setLoadingStats(false));
+    return () => controller.abort();
   }, [itemMangaId, itemProviderId]);
 
   const renderStars = (rating: number) => {

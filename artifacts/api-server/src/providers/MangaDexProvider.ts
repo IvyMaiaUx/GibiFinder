@@ -1,4 +1,4 @@
-import { Provider, SearchResult, MangaDetails, Chapter, Page } from "./types";
+﻿import { Provider, SearchResult, MangaDetails, Chapter, Page } from "./types";
 import { logger } from "../lib/logger";
 
 const GENRE_EN_PT: Record<string, string> = {
@@ -15,7 +15,7 @@ const GENRE_EN_PT: Record<string, string> = {
   "Loli": "Lolicon", "Lolicon": "Lolicon", "Shota": "Shotacon", "Shotacon": "Shotacon",
   "Futanari": "Futanari", "Incest": "Incesto", "Netorare": "Netorare", "NTR": "Netorare"
 };
-const mdNorm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+const mdNorm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 const GENRE_PT_EN: Record<string, string> = Object.fromEntries(
   Object.entries(GENRE_EN_PT).map(([en, pt]) => [mdNorm(pt), en])
 );
@@ -72,10 +72,10 @@ export class MangaDexProvider implements Provider {
         const descMap = item.attributes?.description || {};
         const description = this.extractPtDescription(descMap);
         
-        const coverRel = item.relationships.find((r: any) => r.type === "cover_art");
+        const coverRel = item.relationships?.find((r: any) => r.type === "cover_art");
         const coverFileName = coverRel?.attributes?.fileName;
-        const coverUrl = coverFileName 
-          ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.256.jpg` 
+        const coverUrl = coverFileName
+          ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.256.jpg`
           : undefined;
 
         const genres = this.extractGenres(item);
@@ -106,10 +106,10 @@ export class MangaDexProvider implements Provider {
     const descMap = item.attributes?.description || {};
     const description = this.extractPtDescription(descMap);
     
-    const coverRel = item.relationships.find((r: any) => r.type === "cover_art");
+    const coverRel = item.relationships?.find((r: any) => r.type === "cover_art");
     const coverFileName = coverRel?.attributes?.fileName;
-    const coverUrl = coverFileName 
-      ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.512.jpg` 
+    const coverUrl = coverFileName
+      ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.512.jpg`
       : undefined;
 
     const status = item.attributes.status;
@@ -126,17 +126,16 @@ export class MangaDexProvider implements Provider {
       let hasMore = true;
 
       while (hasMore) {
+        if (offset >= 2500) break; // safety breaker: MangaDex caps offset at 2500
         // Fetch chapters in Portuguese and English
         const url = `https://api.mangadex.org/manga/${id}/feed?translatedLanguage[]=pt-br&translatedLanguage[]=pt&translatedLanguage[]=en&order[chapter]=asc&limit=${limit}&offset=${offset}`;
         const res = await fetch(url);
         if (!res.ok) throw new Error(`MangaDex chapters error: ${res.status}`);
         const data = await res.json() as any;
-        
+
         allData = allData.concat(data.data || []);
         offset += limit;
         hasMore = (data.data || []).length === limit && allData.length < (data.total || 0);
-
-        if (offset > 2500) break; // safety breaker
       }
 
       const results: Chapter[] = allData.map((item: any) => {
@@ -167,19 +166,29 @@ export class MangaDexProvider implements Provider {
   }
 
   async getPages(chapterId: string): Promise<Page[]> {
-    const url = `https://api.mangadex.org/at-home/server/${chapterId}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`MangaDex pages error: ${res.status}`);
-    const data = await res.json() as any;
+    try {
+      const url = `https://api.mangadex.org/at-home/server/${chapterId}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`MangaDex pages error: ${res.status}`);
+      const data = await res.json() as any;
 
-    const baseUrl = data.baseUrl;
-    const hash = data.chapter.hash;
-    const fileNames = data.chapter.data;
+      const baseUrl = data.baseUrl;
+      const hash = data.chapter?.hash;
+      const fileNames = data.chapter?.data;
 
-    return fileNames.map((fn: string, index: number) => ({
-      url: `${baseUrl}/data/${hash}/${fn}`,
-      pageNumber: index + 1
-    }));
+      if (!baseUrl || !hash || !Array.isArray(fileNames)) {
+        logger.error({ chapterId, data }, "MangaDex pages: unexpected at-home response shape");
+        return [];
+      }
+
+      return fileNames.map((fn: string, index: number) => ({
+        url: `${baseUrl}/data/${hash}/${fn}`,
+        pageNumber: index + 1
+      }));
+    } catch (err) {
+      logger.error({ err, chapterId }, "MangaDex getPages failed:");
+      return [];
+    }
   }
 
   async getCatalog(listType: "popular" | "latest", nsfw?: boolean): Promise<SearchResult[]> {
@@ -202,10 +211,10 @@ export class MangaDexProvider implements Provider {
         const descMap = item.attributes?.description || {};
         const description = descMap.en || descMap["pt-br"] || (Object.values(descMap).length > 0 ? Object.values(descMap)[0] : "");
         
-        const coverRel = item.relationships.find((r: any) => r.type === "cover_art");
+        const coverRel = item.relationships?.find((r: any) => r.type === "cover_art");
         const coverFileName = coverRel?.attributes?.fileName;
-        const coverUrl = coverFileName 
-          ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.256.jpg` 
+        const coverUrl = coverFileName
+          ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.256.jpg`
           : undefined;
         const genres = this.extractGenres(item);
         const contentRating = item.attributes?.contentRating;

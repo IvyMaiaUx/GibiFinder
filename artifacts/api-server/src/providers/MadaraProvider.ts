@@ -156,12 +156,18 @@ export class MadaraProvider implements Provider {
       addCandidate(attrMatch?.[1]);
     }
 
+    const getPageNum = (url: string): number | null => {
+      // Extract only the filename portion to avoid matching chapter/folder numbers in the path.
+      const filename = url.split("/").pop()?.split("?")[0] || "";
+      const m = filename.match(/(\d+)/);
+      return m ? Number(m[1]) : null;
+    };
     return Array.from(urls)
       .map((url, index) => ({ url, index }))
       .sort((a, b) => {
-        const pageA = a.url.match(/(?:^|[^\d])(\d{1,4})(?:\D*)\.(?:webp|jpe?g|png)/i)?.[1];
-        const pageB = b.url.match(/(?:^|[^\d])(\d{1,4})(?:\D*)\.(?:webp|jpe?g|png)/i)?.[1];
-        if (pageA && pageB) return Number(pageA) - Number(pageB);
+        const pageA = getPageNum(a.url);
+        const pageB = getPageNum(b.url);
+        if (pageA !== null && pageB !== null) return pageA - pageB;
         return a.index - b.index;
       })
       .map(item => item.url);

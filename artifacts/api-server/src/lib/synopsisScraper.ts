@@ -1,4 +1,4 @@
-import { logger } from "./logger";
+﻿import { logger } from "./logger";
 
 const BASE = "https://zonafantasmanet.wordpress.com";
 const HEADERS = {
@@ -37,7 +37,7 @@ function normalize(value = ""): string {
   return value
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "");
+    .replace(/[\u0300-\u036f]/g, "");
 }
 
 /** Words + issue number the title should map to on the blog. */

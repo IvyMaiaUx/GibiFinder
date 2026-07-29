@@ -4,6 +4,7 @@ import { ProviderManager } from "../providers/ProviderManager";
 import { getOverrides, applyOverrides, overrideKey, upsertOverride } from "../lib/catalogOverrides";
 import { hasDriveKey } from "../lib/driveKeys";
 import { scrapeComicSynopsisDetailed } from "../lib/synopsisScraper";
+import { requireAdmin } from "../lib/auth";
 
 const router = Router();
 
@@ -250,15 +251,6 @@ router.get("/providers/statistics", async (req: Request, res: Response) => {
   }
 });
 
-const ADMIN_KEY = process.env["ADMIN_KEY"] || "gibi-admin-2024";
-function requireAdmin(req: Request, res: Response): boolean {
-  if (req.headers["x-admin-key"] !== ADMIN_KEY) {
-    res.status(401).json({ error: "unauthorized", message: "Chave de administrador inválida" });
-    return false;
-  }
-  return true;
-}
-
 const INSPECT_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
@@ -482,8 +474,13 @@ function isPrivateInspectionTarget(hostname: string): boolean {
   if (["localhost", "127.0.0.1", "::1", "0.0.0.0"].includes(host)) return true;
   if (/^127\./.test(host)) return true;
   if (/^10\./.test(host)) return true;
+  if (/^0\./.test(host)) return true; // 0.0.0.0/8 — routes to localhost on many systems
   if (/^192\.168\./.test(host)) return true;
   if (/^169\.254\./.test(host)) return true;
+  // IPv6 loopback, link-local (fe80::/10) and unique-local (fc00::/7)
+  if (/^::1$/.test(host)) return true;
+  if (/^fe[89ab][0-9a-f]:/i.test(host)) return true;
+  if (/^f[cd][0-9a-f]{2}:/i.test(host)) return true;
   const private172 = host.match(/^172\.(\d+)\./);
   return Boolean(private172 && Number(private172[1]) >= 16 && Number(private172[1]) <= 31);
 }
