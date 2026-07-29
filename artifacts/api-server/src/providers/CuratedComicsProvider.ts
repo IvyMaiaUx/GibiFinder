@@ -228,6 +228,11 @@ export class CuratedComicsProvider implements Provider {
   language: string;
   private catalogCache: { fetchedAt: number; items: CuratedItem[] } | null = null;
 
+  clearCache(): void {
+    this.catalogCache = null;
+    this.refreshing = null;
+  }
+
   constructor(id: string, name: string, language = "pt") {
     this.id = id;
     this.name = name;

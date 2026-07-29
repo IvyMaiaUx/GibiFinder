@@ -793,4 +793,38 @@ router.get("/cron/refresh-catalog", async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/admin/cache/clear — invalida o cache de overrides e do catálogo em memória
+router.post("/admin/cache/clear", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    await getOverrides(true);
+    ProviderManager.clearCatalogCache();
+    res.json({ ok: true, message: "Cache invalidado com sucesso." });
+  } catch (err) {
+    logger.error({ err }, "cache clear failed");
+    res.status(500).json({ error: "cache_clear_failed" });
+  }
+});
+
+// GET /api/admin/providers/health — faz busca leve em cada provider ativo e retorna latência
+router.get("/admin/providers/health", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
+  const providers = ProviderManager.listProviders().filter(p => p.active);
+  const results = await Promise.all(
+    providers.map(async (p) => {
+      const start = Date.now();
+      try {
+        const items = await Promise.race([
+          ProviderManager.search("batman", false, [p.id]),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 6000)),
+        ]);
+        return { id: p.id, name: p.name, ok: true, latencyMs: Date.now() - start, resultCount: (items as any[]).length };
+      } catch {
+        return { id: p.id, name: p.name, ok: false, latencyMs: Date.now() - start, resultCount: 0 };
+      }
+    })
+  );
+  res.json(results);
+});
+
 export default router;

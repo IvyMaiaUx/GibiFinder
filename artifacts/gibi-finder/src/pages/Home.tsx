@@ -138,17 +138,20 @@ const sortByReleaseDate = (items: UnifiedSearchResult[], direction: ReleaseSort)
   });
 };
 
+const SEARCH_CACHE = new Map<string, { data: UnifiedSearchResult[]; ts: number }>();
+const SEARCH_CACHE_TTL = 5 * 60 * 1000; // 5 min
+
 export default function Home() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
   const { toast } = useToast();
-  const { 
+  const {
     results,
     resultSource,
-    isPending: aiPending, 
-    searchByImage, 
-    searchByText, 
-    searchByCharacter, 
+    isPending: aiPending,
+    searchByImage,
+    searchByText,
+    searchByCharacter,
     searchByQuote,
     clearResults
   } = useSearchActions();
@@ -211,13 +214,22 @@ export default function Home() {
     const controller = new AbortController();
     onlineSearchAbortRef.current = controller;
 
-    setOnlineSearching(true);
     setSearchedQuery(query);
-    clearResults(); // Clear AI results if any
-    setOnlineResults(null);
+    clearResults();
     setAdultSearchWarning(null);
     setPublisherFilter("all");
     setReleaseSort(null);
+
+    // Serve cache hit instantly
+    const cacheKey = `${query.toLowerCase().trim()}|${isNsfw}`;
+    const cached = SEARCH_CACHE.get(cacheKey);
+    if (cached && Date.now() - cached.ts < SEARCH_CACHE_TTL) {
+      setOnlineResults(cached.data);
+      return;
+    }
+
+    setOnlineSearching(true);
+    setOnlineResults(null);
 
     try {
       const res = await fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(query)}&nsfw=${isNsfw}`, { signal: controller.signal });
@@ -226,6 +238,7 @@ export default function Home() {
         const hiddenCount = Number(res.headers.get("X-Adult-Results-Hidden") || "0");
         const adultQuery = res.headers.get("X-Adult-Query") === "true";
         setAdultSearchWarning(hiddenCount > 0 || (adultQuery && !isNsfw) ? { hiddenCount, adultQuery } : null);
+        SEARCH_CACHE.set(cacheKey, { data, ts: Date.now() });
         setOnlineResults(data);
         // Persist so "voltar aos resultados" from a detail page can restore the
         // list without re-running the search.
@@ -429,10 +442,24 @@ export default function Home() {
               )}
 
               {visibleResults.length === 0 ? (
-                <div className="text-center py-20 border-4 border-dashed border-black bg-white comic-shadow-sm">
+                <div className="text-center py-16 border-4 border-dashed border-black bg-white comic-shadow-sm px-6">
                   <HelpCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                   <h3 className="font-display text-2xl text-black">NENHUM QUADRINHO ENCONTRADO</h3>
-                  <p className="font-sans font-bold text-gray-500 mt-2">Tente pesquisar em inglês ou verifique se os provedores estão ativados no painel admin.</p>
+                  <p className="font-sans font-bold text-gray-500 mt-2 mb-6">Nenhum resultado para <strong>"{searchedQuery}"</strong> nos provedores ativos.</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left max-w-xl mx-auto">
+                    <div className="bg-yellow-50 border-2 border-black p-3">
+                      <p className="font-display text-sm">TENTE EM INGLÊS</p>
+                      <p className="font-sans text-xs text-gray-600 mt-1">Muitos títulos só aparecem no nome original.</p>
+                    </div>
+                    <div className="bg-yellow-50 border-2 border-black p-3">
+                      <p className="font-display text-sm">MENOS PALAVRAS</p>
+                      <p className="font-sans text-xs text-gray-600 mt-1">Use só o nome da série, sem volume ou número.</p>
+                    </div>
+                    <div className="bg-yellow-50 border-2 border-black p-3">
+                      <p className="font-display text-sm">BUSCA POR FOTO</p>
+                      <p className="font-sans text-xs text-gray-600 mt-1">Tem a capa? Use a aba de imagem para identificar.</p>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">

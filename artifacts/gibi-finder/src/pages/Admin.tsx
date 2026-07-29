@@ -1364,7 +1364,7 @@ export default function Admin() {
       )}
 
       {tab === "system" && (
-        <AdminSystem info={{
+        <AdminSystem adminKey={adminKey} info={{
           diag: (catalogData as any)?.diag,
           catalogTotal: catalogData?.total ?? null,
           usersTotal: usersData?.total ?? null,

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Search } from "lucide-react";
 
 const LOADING_MESSAGES = [
@@ -21,6 +21,7 @@ interface TextInputSearchProps {
 export function TextInputSearch({ onSearch, isPending, placeholder, buttonText, hint }: TextInputSearchProps) {
   const [query, setQuery] = useState("");
   const [msgIndex, setMsgIndex] = useState(0);
+  const lastSubmitRef = useRef(0);
 
   useEffect(() => {
     if (!isPending) { setMsgIndex(0); return; }
@@ -32,9 +33,11 @@ export function TextInputSearch({ onSearch, isPending, placeholder, buttonText, 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (query.trim()) {
-      onSearch(query);
-    }
+    if (!query.trim() || isPending) return;
+    const now = Date.now();
+    if (now - lastSubmitRef.current < 1500) return;
+    lastSubmitRef.current = now;
+    onSearch(query);
   };
 
   return (

@@ -1,7 +1,15 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useDropzone } from "react-dropzone";
 import { ImagePlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const PROGRESS_STEPS = [
+  "ANALISANDO A IMAGEM...",
+  "COMPARANDO COM O CATÁLOGO...",
+  "CONSULTANDO O ARQUIVO...",
+  "IDENTIFICANDO PERSONAGENS...",
+  "QUASE LÁ...",
+];
 
 interface ImageDropzoneProps {
   onImagesReady: (files: File[]) => void;
@@ -11,6 +19,18 @@ interface ImageDropzoneProps {
 export function ImageDropzone({ onImagesReady, isPending }: ImageDropzoneProps) {
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
+  const [stepIndex, setStepIndex] = useState(0);
+  const stepRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (isPending) {
+      setStepIndex(0);
+      stepRef.current = setInterval(() => setStepIndex(i => (i + 1) % PROGRESS_STEPS.length), 3000);
+    } else {
+      if (stepRef.current) clearInterval(stepRef.current);
+    }
+    return () => { if (stepRef.current) clearInterval(stepRef.current); };
+  }, [isPending]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const newFiles = [...files, ...acceptedFiles].slice(0, 3);
@@ -95,7 +115,7 @@ export function ImageDropzone({ onImagesReady, isPending }: ImageDropzoneProps) 
         disabled={files.length === 0 || isPending}
         className="w-full bg-primary text-white font-display text-3xl py-4 comic-border comic-shadow comic-hover comic-active disabled:opacity-50 disabled:transform-none disabled:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] disabled:cursor-not-allowed"
       >
-        {isPending ? "IDENTIFICANDO..." : "IDENTIFICAR GIBI!"}
+        {isPending ? PROGRESS_STEPS[stepIndex] : "IDENTIFICAR GIBI!"}
       </button>
     </div>
   );

@@ -1,4 +1,7 @@
-import { Server, Database, HardDrive, Cloud, Users as UsersIcon, Library, Globe, Key, Table, XCircle } from "lucide-react";
+import { useState } from "react";
+import { Server, Database, HardDrive, Cloud, Users as UsersIcon, Library, Globe, Key, Table, XCircle, RefreshCw, Activity, Loader2 } from "lucide-react";
+
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
 export interface SystemInfo {
   diag?: any;
@@ -34,7 +37,45 @@ function HealthCard({ icon: Icon, label, ok, detail }: { icon: typeof Server; la
   );
 }
 
-export function AdminSystem({ info }: { info: SystemInfo }) {
+type ProviderHealth = { id: string; name: string; ok: boolean; latencyMs: number; resultCount: number };
+
+export function AdminSystem({ info, adminKey }: { info: SystemInfo; adminKey?: string }) {
+  const [cacheClearing, setCacheClearing] = useState(false);
+  const [cacheMsg, setCacheMsg] = useState<string | null>(null);
+  const [healthData, setHealthData] = useState<ProviderHealth[] | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+
+  const clearCache = async () => {
+    if (!adminKey) return;
+    setCacheClearing(true);
+    setCacheMsg(null);
+    try {
+      const res = await fetch(`${BASE}/api/admin/cache/clear`, {
+        method: "POST",
+        headers: { "x-admin-key": adminKey },
+      });
+      const json = await res.json();
+      setCacheMsg(res.ok ? "Cache invalidado com sucesso!" : (json.error || "Erro ao invalidar cache."));
+    } catch {
+      setCacheMsg("Erro de conexão.");
+    } finally {
+      setCacheClearing(false);
+    }
+  };
+
+  const runHealthCheck = async () => {
+    if (!adminKey) return;
+    setHealthLoading(true);
+    setHealthData(null);
+    try {
+      const res = await fetch(`${BASE}/api/admin/providers/health`, {
+        headers: { "x-admin-key": adminKey },
+      });
+      if (res.ok) setHealthData(await res.json());
+    } catch {}
+    setHealthLoading(false);
+  };
+
   const bib = info.diag?.cache?.["biblioteca-br"];
   const cachePersisted: boolean | null = bib ? !!bib.persisted : null;
   const driveKey: boolean | null = info.diag ? !!info.diag.driveKey : null;
@@ -129,6 +170,56 @@ export function AdminSystem({ info }: { info: SystemInfo }) {
           </div>
         ) : <p className="font-sans font-bold text-gray-400 text-sm">Carregando…</p>}
         <p className="font-sans font-bold text-gray-400 text-xs mt-2">Deploy é push → Vercel; logs ficam na Vercel; backups são gerenciados pelo Supabase; o cron renova o catálogo a cada 6h. Jobs/filas não são usados nesta arquitetura.</p>
+      </div>
+
+      {/* Cache */}
+      <div>
+        <h2 className="font-display text-2xl text-black mb-3 flex items-center gap-2"><RefreshCw className="w-5 h-5" /> Cache</h2>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={clearCache}
+            disabled={cacheClearing || !adminKey}
+            className="inline-flex items-center gap-2 font-display text-base bg-white border-4 border-black px-4 py-2 comic-shadow-sm hover:bg-yellow-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {cacheClearing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" strokeWidth={2.5} />}
+            INVALIDAR CACHE
+          </button>
+          {cacheMsg && (
+            <span className={`font-sans font-bold text-sm ${cacheMsg.includes("sucesso") ? "text-green-700" : "text-red-600"}`}>
+              {cacheMsg}
+            </span>
+          )}
+        </div>
+        <p className="font-sans font-bold text-gray-400 text-xs mt-2">Invalida o cache de overrides e o catálogo em memória forçando recarga na próxima requisição.</p>
+      </div>
+
+      {/* Health Check de Providers */}
+      <div>
+        <h2 className="font-display text-2xl text-black mb-3 flex items-center gap-2"><Activity className="w-5 h-5" /> Health Check de Providers</h2>
+        <button
+          onClick={runHealthCheck}
+          disabled={healthLoading || !adminKey}
+          className="inline-flex items-center gap-2 font-display text-base bg-white border-4 border-black px-4 py-2 comic-shadow-sm hover:bg-yellow-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors mb-4"
+        >
+          {healthLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" strokeWidth={2.5} />}
+          PINGAR PROVIDERS
+        </button>
+        <p className="font-sans font-bold text-gray-400 text-xs mb-3">Faz uma busca rápida em cada provider ativo (pode levar ~30s). Use com moderação.</p>
+        {healthData && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {healthData.map(p => (
+              <div key={p.id} className={`border-4 border-black p-3 flex items-center gap-3 ${p.ok ? "bg-green-50" : "bg-red-50"}`}>
+                <span className={`w-3 h-3 rounded-full border border-black shrink-0 ${p.ok ? "bg-green-500" : "bg-red-500"}`} />
+                <div className="min-w-0">
+                  <p className="font-display text-sm truncate">{p.name}</p>
+                  <p className="font-sans text-2xs text-gray-500 font-bold">
+                    {p.ok ? `${p.latencyMs}ms · ${p.resultCount} resultados` : `Falhou (${p.latencyMs}ms)`}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

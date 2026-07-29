@@ -207,6 +207,13 @@ export class ProviderManager {
     }
   }
 
+  static clearCatalogCache(): void {
+    for (const p of this.providers.values()) {
+      const anyP = p as any;
+      if (typeof anyP.clearCache === "function") anyP.clearCache();
+    }
+  }
+
   static listProviders() {
     return Array.from(this.providers.values()).map(p => ({
       id: p.id,
@@ -429,6 +436,17 @@ export class ProviderManager {
     ]);
   }
 
+  private static async withRetry<T>(fn: () => Promise<T>, attempts = 3, baseMs = 600): Promise<T> {
+    let lastErr: unknown;
+    for (let i = 0; i < attempts; i++) {
+      try { return await fn(); } catch (err) {
+        lastErr = err;
+        if (i < attempts - 1) await new Promise(r => setTimeout(r, baseMs * 2 ** i));
+      }
+    }
+    throw lastErr;
+  }
+
   static async search(query: string, nsfw?: boolean, providerIds?: string[]): Promise<UnifiedSearchResult[]> {
     return (await this.searchWithMetadata(query, nsfw, providerIds)).results;
   }
@@ -537,19 +555,19 @@ export class ProviderManager {
   static async getDetails(providerId: string, id: string): Promise<MangaDetails> {
     const provider = this.getProvider(providerId);
     if (!provider) throw new Error(`Provider not found: ${providerId}`);
-    return provider.getDetails(id);
+    return this.withRetry(() => provider.getDetails(id));
   }
 
   static async getChapters(providerId: string, id: string): Promise<Chapter[]> {
     const provider = this.getProvider(providerId);
     if (!provider) throw new Error(`Provider not found: ${providerId}`);
-    return provider.getChapters(id);
+    return this.withRetry(() => provider.getChapters(id));
   }
 
   static async getPages(providerId: string, chapterId: string): Promise<Page[]> {
     const provider = this.getProvider(providerId);
     if (!provider) throw new Error(`Provider not found: ${providerId}`);
-    return provider.getPages(chapterId);
+    return this.withRetry(() => provider.getPages(chapterId));
   }
 
   static async getCatalog(listType: "popular" | "latest", nsfw?: boolean): Promise<UnifiedSearchResult[]> {
