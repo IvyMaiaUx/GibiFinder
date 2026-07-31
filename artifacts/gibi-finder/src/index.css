@@ -74,6 +74,10 @@
     @apply border-border;
   }
 
+  html, body {
+    overflow-x: hidden;
+  }
+
   body {
     @apply font-sans antialiased text-foreground bg-background;
     background-image: radial-gradient(hsl(39 17% 81%) 15%, transparent 15%);
