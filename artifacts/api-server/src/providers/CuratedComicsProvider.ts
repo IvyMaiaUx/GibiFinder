@@ -143,6 +143,20 @@ function driveCover(file: { id: string; thumbnailLink?: string; hasThumbnail?: b
   return `https://drive.google.com/thumbnail?id=${file.id}&sz=w600`;
 }
 
+// Distinctive (non-stopword, non-numeric) terms in a title, ignoring the
+// issue number — used to detect sibling issues of the same saga so the
+// reader's chapter list can show "Absolute Batman #1..#19" instead of one
+// disconnected item per PDF.
+function seriesTerms(title: string): string[] {
+  return normalizeText(title.replace(/#\s*\d+.*$/i, ""))
+    .split(/\s+/)
+    .filter(t => t.length > 2 && !QUERY_STOPWORDS.has(t));
+}
+
+function extractIssueNum(title: string): string | null {
+  return title.match(/#\s*(\d+(?:\.\d+)?)/)?.[1] || null;
+}
+
 function matchesQuery(query: string, item: CuratedItem): boolean {
   const terms = normalizeText(query).split(/\s+/).filter(Boolean);
   if (terms.length === 0) return true;
@@ -534,14 +548,57 @@ export class CuratedComicsProvider implements Provider {
     return { id, title: id, providerId: this.id };
   }
 
+  // A Drive item is always a single PDF; the "chapters" here are actually
+  // sibling issues of the same saga (e.g. Absolute Batman #1..#19), each
+  // still a standalone one-PDF item, detected by title term overlap since
+  // the Drive crawl doesn't track which folder/series a file came from.
+  private seriesChapters(anchor: CuratedItem, allItems: CuratedItem[]): Chapter[] {
+    const anchorTerms = seriesTerms(anchor.title);
+    if (!extractIssueNum(anchor.title) || anchorTerms.length === 0) return [];
+
+    const seen = new Set<string>();
+    const siblings = allItems
+      .map(candidate => ({ candidate, num: extractIssueNum(candidate.title) }))
+      .filter((entry): entry is { candidate: CuratedItem; num: string } => {
+        if (!entry.num) return false;
+        const terms = seriesTerms(entry.candidate.title);
+        if (terms.length === 0) return false;
+        const overlap = anchorTerms.filter(t => terms.includes(t)).length;
+        return overlap / Math.max(anchorTerms.length, terms.length) >= 0.67;
+      })
+      .filter(({ num }) => {
+        if (seen.has(num)) return false;
+        seen.add(num);
+        return true;
+      })
+      .sort((a, b) => parseFloat(a.num) - parseFloat(b.num));
+
+    if (siblings.length <= 1) return [];
+    return siblings.map(({ candidate, num }) => ({
+      id: candidate.chapters[0].id,
+      chapterNum: num,
+      title: candidate.title,
+      language: "pt",
+      providerId: this.id
+    }));
+  }
+
   async getChapters(id: string): Promise<Chapter[]> {
-    // A Drive item is always a single PDF; synthesize its chapter straight from
-    // the id so it opens even when the catalog cache is cold.
     const driveMatch = id.match(/^drive-([A-Za-z0-9_-]{20,})$/);
+    const dynamicItems = this.cachedOrWarm();
+    const allItems = [...STATIC_ITEMS, ...dynamicItems];
+    const item = this.findItem(id, dynamicItems);
+
+    if (item) {
+      const seriesChapters = this.seriesChapters(item, allItems);
+      if (seriesChapters.length > 0) return seriesChapters;
+    }
+
     if (driveMatch) {
+      // Catalog cache cold (item not found above): fall back to a lone chapter
+      // synthesized straight from the id so it still opens.
       return [{ id: `ch-${driveMatch[1]}`, chapterNum: "1", title: "Capítulo único", language: "pt", providerId: this.id }];
     }
-    const item = this.findItem(id, this.cachedOrWarm());
     if (!item) return [];
     return item.chapters.map(ch => ({
       id: ch.id,

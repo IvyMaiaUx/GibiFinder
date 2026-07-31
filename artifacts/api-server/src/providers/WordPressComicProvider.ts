@@ -339,6 +339,61 @@ export class WordPressComicProvider implements Provider {
     };
   }
 
+  // Resolves the single chapter a post itself reads as (direct images in the
+  // post, or its linked "Ler Online" page) — shared by the single-issue path
+  // and the cross-issue saga grouping below.
+  private async resolveChapterForPost(post: WpPost): Promise<Chapter | null> {
+    const postTitle = this.stripHtml(post.title?.rendered || post.slug);
+    const chapterNum = this.getIssueNumber(postTitle) || "1";
+    const directImages = this.extractImages(post.content?.rendered || "");
+    if (directImages.length > 0) {
+      return { id: this.toPostId(post), chapterNum, title: postTitle, language: this.language, providerId: this.id };
+    }
+    const readPage = await this.findReadPage(post).catch(() => null);
+    if (!readPage) return null;
+    return { id: readPage.id, chapterNum, title: readPage.title, language: this.language, providerId: this.id };
+  }
+
+  // A saga like "The Boys" is indexed as one WordPress post per issue, with no
+  // series grouping. Find the other numbered issues sharing this post's base
+  // title (same technique as search()'s title matching) so the reader's
+  // chapter list can show the whole run instead of just this one issue.
+  private async seriesChapters(post: WpPost): Promise<Chapter[]> {
+    const postTitle = this.stripHtml(post.title?.rendered || post.slug);
+    if (!this.getIssueNumber(postTitle)) return [];
+    const seriesTitle = postTitle.replace(/#\s*[0-9]+.*/i, "").replace(/\([^)]*\)/g, "").trim();
+    const seriesTerms = this.getSearchTerms(seriesTitle);
+    if (seriesTerms.length === 0) return [];
+
+    const candidates = await this.fetchJson<WpPost[]>(
+      this.api(`posts?search=${encodeURIComponent(seriesTerms.join(" "))}&per_page=40&_embed=1`)
+    ).catch(() => [] as WpPost[]);
+
+    const sameSeries = candidates.filter(candidate => {
+      const candidateTitle = this.stripHtml(candidate.title?.rendered || "");
+      if (!this.getIssueNumber(candidateTitle)) return false;
+      const candidateBase = candidateTitle.replace(/#\s*[0-9]+.*/i, "").replace(/\([^)]*\)/g, "").trim();
+      const candidateTerms = this.getSearchTerms(candidateBase);
+      if (candidateTerms.length === 0) return false;
+      const overlap = seriesTerms.filter(t => candidateTerms.includes(t)).length;
+      return overlap / Math.max(seriesTerms.length, candidateTerms.length) >= 0.67;
+    });
+    if (sameSeries.length <= 1) return [];
+
+    const resolved = await Promise.all(sameSeries.map(candidate => this.resolveChapterForPost(candidate)));
+    const seen = new Set<string>();
+    const chapters = resolved
+      .filter((ch): ch is Chapter => ch !== null)
+      .filter(ch => {
+        if (seen.has(ch.chapterNum)) return false;
+        seen.add(ch.chapterNum);
+        return true;
+      })
+      .sort((a, b) => parseFloat(a.chapterNum) - parseFloat(b.chapterNum));
+
+    return chapters.length > 1 ? chapters : [];
+  }
+
   async getChapters(id: string): Promise<Chapter[]> {
     if (id.startsWith("page:")) {
       const page = await this.getPageById(id.replace(/^page:/, ""));
@@ -354,28 +409,12 @@ export class WordPressComicProvider implements Provider {
 
     const post = await this.getPost(id);
     if (!post) return [];
-    const directImages = this.extractImages(post.content?.rendered || "");
-    if (directImages.length > 0) {
-      return [{
-        id: this.toPostId(post),
-        chapterNum: this.stripHtml(post.title?.rendered || "").match(/#\s*([0-9]+)/)?.[1] || "1",
-        title: this.stripHtml(post.title?.rendered || post.slug),
-        language: this.language,
-        providerId: this.id
-      }];
-    }
 
-    const readPage = await this.findReadPage(post).catch(() => null);
-    if (!readPage) {
-      return [];
-    }
-    return [{
-      id: readPage.id,
-      chapterNum: this.stripHtml(post.title?.rendered || "").match(/#\s*([0-9]+)/)?.[1] || "1",
-      title: readPage.title,
-      language: this.language,
-      providerId: this.id
-    }];
+    const seriesChapters = await this.seriesChapters(post).catch(() => []);
+    if (seriesChapters.length > 0) return seriesChapters;
+
+    const own = await this.resolveChapterForPost(post);
+    return own ? [own] : [];
   }
 
   async getPages(chapterId: string): Promise<Page[]> {

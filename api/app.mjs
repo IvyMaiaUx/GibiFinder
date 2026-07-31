@@ -59497,6 +59497,52 @@ var WordPressComicProvider = class {
       providerId: this.id
     };
   }
+  // Resolves the single chapter a post itself reads as (direct images in the
+  // post, or its linked "Ler Online" page) — shared by the single-issue path
+  // and the cross-issue saga grouping below.
+  async resolveChapterForPost(post2) {
+    const postTitle = this.stripHtml(post2.title?.rendered || post2.slug);
+    const chapterNum = this.getIssueNumber(postTitle) || "1";
+    const directImages = this.extractImages(post2.content?.rendered || "");
+    if (directImages.length > 0) {
+      return { id: this.toPostId(post2), chapterNum, title: postTitle, language: this.language, providerId: this.id };
+    }
+    const readPage = await this.findReadPage(post2).catch(() => null);
+    if (!readPage) return null;
+    return { id: readPage.id, chapterNum, title: readPage.title, language: this.language, providerId: this.id };
+  }
+  // A saga like "The Boys" is indexed as one WordPress post per issue, with no
+  // series grouping. Find the other numbered issues sharing this post's base
+  // title (same technique as search()'s title matching) so the reader's
+  // chapter list can show the whole run instead of just this one issue.
+  async seriesChapters(post2) {
+    const postTitle = this.stripHtml(post2.title?.rendered || post2.slug);
+    if (!this.getIssueNumber(postTitle)) return [];
+    const seriesTitle = postTitle.replace(/#\s*[0-9]+.*/i, "").replace(/\([^)]*\)/g, "").trim();
+    const seriesTerms2 = this.getSearchTerms(seriesTitle);
+    if (seriesTerms2.length === 0) return [];
+    const candidates = await this.fetchJson(
+      this.api(`posts?search=${encodeURIComponent(seriesTerms2.join(" "))}&per_page=40&_embed=1`)
+    ).catch(() => []);
+    const sameSeries = candidates.filter((candidate) => {
+      const candidateTitle = this.stripHtml(candidate.title?.rendered || "");
+      if (!this.getIssueNumber(candidateTitle)) return false;
+      const candidateBase = candidateTitle.replace(/#\s*[0-9]+.*/i, "").replace(/\([^)]*\)/g, "").trim();
+      const candidateTerms = this.getSearchTerms(candidateBase);
+      if (candidateTerms.length === 0) return false;
+      const overlap = seriesTerms2.filter((t) => candidateTerms.includes(t)).length;
+      return overlap / Math.max(seriesTerms2.length, candidateTerms.length) >= 0.67;
+    });
+    if (sameSeries.length <= 1) return [];
+    const resolved = await Promise.all(sameSeries.map((candidate) => this.resolveChapterForPost(candidate)));
+    const seen = /* @__PURE__ */ new Set();
+    const chapters = resolved.filter((ch) => ch !== null).filter((ch) => {
+      if (seen.has(ch.chapterNum)) return false;
+      seen.add(ch.chapterNum);
+      return true;
+    }).sort((a, b) => parseFloat(a.chapterNum) - parseFloat(b.chapterNum));
+    return chapters.length > 1 ? chapters : [];
+  }
   async getChapters(id) {
     if (id.startsWith("page:")) {
       const page = await this.getPageById(id.replace(/^page:/, ""));
@@ -59511,27 +59557,10 @@ var WordPressComicProvider = class {
     }
     const post2 = await this.getPost(id);
     if (!post2) return [];
-    const directImages = this.extractImages(post2.content?.rendered || "");
-    if (directImages.length > 0) {
-      return [{
-        id: this.toPostId(post2),
-        chapterNum: this.stripHtml(post2.title?.rendered || "").match(/#\s*([0-9]+)/)?.[1] || "1",
-        title: this.stripHtml(post2.title?.rendered || post2.slug),
-        language: this.language,
-        providerId: this.id
-      }];
-    }
-    const readPage = await this.findReadPage(post2).catch(() => null);
-    if (!readPage) {
-      return [];
-    }
-    return [{
-      id: readPage.id,
-      chapterNum: this.stripHtml(post2.title?.rendered || "").match(/#\s*([0-9]+)/)?.[1] || "1",
-      title: readPage.title,
-      language: this.language,
-      providerId: this.id
-    }];
+    const seriesChapters = await this.seriesChapters(post2).catch(() => []);
+    if (seriesChapters.length > 0) return seriesChapters;
+    const own = await this.resolveChapterForPost(post2);
+    return own ? [own] : [];
   }
   async getPages(chapterId) {
     try {
@@ -59948,6 +59977,12 @@ function driveCover(file) {
   if (file.hasThumbnail === false) return void 0;
   return `https://drive.google.com/thumbnail?id=${file.id}&sz=w600`;
 }
+function seriesTerms(title) {
+  return normalizeText(title.replace(/#\s*\d+.*$/i, "")).split(/\s+/).filter((t) => t.length > 2 && !QUERY_STOPWORDS.has(t));
+}
+function extractIssueNum(title) {
+  return title.match(/#\s*(\d+(?:\.\d+)?)/)?.[1] || null;
+}
 function matchesQuery(query, item) {
   const terms = normalizeText(query).split(/\s+/).filter(Boolean);
   if (terms.length === 0) return true;
@@ -60290,12 +60325,46 @@ var CuratedComicsProvider = class {
     }
     return { id, title: id, providerId: this.id };
   }
+  // A Drive item is always a single PDF; the "chapters" here are actually
+  // sibling issues of the same saga (e.g. Absolute Batman #1..#19), each
+  // still a standalone one-PDF item, detected by title term overlap since
+  // the Drive crawl doesn't track which folder/series a file came from.
+  seriesChapters(anchor, allItems) {
+    const anchorTerms = seriesTerms(anchor.title);
+    if (!extractIssueNum(anchor.title) || anchorTerms.length === 0) return [];
+    const seen = /* @__PURE__ */ new Set();
+    const siblings = allItems.map((candidate) => ({ candidate, num: extractIssueNum(candidate.title) })).filter((entry) => {
+      if (!entry.num) return false;
+      const terms = seriesTerms(entry.candidate.title);
+      if (terms.length === 0) return false;
+      const overlap = anchorTerms.filter((t) => terms.includes(t)).length;
+      return overlap / Math.max(anchorTerms.length, terms.length) >= 0.67;
+    }).filter(({ num }) => {
+      if (seen.has(num)) return false;
+      seen.add(num);
+      return true;
+    }).sort((a, b) => parseFloat(a.num) - parseFloat(b.num));
+    if (siblings.length <= 1) return [];
+    return siblings.map(({ candidate, num }) => ({
+      id: candidate.chapters[0].id,
+      chapterNum: num,
+      title: candidate.title,
+      language: "pt",
+      providerId: this.id
+    }));
+  }
   async getChapters(id) {
     const driveMatch = id.match(/^drive-([A-Za-z0-9_-]{20,})$/);
+    const dynamicItems = this.cachedOrWarm();
+    const allItems = [...STATIC_ITEMS, ...dynamicItems];
+    const item = this.findItem(id, dynamicItems);
+    if (item) {
+      const seriesChapters = this.seriesChapters(item, allItems);
+      if (seriesChapters.length > 0) return seriesChapters;
+    }
     if (driveMatch) {
       return [{ id: `ch-${driveMatch[1]}`, chapterNum: "1", title: "Cap\xEDtulo \xFAnico", language: "pt", providerId: this.id }];
     }
-    const item = this.findItem(id, this.cachedOrWarm());
     if (!item) return [];
     return item.chapters.map((ch) => ({
       id: ch.id,
