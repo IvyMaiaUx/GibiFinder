@@ -162,7 +162,7 @@
     "language": "pt",
     "baseUrl": "https://slimeread.app/",
     "engine": "slimeread",
-    "active": true
+    "active": false
   },
   {
     "id": "manga-livre",

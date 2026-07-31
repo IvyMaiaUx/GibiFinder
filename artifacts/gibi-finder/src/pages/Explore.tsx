@@ -36,7 +36,7 @@ interface RowData {
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai"];
+const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "mega-hq", "meu-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai"];
 const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
 
 // Preferred genre rows, in display order (only shown if there are enough items).

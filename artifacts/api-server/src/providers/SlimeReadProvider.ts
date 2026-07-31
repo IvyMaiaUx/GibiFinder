@@ -59,17 +59,33 @@ export class SlimeReadProvider implements Provider {
     return [
       "adult",
       "afrodisiaco",
+      "amateur",
+      "amadoras",
       "censura",
       "ecchi",
+      "gonewild",
+      "hardcore",
       "hentai",
+      "imageset",
       "incesto",
       "irma",
       "madrasta",
       "milf",
       "nsfw",
+      "nude",
+      "nudes",
+      "nua",
+      "nuas",
+      "nudez",
+      "onlyfans",
+      "pelada",
+      "peladas",
       "pet sexual",
       "sexo",
-      "sogro"
+      "softcore",
+      "sogro",
+      "xxx",
+      "18+"
     ].some(term => text.includes(this.normalizeText(term)));
   }
 
