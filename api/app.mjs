@@ -57538,6 +57538,80 @@ router2.post("/auth/reader-settings/upsert", async (req, res) => {
     res.status(500).json({ ok: false });
   }
 });
+router2.post("/auth/stats/session", async (req, res) => {
+  const userId = sessionUserId(req);
+  if (!userId || !supabase) {
+    res.json({ ok: false });
+    return;
+  }
+  const { providerId, mangaId, chapterId, chapterNum, durationMs, pagesRead } = req.body || {};
+  if (!providerId || !mangaId || !durationMs) {
+    res.json({ ok: false });
+    return;
+  }
+  try {
+    await supabase.from("reading_sessions").insert({
+      user_id: userId,
+      provider_id: providerId,
+      manga_id: mangaId,
+      chapter_id: chapterId || null,
+      chapter_num: chapterNum || null,
+      duration_ms: Math.round(Number(durationMs)),
+      pages_read: Math.round(Number(pagesRead)) || 0
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "stats/session insert failed");
+    res.json({ ok: false });
+  }
+});
+router2.get("/admin/stats/manga", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { mangaId, providerId } = req.query;
+  if (!mangaId) {
+    res.status(400).json({ error: "missing_mangaId" });
+    return;
+  }
+  if (!supabase) {
+    res.status(503).json({ error: "supabase_unavailable" });
+    return;
+  }
+  try {
+    let histQuery = supabase.from("user_reading_history").select("user_id, timestamp, chapter_id").eq("manga_id", mangaId);
+    if (providerId) histQuery = histQuery.eq("provider_id", providerId);
+    const { data: hist } = await histQuery;
+    let favQuery = supabase.from("user_favorites").select("user_id").eq("manga_id", mangaId);
+    if (providerId) favQuery = favQuery.eq("provider_id", providerId);
+    const { data: favs } = await favQuery;
+    let compQuery = supabase.from("user_completed").select("user_id").eq("manga_id", mangaId);
+    if (providerId) compQuery = compQuery.eq("provider_id", providerId);
+    const { data: comp } = await compQuery;
+    const histRows = hist || [];
+    const uniqueReaderIds = new Set(histRows.map((r) => r.user_id));
+    const completedIds = new Set((comp || []).map((r) => r.user_id));
+    const uniqueReaders = uniqueReaderIds.size;
+    const completedCount = completedIds.size;
+    const abandonedCount = [...uniqueReaderIds].filter((id) => !completedIds.has(id)).length;
+    let sessQuery = supabase.from("reading_sessions").select("duration_ms").eq("manga_id", mangaId);
+    if (providerId) sessQuery = sessQuery.eq("provider_id", providerId);
+    const { data: sessions } = await sessQuery;
+    const sessionRows = sessions || [];
+    const avgSessionMs = sessionRows.length > 0 ? Math.round(sessionRows.reduce((s, r) => s + (r.duration_ms || 0), 0) / sessionRows.length) : null;
+    res.json({
+      uniqueReaders,
+      totalReads: histRows.length,
+      favoritesCount: (favs || []).length,
+      completedCount,
+      abandonedCount,
+      completionRate: uniqueReaders > 0 ? Math.round(completedCount / uniqueReaders * 100) : 0,
+      avgSessionMs,
+      totalSessions: sessionRows.length
+    });
+  } catch (err) {
+    req.log.error({ err }, "stats/manga failed");
+    res.status(500).json({ error: "stats_failed" });
+  }
+});
 var gibi_default = router2;
 
 // src/routes/providers.ts
@@ -60306,7 +60380,7 @@ var InternetArchiveProvider = class {
   language = "pt";
   async search(query) {
     try {
-      const q = `(${query}) AND mediatype:texts AND (subject:(quadrinhos OR gibi OR comics) OR title:(gibi OR cebolinha OR monica OR turma))`;
+      const q = `(${query}) AND mediatype:texts AND subject:(quadrinhos OR gibi OR comics)`;
       const res = await fetch(
         `${IA}/advancedsearch.php?q=${encodeURIComponent(q)}&fl[]=identifier&fl[]=title&fl[]=description&rows=30&output=json&sort=downloads+desc`
       );

@@ -37,7 +37,11 @@ export class InternetArchiveProvider implements Provider {
 
   async search(query: string): Promise<SearchResult[]> {
     try {
-      const q = `(${query}) AND mediatype:texts AND (subject:(quadrinhos OR gibi OR comics) OR title:(gibi OR cebolinha OR monica OR turma))`;
+      // Only match on `subject` (a curator-assigned metadata tag), never on
+      // `title` — matching arbitrary titles (e.g. a character name like
+      // "monica") let unrelated, unmoderated uploads (archive.org has open
+      // uploads) leak into results for an all-ages search.
+      const q = `(${query}) AND mediatype:texts AND subject:(quadrinhos OR gibi OR comics)`;
       const res = await fetch(
         `${IA}/advancedsearch.php?q=${encodeURIComponent(q)}&fl[]=identifier&fl[]=title&fl[]=description&rows=30&output=json&sort=downloads+desc`
       );
