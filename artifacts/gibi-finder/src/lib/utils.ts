@@ -155,7 +155,7 @@ export async function getGeneratedSynopsis(title: string): Promise<string> {
   }
 }
 
-export const ADULT_PROVIDER_IDS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "mega-hq", "meu-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai"];
+export const ADULT_PROVIDER_IDS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "mega-hq", "meu-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai", "tankou-hentai"];
 
 /** Whether a provider id belongs to the +18 catalog. */
 export const isAdultProviderId = (id?: string | null): boolean => !!id && ADULT_PROVIDER_IDS.includes(id);

@@ -60595,7 +60595,8 @@ var ProviderManager = class {
     "sombras-de-hentai",
     "superhentais",
     "hentaidatia",
-    "muitohentai"
+    "muitohentai",
+    "tankou-hentai"
   ]);
   static adultTerms = [
     "adulto",

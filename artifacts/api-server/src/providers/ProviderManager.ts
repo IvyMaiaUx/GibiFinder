@@ -46,7 +46,8 @@ export class ProviderManager {
     "sombras-de-hentai",
     "superhentais",
     "hentaidatia",
-    "muitohentai"
+    "muitohentai",
+    "tankou-hentai"
   ]);
   private static adultTerms = [
     "adulto",

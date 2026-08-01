@@ -80,7 +80,15 @@
     "id": "insta-hentai",
     "name": "InstaHentai",
     "language": "pt",
-    "baseUrl": "http://instahentai.com/",
+    "baseUrl": "https://instahentai.com/",
+    "active": true
+  },
+  {
+    "id": "tankou-hentai",
+    "name": "TankouHentai",
+    "language": "pt",
+    "baseUrl": "https://tankouhentai.com/",
+    "engine": "madara",
     "active": true
   },
   {
