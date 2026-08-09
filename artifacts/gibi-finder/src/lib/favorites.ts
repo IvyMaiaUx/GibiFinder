@@ -58,11 +58,22 @@ export const toggleFavorite = (
   localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
 
   if (userId) {
-    fetch(`${BASE}/api/auth/favorites/sync`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ userId, favorites: next })
-    }).catch(err => console.error("Error syncing favorites:", err));
+    // /favorites/sync only ever adds/merges (see the route for why) — a
+    // removal needs the explicit DELETE, not just leaving the item out of a
+    // posted list.
+    if (added) {
+      fetch(`${BASE}/api/auth/favorites/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ userId, favorites: [next[0]] })
+      }).catch(err => console.error("Error syncing favorites:", err));
+    } else {
+      const params = new URLSearchParams({ userId, providerId: item.providerId, mangaId: item.mangaId });
+      fetch(`${BASE}/api/auth/favorites?${params.toString()}`, {
+        method: "DELETE",
+        headers: { ...authHeaders() }
+      }).catch(err => console.error("Error removing synced favorite:", err));
+    }
   }
 
   return added;
