@@ -143,6 +143,12 @@ function readJson<T>(key: string, fallback: T): T {
 // auto-hides after autoHideMs). Only applies before any preference is persisted —
 // the instant a user changes any reader setting, that saved blob takes over and
 // this has no further effect, mobile or not.
+//
+// Gated on the GLOBAL_KEY entirely missing, not on spread precedence (i.e. not
+// "apply this, then let a saved blob overwrite immersion if it has one") — a
+// blob that exists but happens to omit `immersion` (partial persistence, or an
+// older schema) would otherwise still get nudged, even though the user isn't
+// actually first-run. Explicit presence check removes that ambiguity outright.
 function firstRunDefaults(): Partial<ReaderSettings> {
   if (typeof window === "undefined") return {};
   const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
@@ -151,9 +157,12 @@ function firstRunDefaults(): Partial<ReaderSettings> {
   return isMobile ? { immersion: "cinema" } : {};
 }
 
+const hasPersistedGlobalSettings =
+  typeof localStorage !== "undefined" && localStorage.getItem(GLOBAL_KEY) !== null;
+
 let globalSettings: ReaderSettings = {
   ...READER_SETTINGS_DEFAULTS,
-  ...firstRunDefaults(),
+  ...(hasPersistedGlobalSettings ? {} : firstRunDefaults()),
   ...readJson<Partial<ReaderSettings>>(GLOBAL_KEY, {}),
 };
 let workOverrides: Record<string, Partial<ReaderSettings>> = readJson(WORK_KEY, {});
