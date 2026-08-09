@@ -102,6 +102,57 @@ export function geminiAvailable(): boolean {
   return clients.length > 0;
 }
 
+export interface GeminiErrorInfo {
+  status: number;
+  error: string;
+  message: string;
+}
+
+// Normalizes any failure from the Gemini call chain into a stable
+// {status, error, message} the client can render directly and branch on —
+// instead of the raw SDK error text (which can read as a stack trace, name a
+// quota metric, or otherwise leak internals) collapsing into a bare 500.
+// Callers should still log the original `err` server-side before using this.
+export function classifyGeminiError(err: unknown): GeminiErrorInfo {
+  if (clients.length === 0) {
+    return {
+      status: 503,
+      error: "gemini_unavailable",
+      message: "A busca por imagem/IA está temporariamente indisponível. Tente buscar pelo título.",
+    };
+  }
+
+  const raw = err instanceof Error ? err.message : String(err);
+  const lower = raw.toLowerCase();
+
+  if (isRateLimitError(err)) {
+    return {
+      status: 429,
+      error: "gemini_quota_exceeded",
+      message: "A cota diária de análise por IA foi atingida. Tente novamente mais tarde ou busque pelo título.",
+    };
+  }
+  if (lower.includes("timeout") || lower.includes("timed out") || lower.includes("deadline")) {
+    return {
+      status: 504,
+      error: "gemini_timeout",
+      message: "A análise demorou demais para responder. Tente novamente.",
+    };
+  }
+  if (lower.includes("json válido") || lower.includes("safety") || lower.includes("blocked") || lower.includes("candidate")) {
+    return {
+      status: 502,
+      error: "gemini_invalid_response",
+      message: "Não conseguimos interpretar o resultado da análise. Tente novamente ou busque pelo título.",
+    };
+  }
+  return {
+    status: 502,
+    error: "gemini_error",
+    message: "Não foi possível concluir a análise agora. Tente novamente em instantes.",
+  };
+}
+
 // Translate text to Brazilian Portuguese. Prefers Groq (fast/free) when
 // GROQ_API_KEY is set, falls back to Gemini, and returns the input unchanged if
 // neither is available or on error.

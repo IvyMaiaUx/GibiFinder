@@ -61,9 +61,17 @@ export function useSearchActions() {
   };
 
   const handleError = (error: any) => {
+    // Prefer the clean message from the backend's JSON error body (e.g. "A
+    // cota diária de análise por IA foi atingida...") over ApiError.message,
+    // which is prefixed with "HTTP 429 Too Many Requests: " — accurate, but
+    // not something to put in front of a user in a toast.
+    const description =
+      (typeof error?.data?.message === "string" && error.data.message) ||
+      error?.message ||
+      "Ocorreu um erro ao buscar o gibi. Tente novamente.";
     toast({
       title: "Erro na busca",
-      description: error.message || "Ocorreu um erro ao buscar o gibi. Tente novamente.",
+      description,
       variant: "destructive",
     });
   };
