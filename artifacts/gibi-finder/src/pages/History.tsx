@@ -15,6 +15,7 @@ import {
   type ReadingHistoryItem
 } from "@/lib/user-history";
 import { SafeImage } from "@/components/ui/SafeImage";
+import { useDocumentMeta } from "@/hooks/use-document-meta";
 
 const TYPE_LABELS: Record<string, string> = {
   image: "📷 Imagem",
@@ -26,6 +27,7 @@ const TYPE_LABELS: Record<string, string> = {
 export default function History() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
+  useDocumentMeta({ title: "Histórico", noindex: true });
   const [activeTab, setActiveTab] = useState<"search" | "reading">("search");
   
   // Search history states

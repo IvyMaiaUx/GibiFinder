@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { isFavorite, toggleFavorite } from "@/lib/favorites";
 import { addSearchHistoryItem } from "@/lib/user-history";
 import { getEmptySources, hasReadableSource, isSourceEmpty } from "@/lib/empty-sources";
+import { useDocumentMeta } from "@/hooks/use-document-meta";
 
 interface UnifiedSearchResult {
   id: string;
@@ -142,6 +143,7 @@ const SEARCH_CACHE = new Map<string, { data: UnifiedSearchResult[]; ts: number }
 const SEARCH_CACHE_TTL = 5 * 60 * 1000; // 5 min
 
 export default function Home() {
+  useDocumentMeta({ path: "/" });
   const [, setLocation] = useLocation();
   const { user } = useAuth();
   const { toast } = useToast();

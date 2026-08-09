@@ -3,6 +3,7 @@ import { Layout } from "@/components/layout/Layout";
 import { Loader2, AlertCircle, ShieldAlert } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useDocumentMeta } from "@/hooks/use-document-meta";
 
 interface ProviderItem {
   id: string;
@@ -17,6 +18,7 @@ interface ProviderItem {
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export default function Providers() {
+  useDocumentMeta({ title: "Provedores", noindex: true });
   const { toast } = useToast();
   const [providers, setProviders] = useState<ProviderItem[]>([]);
   const [loading, setLoading] = useState(true);

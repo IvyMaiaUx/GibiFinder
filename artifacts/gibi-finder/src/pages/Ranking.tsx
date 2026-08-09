@@ -4,6 +4,7 @@ import { Trophy, Flame, Loader2, AlertCircle } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
+import { useDocumentMeta } from "@/hooks/use-document-meta";
 
 interface UnifiedCatalogItem {
   id: string;
@@ -23,6 +24,11 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export default function Ranking() {
   const [, setLocation] = useLocation();
+  useDocumentMeta({
+    title: "Ranking da semana",
+    description: "Os gibis, mangás e HQs mais buscados da semana no Gibi Finder.",
+    path: "/ranking",
+  });
   const [items, setItems] = useState<UnifiedCatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
