@@ -97,6 +97,112 @@ export function buildStoreZip(files: { name: string; data: Uint8Array }[]): Blob
   return new Blob([...localParts, ...centralParts, end.buffer], { type: "application/zip" });
 }
 
+/**
+ * Re-encodes an arbitrary image blob as a JPEG ready to embed in a PDF via
+ * DCTDecode (see buildImagesPdf below), returning its pixel dimensions too.
+ * Already-JPEG sources are passed through untouched to avoid a pointless
+ * (lossy) re-encode — everything else (webp/png/gif/avif) gets canvas-
+ * decoded and re-exported as JPEG, since PDF can't embed those formats
+ * directly without a raw-bitmap path we don't have here.
+ */
+export async function toPdfPageImage(blob: Blob, contentType: string): Promise<{ width: number; height: number; bytes: Uint8Array }> {
+  const bitmap = await createImageBitmap(blob);
+  const { width, height } = bitmap;
+  try {
+    if (contentType === "image/jpeg" || contentType === "image/jpg") {
+      return { width, height, bytes: new Uint8Array(await blob.arrayBuffer()) };
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("2D canvas context unavailable");
+    ctx.drawImage(bitmap, 0, 0);
+    const jpegBlob: Blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(b => (b ? resolve(b) : reject(new Error("canvas.toBlob failed"))), "image/jpeg", 0.92);
+    });
+    return { width, height, bytes: new Uint8Array(await jpegBlob.arrayBuffer()) };
+  } finally {
+    bitmap.close();
+  }
+}
+
+/**
+ * Builds a minimal PDF (1.4) with one page per image, each page sized to
+ * match the image's pixel dimensions and embedding the JPEG directly via
+ * the DCTDecode filter — no re-compression, no PDF library. Hand-rolled for
+ * the same reason as buildStoreZip: a new npm dependency (e.g. pdf-lib)
+ * can't be verified here without running pnpm install / the build.
+ */
+export function buildImagesPdf(pages: { width: number; height: number; bytes: Uint8Array }[]): Blob {
+  const encoder = new TextEncoder();
+  const parts: BlobPart[] = [];
+  const offsets: number[] = [0]; // index 0 is the free-list head, never used
+  let pos = 0;
+
+  const write = (data: string | Uint8Array) => {
+    const bytes = typeof data === "string" ? encoder.encode(data) : data;
+    parts.push(bytes);
+    pos += bytes.length;
+  };
+  const beginObj = (num: number) => {
+    offsets[num] = pos;
+    write(`${num} 0 obj\n`);
+  };
+
+  write("%PDF-1.4\n");
+  write(new Uint8Array([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A])); // binary marker comment line
+
+  const objectsPerPage = 3; // page, content stream, image XObject
+  const pageObjNum = (i: number) => 3 + i * objectsPerPage;
+  const contentObjNum = (i: number) => 4 + i * objectsPerPage;
+  const imageObjNum = (i: number) => 5 + i * objectsPerPage;
+
+  // 1: Catalog
+  beginObj(1);
+  write(`<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`);
+
+  // 2: Pages (kids filled in after page objects are known — numbers are
+  // deterministic from index, so we can write this before the loop).
+  const kids = pages.map((_, i) => `${pageObjNum(i)} 0 R`).join(" ");
+  beginObj(2);
+  write(`<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>\nendobj\n`);
+
+  pages.forEach((page, i) => {
+    const content = `q\n${page.width} 0 0 ${page.height} 0 0 cm\n/Im0 Do\nQ\n`;
+    const contentBytes = encoder.encode(content);
+
+    beginObj(pageObjNum(i));
+    write(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${page.width} ${page.height}] ` +
+      `/Resources << /XObject << /Im0 ${imageObjNum(i)} 0 R >> >> /Contents ${contentObjNum(i)} 0 R >>\nendobj\n`
+    );
+
+    beginObj(contentObjNum(i));
+    write(`<< /Length ${contentBytes.length} >>\nstream\n`);
+    write(contentBytes);
+    write(`\nendstream\nendobj\n`);
+
+    beginObj(imageObjNum(i));
+    write(
+      `<< /Type /XObject /Subtype /Image /Width ${page.width} /Height ${page.height} ` +
+      `/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${page.bytes.length} >>\nstream\n`
+    );
+    write(page.bytes);
+    write(`\nendstream\nendobj\n`);
+  });
+
+  const xrefOffset = pos;
+  const totalObjects = 2 + pages.length * objectsPerPage + 1; // +1 for object 0
+  write(`xref\n0 ${totalObjects}\n0000000000 65535 f \n`);
+  for (let n = 1; n < totalObjects; n++) {
+    write(`${String(offsets[n]).padStart(10, "0")} 00000 n \n`);
+  }
+  write(`trailer\n<< /Size ${totalObjects} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+
+  return new Blob(parts, { type: "application/pdf" });
+}
+
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
 const OUTDATED_COVERS_MAP: Record<string, string> = {
