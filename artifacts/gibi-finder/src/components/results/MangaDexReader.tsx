@@ -22,7 +22,7 @@ import {
   Minimize2,
   Download
 } from "lucide-react";
-import { cn, proxyPdfUrl, proxyCoverUrl, buildStoreZip } from "@/lib/utils";
+import { cn, proxyPdfUrl, proxyCoverUrl, buildStoreZip, toPdfPageImage, buildImagesPdf, mapWithConcurrency } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { useReaderZoom } from "@/components/reader/useReaderZoom";
 import { useReaderSettings, readerThemeVars, type TapAction } from "@/components/reader/useReaderSettings";
@@ -69,6 +69,18 @@ interface Page {
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+// Used when naming files inside a downloaded .cbz — keyed off the response's
+// real content-type instead of guessing from the source URL, which can be
+// extensionless or misleading (query-string-only image endpoints, etc.).
+const CONTENT_TYPE_EXT: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/avif": "avif",
+};
 
 // Lazy-loaded so pdf.js (~1MB) is only fetched when a PDF chapter is opened.
 const PdfReader = lazy(() => import("@/components/results/PdfReader").then(m => ({ default: m.PdfReader })));
@@ -1068,14 +1080,53 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   }, [readerMode, currentPage, prevChapter, spreads, splitSide, splitSet, settings.splitMode, settings.haptics]);
 
   const [chapterDownload, setChapterDownload] = useState<{ done: number; total: number } | null>(null);
-  // Downloads every page of the current chapter as a single .cbz (a plain ZIP
-  // — the format comic readers expect). Hand-rolled STORE-only ZIP writer
-  // instead of pulling in a library like JSZip: adding a new npm dependency
-  // here can't be verified without running pnpm install / the build, and
-  // page images are already compressed (jpeg/webp/png), so "store" (no
-  // re-compression) is the right mode anyway — same tradeoff real CBZ tools
-  // make.
-  const downloadChapter = async () => {
+  // Fetches every page of the current chapter through the image proxy
+  // (bounded concurrency — pages.length can be 40+, no reason to hammer the
+  // source/proxy all at once), reporting live progress. Shared by both the
+  // .cbz and .pdf download paths below so a bad page is only fetched once
+  // regardless of which format the user picked.
+  const DOWNLOAD_CONCURRENCY = 4;
+  const fetchChapterPages = async (): Promise<{ index: number; blob: Blob; contentType: string; url: string }[]> => {
+    const fetchOne = async (page: { url: string }, index: number) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      try {
+        const res = await fetch(proxyCoverUrl(page.url) || page.url, { signal: controller.signal });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const contentType = res.headers.get("content-type") || "";
+        if (!contentType.startsWith("image/")) throw new Error(`unexpected content-type: ${contentType}`);
+        const result = { index, blob: await res.blob(), contentType, url: page.url };
+        setChapterDownload(prev => prev && { done: prev.done + 1, total: prev.total });
+        return result;
+      } catch (err) {
+        console.error(`Falha ao baixar página ${index + 1} do capítulo:`, err);
+        setChapterDownload(prev => prev && { done: prev.done + 1, total: prev.total });
+        return null;
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+
+    const entries = await mapWithConcurrency(pages, DOWNLOAD_CONCURRENCY, fetchOne);
+    return entries.filter((e): e is { index: number; blob: Blob; contentType: string; url: string } => e !== null);
+  };
+
+  const saveBlob = (blob: Blob, filename: string) => {
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
+  };
+
+  // Downloads every page of the current chapter as a single .cbz (a plain
+  // ZIP — the format comic readers expect) or .pdf. Both hand-rolled instead
+  // of pulling in a library (JSZip / pdf-lib): a new npm dependency here
+  // can't be verified without running pnpm install / the build.
+  const downloadChapter = async (format: "cbz" | "pdf") => {
     if (chapterDownload || pages.length === 0) return;
     setChapterDownload({ done: 0, total: pages.length });
 
@@ -1083,60 +1134,33 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     const chapterLabel = selectedChapter?.chapterNum ? `_cap${selectedChapter.chapterNum}` : "";
     const padLength = String(pages.length).length;
 
-    const fetchOne = async (rawUrl: string, index: number): Promise<{ name: string; data: Uint8Array } | null> => {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
-      try {
-        const res = await fetch(proxyCoverUrl(rawUrl) || rawUrl, { signal: controller.signal });
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const contentType = res.headers.get("content-type") || "";
-        if (!contentType.startsWith("image/")) throw new Error(`unexpected content-type: ${contentType}`);
-        const buf = new Uint8Array(await res.arrayBuffer());
-        const ext = rawUrl.match(/\.(jpe?g|png|webp|gif|avif)(?:\?|$)/i)?.[1]?.toLowerCase() || "jpg";
-        return { name: `${String(index + 1).padStart(padLength, "0")}.${ext}`, data: buf };
-      } catch (err) {
-        console.error(`Falha ao baixar página ${index + 1} do capítulo:`, err);
-        return null;
-      } finally {
-        clearTimeout(timeout);
-      }
-    };
-
-    // Bounded concurrency — pages.length can be 40+, and firing them all at
-    // once would hammer the proxy/source and blow past its own rate limits.
-    const CONCURRENCY = 4;
-    const entries: ({ name: string; data: Uint8Array } | null)[] = new Array(pages.length).fill(null);
-    let nextIndex = 0;
-    const worker = async () => {
-      while (true) {
-        const i = nextIndex++;
-        if (i >= pages.length) return;
-        const url = pages[i]?.url;
-        entries[i] = url ? await fetchOne(url, i) : null;
-        setChapterDownload(prev => prev && { done: prev.done + 1, total: prev.total });
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pages.length) }, worker));
-
-    const files = entries.filter((e): e is { name: string; data: Uint8Array } => e !== null);
-    if (files.length === 0) {
+    const fetched = await fetchChapterPages();
+    if (fetched.length === 0) {
       console.error("Nenhuma página do capítulo pôde ser baixada.");
       setChapterDownload(null);
       return;
     }
+    fetched.sort((a, b) => a.index - b.index);
 
-    const zipBlob = buildStoreZip(files);
-    const objectUrl = URL.createObjectURL(zipBlob);
-    const a = document.createElement("a");
-    a.href = objectUrl;
-    a.download = `${safeTitle}${chapterLabel}.cbz`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(objectUrl);
+    try {
+      if (format === "cbz") {
+        const withBytes = await mapWithConcurrency(fetched, DOWNLOAD_CONCURRENCY, async ({ index, blob, contentType }) => ({
+          name: `${String(index + 1).padStart(padLength, "0")}.${CONTENT_TYPE_EXT[contentType] || "jpg"}`,
+          data: new Uint8Array(await blob.arrayBuffer()),
+        }));
+        saveBlob(buildStoreZip(withBytes), `${safeTitle}${chapterLabel}.cbz`);
+      } else {
+        // Bounded like the fetch step above — decoding + re-encoding every
+        // page to canvas at once on a 30-40+ page chapter can spike memory.
+        const images = await mapWithConcurrency(fetched, DOWNLOAD_CONCURRENCY, f => toPdfPageImage(f.blob, f.contentType));
+        saveBlob(buildImagesPdf(images), `${safeTitle}${chapterLabel}.pdf`);
+      }
+    } catch (err) {
+      console.error(`Falha ao montar o .${format} do capítulo:`, err);
+    }
 
-    if (files.length < pages.length) {
-      console.error(`${pages.length - files.length} de ${pages.length} páginas falharam e foram puladas no .cbz.`);
+    if (fetched.length < pages.length) {
+      console.error(`${pages.length - fetched.length} de ${pages.length} páginas falharam e foram puladas no .${format}.`);
     }
     setChapterDownload(null);
   };
@@ -2129,18 +2153,29 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                   link (the "Somente download" panel) — this is only for
                   image-page chapters, which never had one. */}
               {!pages[currentPage]?.url?.startsWith("pdf:") && (
-                <button
-                  onClick={downloadChapter}
-                  disabled={!!chapterDownload || pages.length === 0}
-                  className="hidden xs:flex items-center gap-1 opacity-70 hover:opacity-100 disabled:opacity-40 shrink-0 p-1 border-l pl-2 ml-1"
-                  style={{ borderColor: "var(--rd-border)" }}
-                  title="Baixar capítulo (.cbz)"
-                >
-                  {chapterDownload
-                    ? <span className="text-3xs font-bold tabular-nums">{chapterDownload.done}/{chapterDownload.total}</span>
-                    : null}
-                  {chapterDownload ? <Loader2 className="w-4 h-4 animate-spin" strokeWidth={3} /> : <Download className="w-4 h-4" strokeWidth={3} />}
-                </button>
+                <div className="hidden xs:flex items-center gap-1 shrink-0 border-l pl-2 ml-1" style={{ borderColor: "var(--rd-border)" }}>
+                  {chapterDownload && (
+                    <span className="text-3xs font-bold tabular-nums opacity-70">{chapterDownload.done}/{chapterDownload.total}</span>
+                  )}
+                  <button
+                    onClick={() => downloadChapter("cbz")}
+                    disabled={!!chapterDownload || pages.length === 0}
+                    className="flex items-center gap-0.5 opacity-70 hover:opacity-100 disabled:opacity-40 p-1"
+                    title="Baixar capítulo (.cbz)"
+                  >
+                    {chapterDownload ? <Loader2 className="w-4 h-4 animate-spin" strokeWidth={3} /> : <Download className="w-4 h-4" strokeWidth={3} />}
+                    <span className="text-3xs font-bold">CBZ</span>
+                  </button>
+                  <button
+                    onClick={() => downloadChapter("pdf")}
+                    disabled={!!chapterDownload || pages.length === 0}
+                    className="flex items-center gap-0.5 opacity-70 hover:opacity-100 disabled:opacity-40 p-1"
+                    title="Baixar capítulo (.pdf)"
+                  >
+                    {chapterDownload ? <Loader2 className="w-4 h-4 animate-spin" strokeWidth={3} /> : <Download className="w-4 h-4" strokeWidth={3} />}
+                    <span className="text-3xs font-bold">PDF</span>
+                  </button>
+                </div>
               )}
               <button
                 onClick={() => nextChapter && readChapter(nextChapter)}

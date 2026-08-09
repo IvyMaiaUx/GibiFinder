@@ -5,6 +5,24 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Runs `fn` over `items` with at most `limit` in flight at once, preserving
+ *  input order in the result array. Used for chapter downloads, where firing
+ *  every page's fetch/decode/re-encode at once can spike memory or blow past
+ *  a source's rate limit on a long chapter. */
+export async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
@@ -95,6 +113,150 @@ export function buildStoreZip(files: { name: string; data: Uint8Array }[]): Blob
   end.setUint16(20, 0, true);
 
   return new Blob([...localParts, ...centralParts, end.buffer], { type: "application/zip" });
+}
+
+/**
+ * Reads a JPEG's own component count straight from its Start Of Frame
+ * marker: 1 = grayscale, 3 = YCbCr/RGB, 4 = CMYK. Manga scans are very
+ * commonly grayscale JPEGs, so a PDF that always claims /DeviceRGB for a
+ * passed-through JPEG would disagree with the actual decoded sample count
+ * and misrender (or get rejected by stricter viewers). Falls back to 3 if
+ * the stream is malformed or no SOF segment is found.
+ */
+function jpegComponentCount(bytes: Uint8Array): number {
+  let i = 2; // skip the SOI marker (0xFFD8)
+  while (i < bytes.length - 1) {
+    if (bytes[i] !== 0xFF) { i++; continue; }
+    const marker = bytes[i + 1];
+    if (marker === 0xD8 || marker === 0x01 || (marker >= 0xD0 && marker <= 0xD7)) {
+      i += 2;
+      continue;
+    }
+    if (marker === 0xD9 || i + 3 >= bytes.length) break; // EOI or truncated
+    const segLength = (bytes[i + 2] << 8) | bytes[i + 3];
+    // SOF0-SOF15, excluding DHT (0xC4), JPG (0xC8) and DAC (0xCC) which
+    // share the marker range but aren't frame headers.
+    const isSOF = marker >= 0xC0 && marker <= 0xCF && marker !== 0xC4 && marker !== 0xC8 && marker !== 0xCC;
+    if (isSOF) {
+      // Segment payload: length(2, already consumed) + precision(1) + height(2) + width(2) + numComponents(1)
+      const numComponentsOffset = i + 2 + 2 + 1 + 2 + 2;
+      return numComponentsOffset < bytes.length ? bytes[numComponentsOffset] : 3;
+    }
+    i += 2 + segLength;
+  }
+  return 3;
+}
+
+const PDF_COLOR_SPACE_BY_COMPONENTS: Record<number, string> = { 1: "DeviceGray", 3: "DeviceRGB", 4: "DeviceCMYK" };
+
+/**
+ * Re-encodes an arbitrary image blob as a JPEG ready to embed in a PDF via
+ * DCTDecode (see buildImagesPdf below), returning its pixel dimensions and
+ * PDF color space too. Already-JPEG sources are passed through untouched to
+ * avoid a pointless (lossy) re-encode — their real color space is read from
+ * the JPEG's own SOF marker. Everything else (webp/png/gif/avif) gets
+ * canvas-decoded and re-exported as JPEG (canvas always emits 3-component
+ * YCbCr/RGB), since PDF can't embed those formats directly without a
+ * raw-bitmap path we don't have here.
+ */
+export async function toPdfPageImage(blob: Blob, contentType: string): Promise<{ width: number; height: number; bytes: Uint8Array; colorSpace: string }> {
+  const bitmap = await createImageBitmap(blob);
+  const { width, height } = bitmap;
+  try {
+    if (contentType === "image/jpeg" || contentType === "image/jpg") {
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const colorSpace = PDF_COLOR_SPACE_BY_COMPONENTS[jpegComponentCount(bytes)] || "DeviceRGB";
+      return { width, height, bytes, colorSpace };
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("2D canvas context unavailable");
+    ctx.drawImage(bitmap, 0, 0);
+    const jpegBlob: Blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(b => (b ? resolve(b) : reject(new Error("canvas.toBlob failed"))), "image/jpeg", 0.92);
+    });
+    return { width, height, bytes: new Uint8Array(await jpegBlob.arrayBuffer()), colorSpace: "DeviceRGB" };
+  } finally {
+    bitmap.close();
+  }
+}
+
+/**
+ * Builds a minimal PDF (1.4) with one page per image, each page sized to
+ * match the image's pixel dimensions and embedding the JPEG directly via
+ * the DCTDecode filter — no re-compression, no PDF library. Hand-rolled for
+ * the same reason as buildStoreZip: a new npm dependency (e.g. pdf-lib)
+ * can't be verified here without running pnpm install / the build.
+ */
+export function buildImagesPdf(pages: { width: number; height: number; bytes: Uint8Array; colorSpace: string }[]): Blob {
+  const encoder = new TextEncoder();
+  const parts: BlobPart[] = [];
+  const offsets: number[] = [0]; // index 0 is the free-list head, never used
+  let pos = 0;
+
+  const write = (data: string | Uint8Array) => {
+    const bytes = typeof data === "string" ? encoder.encode(data) : data;
+    parts.push(bytes);
+    pos += bytes.length;
+  };
+  const beginObj = (num: number) => {
+    offsets[num] = pos;
+    write(`${num} 0 obj\n`);
+  };
+
+  write("%PDF-1.4\n");
+  write(new Uint8Array([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A])); // binary marker comment line
+
+  const objectsPerPage = 3; // page, content stream, image XObject
+  const pageObjNum = (i: number) => 3 + i * objectsPerPage;
+  const contentObjNum = (i: number) => 4 + i * objectsPerPage;
+  const imageObjNum = (i: number) => 5 + i * objectsPerPage;
+
+  // 1: Catalog
+  beginObj(1);
+  write(`<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`);
+
+  // 2: Pages (kids filled in after page objects are known — numbers are
+  // deterministic from index, so we can write this before the loop).
+  const kids = pages.map((_, i) => `${pageObjNum(i)} 0 R`).join(" ");
+  beginObj(2);
+  write(`<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>\nendobj\n`);
+
+  pages.forEach((page, i) => {
+    const content = `q\n${page.width} 0 0 ${page.height} 0 0 cm\n/Im0 Do\nQ\n`;
+    const contentBytes = encoder.encode(content);
+
+    beginObj(pageObjNum(i));
+    write(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${page.width} ${page.height}] ` +
+      `/Resources << /XObject << /Im0 ${imageObjNum(i)} 0 R >> >> /Contents ${contentObjNum(i)} 0 R >>\nendobj\n`
+    );
+
+    beginObj(contentObjNum(i));
+    write(`<< /Length ${contentBytes.length} >>\nstream\n`);
+    write(contentBytes);
+    write(`\nendstream\nendobj\n`);
+
+    beginObj(imageObjNum(i));
+    write(
+      `<< /Type /XObject /Subtype /Image /Width ${page.width} /Height ${page.height} ` +
+      `/ColorSpace /${page.colorSpace} /BitsPerComponent 8 /Filter /DCTDecode /Length ${page.bytes.length} >>\nstream\n`
+    );
+    write(page.bytes);
+    write(`\nendstream\nendobj\n`);
+  });
+
+  const xrefOffset = pos;
+  const totalObjects = 2 + pages.length * objectsPerPage + 1; // +1 for object 0
+  write(`xref\n0 ${totalObjects}\n0000000000 65535 f \n`);
+  for (let n = 1; n < totalObjects; n++) {
+    write(`${String(offsets[n]).padStart(10, "0")} 00000 n \n`);
+  }
+  write(`trailer\n<< /Size ${totalObjects} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+
+  return new Blob(parts, { type: "application/pdf" });
 }
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
