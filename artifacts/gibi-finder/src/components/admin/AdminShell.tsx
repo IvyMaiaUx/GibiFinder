@@ -4,6 +4,7 @@ import {
   LayoutDashboard, Library, Globe, Settings2, Users, BarChart3,
   MessageSquare, SearchCode, Wrench, Menu, X, LogOut, ExternalLink, PanelLeftClose,
 } from "lucide-react";
+import { useSuppressNsfwTheme } from "@/hooks/use-suppress-nsfw-theme";
 
 export type AdminModule =
   | "dashboard" | "catalog" | "providers" | "engines"
@@ -42,6 +43,11 @@ interface AdminShellProps {
 }
 
 export function AdminShell({ active, onNavigate, onExit, badges = {}, title, subtitle, actions, children }: AdminShellProps) {
+  // This is the real authenticated admin dashboard (Layout's own copy of
+  // this hook only covers the login gate that renders before this mounts) —
+  // see use-suppress-nsfw-theme.ts for why the +18 theme shouldn't bleed in
+  // here and why a plain one-shot removal isn't enough.
+  useSuppressNsfwTheme(true);
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem("gibi-admin:sidebar-collapsed") === "1"; } catch { return false; }
