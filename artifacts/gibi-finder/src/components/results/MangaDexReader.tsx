@@ -30,7 +30,7 @@ import { ReaderDiagnostics, type DiagInfo } from "@/components/reader/ReaderDiag
 import { logRequest } from "@/components/reader/readerStats";
 import { useAuth } from "@/hooks/use-auth";
 import { getLocalProgress, saveReadingState, markChapterCompleted } from "@/lib/user-history";
-import { markSourceEmpty, markSourceHasChapters } from "@/lib/empty-sources";
+import { markSourceEmpty, markSourceHasChapters, isSourceEmpty } from "@/lib/empty-sources";
 import { createSession } from "@/lib/reading-session";
 
 interface MangaDexReaderProps {
@@ -114,6 +114,9 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   const prefetchedPagesRef = useRef<Record<string, Page[]>>({});
   // Swipe tracking for page mode.
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  // Bounds automatic provider fallback (see tryFallbackSource) so a work whose
+  // every source is unreadable doesn't chain through dozens of requests.
+  const fallbackAttemptsRef = useRef(0);
   // Guards the intersection observer from clobbering the saved page while we
   // are auto-scrolling back to it on resume.
   const resumingRef = useRef(false);
@@ -374,13 +377,6 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
       const res = await fetch(url);
       if (!res.ok) throw new Error("Erro ao carregar capítulos da fonte");
       const data = await res.json() as Chapter[];
-      if (data.length === 0) {
-        setError(`A fonte ${source.providerId.toUpperCase()} nao retornou capitulos legiveis para esta obra.`);
-        markSourceEmpty(source.providerId, source.id);
-      } else {
-        markSourceHasChapters(source.providerId, source.id);
-      }
-      setChapters(data);
 
       // Auto-set language filter based on provider language
       if (source.providerId === "comicextra") {
@@ -388,12 +384,83 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
       } else {
         setLangFilter("all");
       }
+
+      if (data.length === 0) {
+        markSourceEmpty(source.providerId, source.id);
+        // Try another source for this same work before giving up — the user
+        // shouldn't have to notice one provider is dead and manually switch
+        // when we can just land them on one that works. tryFallbackSource
+        // handles its own loading/error state via the recursive call when it
+        // finds a candidate; we only show *our* error when it found nothing.
+        const fellBack = await tryFallbackSource(source);
+        if (!fellBack) {
+          setError(`A fonte ${source.providerId.toUpperCase()} nao retornou capitulos legiveis para esta obra.`);
+          setChapters(data);
+        }
+        return;
+      }
+
+      markSourceHasChapters(source.providerId, source.id);
+      setChapters(data);
     } catch (err) {
       console.error(err);
       setError(`Falha ao carregar capítulos do provedor ${source.providerId.toUpperCase()}.`);
     } finally {
       setLoadingChapters(false);
     }
+  };
+
+  // Returns true when a fallback attempt was made (success or failure is then
+  // handled by the recursive loadChapters call itself) — false when there was
+  // no alternative left to try, so the caller should show its own error.
+  // Bounded by fallbackAttemptsRef so a work whose every source is unreadable
+  // can't chain through dozens of requests.
+  const tryFallbackSource = async (
+    failedSource: { providerId: string; id: string; title: string },
+  ): Promise<boolean> => {
+    if (fallbackAttemptsRef.current >= 3) return false;
+    const title = selectedResult?.title || mangaTitle;
+    if (!title) return false;
+
+    const isUsable = (s: { providerId: string; id: string }) =>
+      !(s.providerId === failedSource.providerId && s.id === failedSource.id) && !isSourceEmpty(s.providerId, s.id);
+
+    // Prefer a source we already know about (e.g. from a prior search) before
+    // hitting the network again.
+    let candidate = selectedResult?.sources.find(isUsable);
+
+    if (!candidate) {
+      // Opened directly from a catalog card, so selectedResult only carries the
+      // one source that just failed — discover the others by title.
+      try {
+        const res = await fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(title)}`);
+        if (res.ok) {
+          const results = await res.json() as UnifiedSearchResult[];
+          const match =
+            results.find(r => r.sources.some(s => s.providerId === failedSource.providerId && s.id === failedSource.id)) ||
+            results.find(r => r.title.trim().toLowerCase() === title.trim().toLowerCase()) ||
+            null;
+          if (match) {
+            setSelectedResult(prev => {
+              if (!prev) return prev;
+              const merged = [...prev.sources];
+              for (const s of match.sources) {
+                if (!merged.some(m => m.providerId === s.providerId && m.id === s.id)) merged.push(s);
+              }
+              return { ...prev, sources: merged };
+            });
+            candidate = match.sources.find(isUsable);
+          }
+        }
+      } catch {
+        // Best-effort — the caller falls back to showing its own error.
+      }
+    }
+
+    if (!candidate) return false;
+    fallbackAttemptsRef.current += 1;
+    await loadChapters(candidate);
+    return true;
   };
 
   // Fetch chapter pages from provider
@@ -588,6 +655,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
   // Search on mount, or open the exact provider source when the detail URL has one.
   useEffect(() => {
+    fallbackAttemptsRef.current = 0;
     if (initialSource) {
       setSelectedResult({
         id: `${initialSource.providerId}-${initialSource.id}`,

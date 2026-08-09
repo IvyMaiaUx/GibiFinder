@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { isFavorite, toggleFavorite, getFavorites } from "@/lib/favorites";
 import { getLocalProgress, getLocalCompleted } from "@/lib/user-history";
-import { getEmptySources, hasReadableSource } from "@/lib/empty-sources";
+import { getEmptySources, hasReadableSource, isSourceEmpty } from "@/lib/empty-sources";
 import { useAuth } from "@/hooks/use-auth";
 
 interface CatalogSource {
@@ -365,7 +365,11 @@ export default function Explore() {
   }, [viewAllGenre, viewAllKind, isNsfw]);
 
   const openItem = (item: UnifiedCatalogItem) => {
-    const src = item.sources?.[0];
+    // Prefer a source we don't already know is dead — avoids landing straight
+    // on a provider with no readable chapters when a working one is right
+    // there in the same list. Falls back to the first source when every one
+    // is either untracked or already known-empty.
+    const src = item.sources?.find(s => !isSourceEmpty(s.providerId, s.id)) || item.sources?.[0];
     if (!src) return;
     setLocation(`/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}&from=explore&tab=${typeFilter}`);
   };
