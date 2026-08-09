@@ -291,4 +291,9 @@ CREATE TABLE IF NOT EXISTS provider_overrides (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- RLS disabled to match every other table in this schema (the app only ever
+-- holds the anon key, no service-role key, so an RLS-enabled table with no
+-- matching policy would just lock the backend itself out). The real access
+-- control boundary for this table is requireAdmin() on the mutating routes
+-- in providers.ts, same as catalog_overrides above.
 ALTER TABLE provider_overrides DISABLE ROW LEVEL SECURITY;

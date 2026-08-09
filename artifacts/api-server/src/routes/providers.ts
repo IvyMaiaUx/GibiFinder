@@ -152,8 +152,9 @@ router.get("/providers/pages", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/providers/toggle - Toggle provider active state
+// POST /api/providers/toggle - Toggle provider active state (requires admin key)
 router.post("/providers/toggle", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   const { providerId, active } = req.body;
   if (!providerId || active === undefined) {
     res.status(400).json({ error: "missing_params", message: "Os parâmetros 'providerId' e 'active' são obrigatórios." });

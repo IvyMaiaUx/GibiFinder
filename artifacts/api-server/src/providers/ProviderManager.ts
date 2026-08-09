@@ -198,13 +198,18 @@ export class ProviderManager {
     return this.overridesPromise;
   }
 
+  // Throws when Supabase IS configured but the write genuinely fails, so
+  // toggleProvider/addCustomProvider/deleteCustomProvider (and their routes)
+  // don't report success for a change that didn't actually persist — the
+  // exact "looked like it worked, disappeared later" failure mode this
+  // override layer exists to fix. A missing Supabase config is a different,
+  // expected case (no durable layer available) and stays a silent no-op.
   private static async persistOverride(row: Partial<ProviderOverrideRow> & { id: string }): Promise<void> {
     if (!supabase) return;
-    try {
-      const { error } = await supabase.from("provider_overrides").upsert({ ...row, updated_at: new Date().toISOString() });
-      if (error) throw error;
-    } catch (err) {
-      logger.error({ err: err }, "Failed to persist provider override to Supabase:");
+    const { error } = await supabase.from("provider_overrides").upsert({ ...row, updated_at: new Date().toISOString() });
+    if (error) {
+      logger.error({ err: error }, "Failed to persist provider override to Supabase:");
+      throw error;
     }
   }
 
@@ -383,15 +388,17 @@ export class ProviderManager {
     if (!incoming || incoming.length === 0) return existing;
     if (!existing || existing.length === 0) return incoming;
 
-    const hasSpecific = (list: string[]) =>
-      list.some(genre => !this.GENERIC_FALLBACK_GENRES.has(this.normalizeText(genre)));
+    // Symmetric: as soon as EITHER side contributes a specific genre, generic
+    // fallback tags are dropped from BOTH sides — not just the incoming one.
+    // Filtering only one side made this order-dependent (a group that started
+    // out generic-only would keep its fallback tag forever, even after a
+    // later provider added real genres for the same title).
+    const combined = [...existing, ...incoming];
+    const isSpecific = (genre: string) => !this.GENERIC_FALLBACK_GENRES.has(this.normalizeText(genre));
+    const hasSpecific = combined.some(isSpecific);
 
-    const existingHasSpecific = hasSpecific(existing);
-    const toAdd = existingHasSpecific
-      ? incoming.filter(genre => !this.GENERIC_FALLBACK_GENRES.has(this.normalizeText(genre)))
-      : incoming;
-
-    return Array.from(new Set([...existing, ...toAdd]));
+    const result = hasSpecific ? combined.filter(isSpecific) : combined;
+    return Array.from(new Set(result));
   }
 
   private static getReleaseTime(date?: string): number {
@@ -678,19 +685,26 @@ export class ProviderManager {
     };
   }
 
+  // A cold instance hit directly with a deep link (e.g. a bookmarked chapter
+  // URL) skips search/catalog entirely, so it wouldn't otherwise know about a
+  // provider that only exists via a persisted admin override — ensure those
+  // are loaded here too, not just on the aggregate read paths.
   static async getDetails(providerId: string, id: string): Promise<MangaDetails> {
+    await this.ensureOverridesLoaded();
     const provider = this.getProvider(providerId);
     if (!provider) throw new Error(`Provider not found: ${providerId}`);
     return this.withRetry(() => provider.getDetails(id));
   }
 
   static async getChapters(providerId: string, id: string): Promise<Chapter[]> {
+    await this.ensureOverridesLoaded();
     const provider = this.getProvider(providerId);
     if (!provider) throw new Error(`Provider not found: ${providerId}`);
     return this.withRetry(() => provider.getChapters(id));
   }
 
   static async getPages(providerId: string, chapterId: string): Promise<Page[]> {
+    await this.ensureOverridesLoaded();
     const provider = this.getProvider(providerId);
     if (!provider) throw new Error(`Provider not found: ${providerId}`);
     return this.withRetry(() => provider.getPages(chapterId));
