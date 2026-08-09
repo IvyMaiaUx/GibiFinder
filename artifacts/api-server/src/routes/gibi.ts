@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { logger } from "../lib/logger";
-import { identifyFromImages, searchByText, searchByCharacter } from "../lib/gemini";
+import { identifyFromImages, searchByText, searchByCharacter, classifyGeminiError } from "../lib/gemini";
 import { fetchFandomContext } from "../lib/fandom";
 import { supabase } from "../lib/supabase";
 import { nextDriveKey, hasDriveKey } from "../lib/driveKeys";
@@ -938,7 +938,9 @@ router.post("/identify", async (req: Request, res: Response) => {
     await saveToSupabase(mainResult, `[${images.length} imagem(ns)]`, response);
     res.json(response);
   } catch (err: unknown) {
-    res.status(500).json({ error: "gemini_error", message: err instanceof Error ? err.message : "Erro ao identificar" });
+    logger.error({ err }, "Identify by image failed");
+    const info = classifyGeminiError(err);
+    res.status(info.status).json({ error: info.error, message: info.message });
   }
 });
 
@@ -972,7 +974,9 @@ router.post("/search", async (req: Request, res: Response) => {
     await saveToSupabase(mainResult, query, response);
     res.json(response);
   } catch (err: unknown) {
-    res.status(500).json({ error: "search_error", message: err instanceof Error ? err.message : "Erro na busca" });
+    logger.error({ err }, "Text search failed");
+    const info = classifyGeminiError(err);
+    res.status(info.status).json({ error: info.error, message: info.message });
   }
 });
 
@@ -1004,7 +1008,9 @@ router.post("/character-search", async (req: Request, res: Response) => {
     await saveToSupabase(mainResult, character, response);
     res.json(response);
   } catch (err: unknown) {
-    res.status(500).json({ error: "character_search_error", message: err instanceof Error ? err.message : "Erro na busca por personagem" });
+    logger.error({ err }, "Character search failed");
+    const info = classifyGeminiError(err);
+    res.status(info.status).json({ error: info.error, message: info.message });
   }
 });
 
@@ -1036,7 +1042,9 @@ router.post("/quote-search", async (req: Request, res: Response) => {
     await saveToSupabase(mainResult, quote, response);
     res.json(response);
   } catch (err: unknown) {
-    res.status(500).json({ error: "quote_search_error", message: err instanceof Error ? err.message : "Erro na busca por fala" });
+    logger.error({ err }, "Quote search failed");
+    const info = classifyGeminiError(err);
+    res.status(info.status).json({ error: info.error, message: info.message });
   }
 });
 
