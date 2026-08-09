@@ -12,7 +12,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { isFavorite, toggleFavorite } from "@/lib/favorites";
 import { addSearchHistoryItem } from "@/lib/user-history";
-import { getEmptySources, hasReadableSource } from "@/lib/empty-sources";
+import { getEmptySources, hasReadableSource, isSourceEmpty } from "@/lib/empty-sources";
 
 interface UnifiedSearchResult {
   id: string;
@@ -282,7 +282,10 @@ export default function Home() {
 
   const handleOpenOnlineResult = (item: UnifiedSearchResult) => {
     if (item.sources.length === 0) return;
-    const src = item.sources[0];
+    // Prefer a source we don't already know is dead — avoids landing straight
+    // on a provider with no readable chapters when a working one is right
+    // there in the same list.
+    const src = item.sources.find(s => !isSourceEmpty(s.providerId, s.id)) || item.sources[0];
     const url = `/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}&resume=true`;
     setLocation(url);
   };
