@@ -401,6 +401,102 @@ export class ProviderManager {
     return Array.from(new Set(result));
   }
 
+  // Items are grouped across providers by normalized-title match only (see
+  // normalizeTitle), and an adult provider (nhentai, eightmuses, ...) title-
+  // colliding with an unrelated safe title is a real, verified occurrence —
+  // doujin parodies are routinely titled exactly like the mainstream series
+  // they parody. coverUrl/description used to be filled first-writer-wins
+  // regardless of which source supplied them: whichever provider's result
+  // was processed first for that title won, adult or not, and stayed won
+  // even once a safe provider's own result came in for the same group.
+  // stripAdultSources() below only removes adult *sources*/genre terms once
+  // a group is fully assembled — it never re-derives coverUrl/description,
+  // so an adult-sourced image/synopsis that already won the fill survived
+  // straight into an item marked isAdult: false and got displayed to a user
+  // who opted out of NSFW content. Track provenance per group so a safe
+  // source's value always wins over an adult-sourced one (whichever order
+  // results arrive in), and so a group that never received a safe-sourced
+  // value at all can have its cover/description scrubbed entirely instead
+  // of leaking the only (adult) one that exists — see finalizeGroupResults.
+  private static mergeAdultAwareField(
+    current: string | undefined,
+    currentIsAdult: boolean,
+    incoming: string | undefined,
+    incomingIsAdult: boolean,
+  ): { value: string | undefined; isAdult: boolean } {
+    if (!incoming) return { value: current, isAdult: currentIsAdult };
+    if (!current) return { value: incoming, isAdult: incomingIsAdult };
+    if (currentIsAdult && !incomingIsAdult) return { value: incoming, isAdult: incomingIsAdult };
+    return { value: current, isAdult: currentIsAdult };
+  }
+
+  // Shared by search/unifyCatalog/getByGenre's grouping loops: links a new
+  // source into an existing group and merges coverUrl/description/genres the
+  // adult-aware way above. Mutates `existing` and `provenance` in place.
+  private static mergeIntoGroup(
+    existing: UnifiedSearchResult,
+    result: SearchResult,
+    norm: string,
+    provenance: Map<string, { coverIsAdult: boolean; descIsAdult: boolean }>,
+  ): void {
+    const alreadyLinked = existing.sources.some(s => s.providerId === result.providerId && s.id === result.id);
+    if (!alreadyLinked) {
+      existing.sources.push({ providerId: result.providerId, id: result.id, title: result.title, releaseDate: result.releaseDate });
+    }
+
+    const resultIsAdult = this.isAdultProvider(result.providerId);
+    const prov = provenance.get(norm) ?? { coverIsAdult: false, descIsAdult: false };
+    const cover = this.mergeAdultAwareField(existing.coverUrl, prov.coverIsAdult, result.coverUrl, resultIsAdult);
+    const desc = this.mergeAdultAwareField(existing.description, prov.descIsAdult, result.description, resultIsAdult);
+    existing.coverUrl = cover.value;
+    existing.description = desc.value;
+    provenance.set(norm, { coverIsAdult: cover.isAdult, descIsAdult: desc.isAdult });
+
+    existing.genres = this.mergeGenres(existing.genres, result.genres);
+  }
+
+  private static createGroupEntry(
+    result: SearchResult,
+    norm: string,
+    provenance: Map<string, { coverIsAdult: boolean; descIsAdult: boolean }>,
+  ): UnifiedSearchResult {
+    const resultIsAdult = this.isAdultProvider(result.providerId);
+    provenance.set(norm, {
+      coverIsAdult: resultIsAdult && !!result.coverUrl,
+      descIsAdult: resultIsAdult && !!result.description,
+    });
+    return {
+      id: `${norm}_group`,
+      title: result.title,
+      coverUrl: result.coverUrl,
+      description: result.description,
+      genres: result.genres,
+      isAdult: this.isAdultResult(result),
+      releaseDate: result.releaseDate,
+      sources: [{ providerId: result.providerId, id: result.id, title: result.title, releaseDate: result.releaseDate }],
+    };
+  }
+
+  // Final pass over every assembled group: recomputes isAdult from the full
+  // merged sources/genres/title (as before), and — for a group that ends up
+  // NOT adult — scrubs any coverUrl/description whose provenance is still
+  // adult-only. That only happens when no safe source in the group ever
+  // contributed its own cover/description, i.e. there is no safe
+  // alternative to prefer; showing nothing is safer than leaking the one
+  // (adult-sourced) value that exists.
+  private static finalizeGroupResults(
+    groups: Map<string, UnifiedSearchResult>,
+    provenance: Map<string, { coverIsAdult: boolean; descIsAdult: boolean }>,
+  ): UnifiedSearchResult[] {
+    return Array.from(groups.entries()).map(([norm, result]) => {
+      const isAdult = this.isAdultResult(result);
+      const prov = provenance.get(norm);
+      const coverUrl = !isAdult && prov?.coverIsAdult ? undefined : result.coverUrl;
+      const description = !isAdult && prov?.descIsAdult ? undefined : result.description;
+      return { ...result, coverUrl, description, isAdult };
+    });
+  }
+
   private static getReleaseTime(date?: string): number {
     if (!date) return 0;
     const trimmed = String(date).trim();
@@ -611,6 +707,7 @@ export class ProviderManager {
 
     // Group by normalized title
     const groups: Map<string, UnifiedSearchResult> = new Map();
+    const coverProvenance: Map<string, { coverIsAdult: boolean; descIsAdult: boolean }> = new Map();
 
     for (const result of flatResults) {
       if (!result || !result.title) continue;
@@ -619,53 +716,14 @@ export class ProviderManager {
 
       const existing = groups.get(norm);
       if (existing) {
-        // Add as a source if it doesn't already exist
-        const alreadyLinked = existing.sources.some(
-          s => s.providerId === result.providerId && s.id === result.id
-        );
-        if (!alreadyLinked) {
-          existing.sources.push({
-            providerId: result.providerId,
-            id: result.id,
-            title: result.title,
-            releaseDate: result.releaseDate
-          });
-        }
-        // Fill coverUrl or description if missing
-        if (!existing.coverUrl && result.coverUrl) {
-          existing.coverUrl = result.coverUrl;
-        }
-        if (!existing.description && result.description) {
-          existing.description = result.description;
-        }
-        existing.genres = this.mergeGenres(existing.genres, result.genres);
+        this.mergeIntoGroup(existing, result, norm, coverProvenance);
         existing.releaseDate = this.pickNewestReleaseDate(existing.releaseDate, result.releaseDate);
-        existing.isAdult = this.isAdultResult(existing) || this.isAdultResult(result);
       } else {
-        // Create new group
-        const groupId = `${norm}_group`;
-        groups.set(norm, {
-          id: groupId,
-          title: result.title, // keep the original title
-          coverUrl: result.coverUrl,
-          description: result.description,
-          genres: result.genres,
-          isAdult: this.isAdultResult(result),
-          releaseDate: result.releaseDate,
-          sources: [{
-            providerId: result.providerId,
-            id: result.id,
-            title: result.title,
-            releaseDate: result.releaseDate
-          }]
-        });
+        groups.set(norm, this.createGroupEntry(result, norm, coverProvenance));
       }
     }
 
-    const allResults = Array.from(groups.values()).map(result => ({
-      ...result,
-      isAdult: this.isAdultResult(result)
-    }));
+    const allResults = this.finalizeGroupResults(groups, coverProvenance);
     const relevantResults = allResults.filter(result => this.isRelevantSearchResult(query, result));
     const visibleResults = (nsfw
       ? relevantResults
@@ -737,6 +795,7 @@ export class ProviderManager {
   // getCatalog and getFullCatalog so both build identical unified shapes.
   private static unifyCatalog(flatResults: SearchResult[], nsfw?: boolean): UnifiedSearchResult[] {
     const groups: Map<string, UnifiedSearchResult> = new Map();
+    const coverProvenance: Map<string, { coverIsAdult: boolean; descIsAdult: boolean }> = new Map();
 
     for (const result of flatResults) {
       if (!result || !result.title) continue;
@@ -745,50 +804,14 @@ export class ProviderManager {
 
       const existing = groups.get(norm);
       if (existing) {
-        const alreadyLinked = existing.sources.some(
-          s => s.providerId === result.providerId && s.id === result.id
-        );
-        if (!alreadyLinked) {
-          existing.sources.push({
-            providerId: result.providerId,
-            id: result.id,
-            title: result.title,
-            releaseDate: result.releaseDate
-          });
-        }
-        if (!existing.coverUrl && result.coverUrl) {
-          existing.coverUrl = result.coverUrl;
-        }
-        if (!existing.description && result.description) {
-          existing.description = result.description;
-        }
-        existing.genres = this.mergeGenres(existing.genres, result.genres);
+        this.mergeIntoGroup(existing, result, norm, coverProvenance);
         existing.releaseDate = this.pickNewestReleaseDate(existing.releaseDate, result.releaseDate);
-        existing.isAdult = this.isAdultResult(existing) || this.isAdultResult(result);
       } else {
-        const groupId = `${norm}_group`;
-        groups.set(norm, {
-          id: groupId,
-          title: result.title,
-          coverUrl: result.coverUrl,
-          description: result.description,
-          genres: result.genres,
-          isAdult: this.isAdultResult(result),
-          releaseDate: result.releaseDate,
-          sources: [{
-            providerId: result.providerId,
-            id: result.id,
-            title: result.title,
-            releaseDate: result.releaseDate
-          }]
-        });
+        groups.set(norm, this.createGroupEntry(result, norm, coverProvenance));
       }
     }
 
-    const allResults = Array.from(groups.values()).map(result => ({
-      ...result,
-      isAdult: this.isAdultResult(result)
-    }));
+    const allResults = this.finalizeGroupResults(groups, coverProvenance);
 
     return nsfw ? allResults : allResults.filter(result => !result.isAdult);
   }
@@ -885,32 +908,19 @@ export class ProviderManager {
     const flat = (await Promise.all(promises)).flat();
 
     const groups: Map<string, UnifiedSearchResult> = new Map();
+    const coverProvenance: Map<string, { coverIsAdult: boolean; descIsAdult: boolean }> = new Map();
     for (const result of flat) {
       if (!result || !result.title) continue;
       const norm = this.normalizeTitle(result.title);
       if (!norm) continue;
       const existing = groups.get(norm);
       if (existing) {
-        if (!existing.sources.some(s => s.providerId === result.providerId && s.id === result.id)) {
-          existing.sources.push({ providerId: result.providerId, id: result.id, title: result.title, releaseDate: result.releaseDate });
-        }
-        if (!existing.coverUrl && result.coverUrl) existing.coverUrl = result.coverUrl;
-        if (!existing.description && result.description) existing.description = result.description;
-        existing.genres = this.mergeGenres(existing.genres, result.genres);
+        this.mergeIntoGroup(existing, result, norm, coverProvenance);
       } else {
-        groups.set(norm, {
-          id: `${norm}_group`,
-          title: result.title,
-          coverUrl: result.coverUrl,
-          description: result.description,
-          genres: result.genres,
-          isAdult: this.isAdultResult(result),
-          releaseDate: result.releaseDate,
-          sources: [{ providerId: result.providerId, id: result.id, title: result.title, releaseDate: result.releaseDate }],
-        });
+        groups.set(norm, this.createGroupEntry(result, norm, coverProvenance));
       }
     }
-    const all = Array.from(groups.values()).map(r => ({ ...r, isAdult: this.isAdultResult(r) }));
+    const all = this.finalizeGroupResults(groups, coverProvenance);
     return nsfw
       ? all.filter(r => r.isAdult)
       : all.map(r => this.stripAdultSources(r)).filter((r): r is UnifiedSearchResult => r !== null);
