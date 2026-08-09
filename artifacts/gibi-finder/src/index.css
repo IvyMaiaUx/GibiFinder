@@ -29,6 +29,16 @@
   --font-sans: 'Nunito', sans-serif;
   --font-display: 'Bangers', cursive;
 
+  /* Custom breakpoints below Tailwind's default `sm` (640px), used throughout
+     the reader toolbar (MangaDexReader/PdfReader) to progressively reveal
+     controls — zoom, chapter download, mode labels — as phone width allows.
+     These were referenced (`xxs:`, `xs:`) without ever being defined here,
+     which made every `hidden xs:flex`/`hidden xxs:inline-block` permanently
+     hidden at any screen size (Tailwind v4 treats an unknown variant as a
+     no-op, so the base `hidden` class always won). */
+  --breakpoint-xxs: 20rem;   /* 320px */
+  --breakpoint-xs: 22.5rem;  /* 360px */
+
   --radius-sm: 0.25rem;
   --radius-md: 0.5rem;
   --radius-lg: 1rem;
