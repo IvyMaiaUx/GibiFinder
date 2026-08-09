@@ -1077,9 +1077,13 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     const rawUrl = pages[currentPage]?.url;
     if (!rawUrl || downloadingPage) return;
     setDownloadingPage(true);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
     try {
-      const res = await fetch(proxyCoverUrl(rawUrl) || rawUrl);
+      const res = await fetch(proxyCoverUrl(rawUrl) || rawUrl, { signal: controller.signal });
       if (!res.ok) throw new Error(`status ${res.status}`);
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.startsWith("image/")) throw new Error(`unexpected content-type: ${contentType}`);
       const blob = await res.blob();
       const ext = rawUrl.match(/\.(jpe?g|png|webp|gif|avif)(?:\?|$)/i)?.[1]?.toLowerCase() || "jpg";
       const safeTitle = (selectedResult?.title || mangaTitle || "pagina").replace(/[\\/:*?"<>|]+/g, "_").trim();
@@ -1096,6 +1100,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
       console.error("Falha ao baixar página, abrindo direto:", err);
       window.open(rawUrl, "_blank", "noopener,noreferrer");
     } finally {
+      clearTimeout(timeout);
       setDownloadingPage(false);
     }
   };
