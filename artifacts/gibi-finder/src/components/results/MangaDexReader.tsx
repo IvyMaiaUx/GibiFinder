@@ -22,7 +22,7 @@ import {
   Minimize2,
   Download
 } from "lucide-react";
-import { cn, proxyPdfUrl, proxyCoverUrl, buildStoreZip, toPdfPageImage, buildImagesPdf } from "@/lib/utils";
+import { cn, proxyPdfUrl, proxyCoverUrl, buildStoreZip, toPdfPageImage, buildImagesPdf, mapWithConcurrency } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { useReaderZoom } from "@/components/reader/useReaderZoom";
 import { useReaderSettings, readerThemeVars, type TapAction } from "@/components/reader/useReaderSettings";
@@ -69,6 +69,18 @@ interface Page {
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+// Used when naming files inside a downloaded .cbz — keyed off the response's
+// real content-type instead of guessing from the source URL, which can be
+// extensionless or misleading (query-string-only image endpoints, etc.).
+const CONTENT_TYPE_EXT: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/avif": "avif",
+};
 
 // Lazy-loaded so pdf.js (~1MB) is only fetched when a PDF chapter is opened.
 const PdfReader = lazy(() => import("@/components/results/PdfReader").then(m => ({ default: m.PdfReader })));
@@ -1073,37 +1085,29 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // source/proxy all at once), reporting live progress. Shared by both the
   // .cbz and .pdf download paths below so a bad page is only fetched once
   // regardless of which format the user picked.
+  const DOWNLOAD_CONCURRENCY = 4;
   const fetchChapterPages = async (): Promise<{ index: number; blob: Blob; contentType: string; url: string }[]> => {
-    const fetchOne = async (rawUrl: string, index: number) => {
+    const fetchOne = async (page: { url: string }, index: number) => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15000);
       try {
-        const res = await fetch(proxyCoverUrl(rawUrl) || rawUrl, { signal: controller.signal });
+        const res = await fetch(proxyCoverUrl(page.url) || page.url, { signal: controller.signal });
         if (!res.ok) throw new Error(`status ${res.status}`);
         const contentType = res.headers.get("content-type") || "";
         if (!contentType.startsWith("image/")) throw new Error(`unexpected content-type: ${contentType}`);
-        return { index, blob: await res.blob(), contentType, url: rawUrl };
+        const result = { index, blob: await res.blob(), contentType, url: page.url };
+        setChapterDownload(prev => prev && { done: prev.done + 1, total: prev.total });
+        return result;
       } catch (err) {
         console.error(`Falha ao baixar página ${index + 1} do capítulo:`, err);
+        setChapterDownload(prev => prev && { done: prev.done + 1, total: prev.total });
         return null;
       } finally {
         clearTimeout(timeout);
       }
     };
 
-    const CONCURRENCY = 4;
-    const entries: ({ index: number; blob: Blob; contentType: string; url: string } | null)[] = new Array(pages.length).fill(null);
-    let nextIndex = 0;
-    const worker = async () => {
-      while (true) {
-        const i = nextIndex++;
-        if (i >= pages.length) return;
-        const url = pages[i]?.url;
-        entries[i] = url ? await fetchOne(url, i) : null;
-        setChapterDownload(prev => prev && { done: prev.done + 1, total: prev.total });
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pages.length) }, worker));
+    const entries = await mapWithConcurrency(pages, DOWNLOAD_CONCURRENCY, fetchOne);
     return entries.filter((e): e is { index: number; blob: Blob; contentType: string; url: string } => e !== null);
   };
 
@@ -1140,16 +1144,15 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
     try {
       if (format === "cbz") {
-        const files = fetched.map(({ index, blob, url }) => ({
-          name: `${String(index + 1).padStart(padLength, "0")}.${url.match(/\.(jpe?g|png|webp|gif|avif)(?:\?|$)/i)?.[1]?.toLowerCase() || "jpg"}`,
-          // Blobs read below via arrayBuffer per file to avoid holding every
-          // page decoded in memory twice at once.
-          blob,
+        const withBytes = await mapWithConcurrency(fetched, DOWNLOAD_CONCURRENCY, async ({ index, blob, contentType }) => ({
+          name: `${String(index + 1).padStart(padLength, "0")}.${CONTENT_TYPE_EXT[contentType] || "jpg"}`,
+          data: new Uint8Array(await blob.arrayBuffer()),
         }));
-        const withBytes = await Promise.all(files.map(async f => ({ name: f.name, data: new Uint8Array(await f.blob.arrayBuffer()) })));
         saveBlob(buildStoreZip(withBytes), `${safeTitle}${chapterLabel}.cbz`);
       } else {
-        const images = await Promise.all(fetched.map(f => toPdfPageImage(f.blob, f.contentType)));
+        // Bounded like the fetch step above — decoding + re-encoding every
+        // page to canvas at once on a 30-40+ page chapter can spike memory.
+        const images = await mapWithConcurrency(fetched, DOWNLOAD_CONCURRENCY, f => toPdfPageImage(f.blob, f.contentType));
         saveBlob(buildImagesPdf(images), `${safeTitle}${chapterLabel}.pdf`);
       }
     } catch (err) {

@@ -5,6 +5,24 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Runs `fn` over `items` with at most `limit` in flight at once, preserving
+ *  input order in the result array. Used for chapter downloads, where firing
+ *  every page's fetch/decode/re-encode at once can spike memory or blow past
+ *  a source's rate limit on a long chapter. */
+export async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
@@ -98,19 +116,57 @@ export function buildStoreZip(files: { name: string; data: Uint8Array }[]): Blob
 }
 
 /**
- * Re-encodes an arbitrary image blob as a JPEG ready to embed in a PDF via
- * DCTDecode (see buildImagesPdf below), returning its pixel dimensions too.
- * Already-JPEG sources are passed through untouched to avoid a pointless
- * (lossy) re-encode — everything else (webp/png/gif/avif) gets canvas-
- * decoded and re-exported as JPEG, since PDF can't embed those formats
- * directly without a raw-bitmap path we don't have here.
+ * Reads a JPEG's own component count straight from its Start Of Frame
+ * marker: 1 = grayscale, 3 = YCbCr/RGB, 4 = CMYK. Manga scans are very
+ * commonly grayscale JPEGs, so a PDF that always claims /DeviceRGB for a
+ * passed-through JPEG would disagree with the actual decoded sample count
+ * and misrender (or get rejected by stricter viewers). Falls back to 3 if
+ * the stream is malformed or no SOF segment is found.
  */
-export async function toPdfPageImage(blob: Blob, contentType: string): Promise<{ width: number; height: number; bytes: Uint8Array }> {
+function jpegComponentCount(bytes: Uint8Array): number {
+  let i = 2; // skip the SOI marker (0xFFD8)
+  while (i < bytes.length - 1) {
+    if (bytes[i] !== 0xFF) { i++; continue; }
+    const marker = bytes[i + 1];
+    if (marker === 0xD8 || marker === 0x01 || (marker >= 0xD0 && marker <= 0xD7)) {
+      i += 2;
+      continue;
+    }
+    if (marker === 0xD9 || i + 3 >= bytes.length) break; // EOI or truncated
+    const segLength = (bytes[i + 2] << 8) | bytes[i + 3];
+    // SOF0-SOF15, excluding DHT (0xC4), JPG (0xC8) and DAC (0xCC) which
+    // share the marker range but aren't frame headers.
+    const isSOF = marker >= 0xC0 && marker <= 0xCF && marker !== 0xC4 && marker !== 0xC8 && marker !== 0xCC;
+    if (isSOF) {
+      // Segment payload: length(2, already consumed) + precision(1) + height(2) + width(2) + numComponents(1)
+      const numComponentsOffset = i + 2 + 2 + 1 + 2 + 2;
+      return numComponentsOffset < bytes.length ? bytes[numComponentsOffset] : 3;
+    }
+    i += 2 + segLength;
+  }
+  return 3;
+}
+
+const PDF_COLOR_SPACE_BY_COMPONENTS: Record<number, string> = { 1: "DeviceGray", 3: "DeviceRGB", 4: "DeviceCMYK" };
+
+/**
+ * Re-encodes an arbitrary image blob as a JPEG ready to embed in a PDF via
+ * DCTDecode (see buildImagesPdf below), returning its pixel dimensions and
+ * PDF color space too. Already-JPEG sources are passed through untouched to
+ * avoid a pointless (lossy) re-encode — their real color space is read from
+ * the JPEG's own SOF marker. Everything else (webp/png/gif/avif) gets
+ * canvas-decoded and re-exported as JPEG (canvas always emits 3-component
+ * YCbCr/RGB), since PDF can't embed those formats directly without a
+ * raw-bitmap path we don't have here.
+ */
+export async function toPdfPageImage(blob: Blob, contentType: string): Promise<{ width: number; height: number; bytes: Uint8Array; colorSpace: string }> {
   const bitmap = await createImageBitmap(blob);
   const { width, height } = bitmap;
   try {
     if (contentType === "image/jpeg" || contentType === "image/jpg") {
-      return { width, height, bytes: new Uint8Array(await blob.arrayBuffer()) };
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const colorSpace = PDF_COLOR_SPACE_BY_COMPONENTS[jpegComponentCount(bytes)] || "DeviceRGB";
+      return { width, height, bytes, colorSpace };
     }
     const canvas = document.createElement("canvas");
     canvas.width = width;
@@ -121,7 +177,7 @@ export async function toPdfPageImage(blob: Blob, contentType: string): Promise<{
     const jpegBlob: Blob = await new Promise((resolve, reject) => {
       canvas.toBlob(b => (b ? resolve(b) : reject(new Error("canvas.toBlob failed"))), "image/jpeg", 0.92);
     });
-    return { width, height, bytes: new Uint8Array(await jpegBlob.arrayBuffer()) };
+    return { width, height, bytes: new Uint8Array(await jpegBlob.arrayBuffer()), colorSpace: "DeviceRGB" };
   } finally {
     bitmap.close();
   }
@@ -134,7 +190,7 @@ export async function toPdfPageImage(blob: Blob, contentType: string): Promise<{
  * the same reason as buildStoreZip: a new npm dependency (e.g. pdf-lib)
  * can't be verified here without running pnpm install / the build.
  */
-export function buildImagesPdf(pages: { width: number; height: number; bytes: Uint8Array }[]): Blob {
+export function buildImagesPdf(pages: { width: number; height: number; bytes: Uint8Array; colorSpace: string }[]): Blob {
   const encoder = new TextEncoder();
   const parts: BlobPart[] = [];
   const offsets: number[] = [0]; // index 0 is the free-list head, never used
@@ -186,7 +242,7 @@ export function buildImagesPdf(pages: { width: number; height: number; bytes: Ui
     beginObj(imageObjNum(i));
     write(
       `<< /Type /XObject /Subtype /Image /Width ${page.width} /Height ${page.height} ` +
-      `/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${page.bytes.length} >>\nstream\n`
+      `/ColorSpace /${page.colorSpace} /BitsPerComponent 8 /Filter /DCTDecode /Length ${page.bytes.length} >>\nstream\n`
     );
     write(page.bytes);
     write(`\nendstream\nendobj\n`);
