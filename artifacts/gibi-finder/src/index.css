@@ -109,6 +109,15 @@
     transition: all 0.2s ease-in-out;
   }
 
+  /* Genre tag badges keep a bright yellow background in every theme
+     (including html.nsfw, which otherwise turns any .text-black near-white
+     for contrast against the dark cards) — give them their own always-black
+     text instead of relying on .text-black, so the badge itself never loses
+     contrast against its own background. */
+  .genre-tag-text {
+    color: #000000;
+  }
+
   .comic-hover:hover {
     transform: translate(-2px, -2px);
     box-shadow: 8px 8px 0px 0px rgba(0,0,0,1);
@@ -251,7 +260,8 @@ html.nsfw .border-black\/10 {
   border-color: hsl(240 5% 65% / 0.15) !important;
 }
 
-html.nsfw .comic-shadow {
+html.nsfw .comic-shadow,
+html.nsfw .comic-shadow-sm {
   box-shadow: 4px 4px 0px hsl(350 89% 60%) !important;
 }
 

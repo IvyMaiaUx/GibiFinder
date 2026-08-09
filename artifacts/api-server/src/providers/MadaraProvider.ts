@@ -72,6 +72,10 @@ export class MadaraProvider implements Provider {
     return this.baseUrl.includes("hentai2read.com");
   }
 
+  private isHentaiFox(): boolean {
+    return this.baseUrl.includes("hentaifox.com");
+  }
+
   private isHqDesejo(): boolean {
     return this.baseUrl.includes("hqdesexo.com");
   }
@@ -645,7 +649,37 @@ export class MadaraProvider implements Provider {
     }
   }
 
-  async getCatalog(_listType: "popular" | "latest"): Promise<SearchResult[]> {
-    return [];
+  // Most Madara-engine/generic-WordPress sites here have no catalog page we've
+  // verified a parser against, so this stays a no-op for them (getCatalog()
+  // just costs a request for nothing — search() is still how they're reached).
+  // The two exceptions below have dedicated search parsers already, and their
+  // catalog/browse pages use the exact same markup — reuse it instead of
+  // guessing at a new one.
+  async getCatalog(listType: "popular" | "latest"): Promise<SearchResult[]> {
+    try {
+      if (this.isHentaiFox()) {
+        // Homepage = latest uploads; /language/english/popular/ = most-viewed.
+        const url = listType === "popular"
+          ? new URL("language/english/popular/", this.baseUrl).toString()
+          : this.baseUrl;
+        const res = await fetch(url, { headers: BROWSER_HEADERS });
+        if (!res.ok) throw new Error(`HentaiFox catalog status: ${res.status}`);
+        return this.parseHentaiFoxSearch(await res.text());
+      }
+
+      if (this.isHentai2Read()) {
+        // No separate popular/latest split on this site — /hentai-list/ is the
+        // one full-catalog listing page (already what parseHentai2ReadSearch
+        // was written against).
+        const res = await fetch(new URL("hentai-list/", this.baseUrl), { headers: BROWSER_HEADERS });
+        if (!res.ok) throw new Error(`Hentai2Read catalog status: ${res.status}`);
+        return this.parseHentai2ReadSearch(await res.text());
+      }
+
+      return [];
+    } catch (err) {
+      logger.error({ err: err }, `MadaraProvider [${this.id}] getCatalog failed:`);
+      return [];
+    }
   }
 }

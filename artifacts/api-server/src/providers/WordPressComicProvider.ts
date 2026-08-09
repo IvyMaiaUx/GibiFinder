@@ -7,6 +7,8 @@ const BROWSER_HEADERS = {
   "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
 };
 
+type WpTerm = { name?: string; taxonomy?: string };
+
 type WpPost = {
   id: number;
   slug: string;
@@ -20,8 +22,17 @@ type WpPost = {
   yoast_head_json?: { og_image?: Array<{ url?: string }> };
   _embedded?: {
     "wp:featuredmedia"?: Array<{ source_url?: string; media_details?: { sizes?: Record<string, { source_url?: string }> } }>;
+    "wp:term"?: WpTerm[][];
   };
 };
+
+// Taxonomies WordPress expõe além de categoria/tag variam por site (tradutor,
+// autor, parodia em temas de scan/hentai) — só categoria e tag realmente
+// descrevem o conteúdo do jeito que um "gênero" deveria.
+const GENRE_TAXONOMIES = new Set(["category", "post_tag"]);
+// Categorias de navegação genéricas do WordPress que não dizem nada sobre o
+// conteúdo em si (ficam em quase todo post do site).
+const GENERIC_CATEGORY_NAMES = new Set(["sem categoria", "uncategorized"]);
 
 export class WordPressComicProvider implements Provider {
   constructor(
@@ -112,6 +123,20 @@ export class WordPressComicProvider implements Provider {
       post._embedded?.["wp:featuredmedia"]?.[0]?.source_url ||
       post.yoast_head_json?.og_image?.[0]?.url ||
       post.content?.rendered?.match(/<img[^>]+src=["']([^"']+)["']/i)?.[1];
+  }
+
+  private postGenres(post: WpPost): string[] {
+    const groups = post._embedded?.["wp:term"] || [];
+    const names = new Set<string>();
+    for (const group of groups) {
+      for (const term of group) {
+        if (!term.name || !term.taxonomy || !GENRE_TAXONOMIES.has(term.taxonomy)) continue;
+        const cleaned = this.decodeHtml(term.name);
+        if (!cleaned || GENERIC_CATEGORY_NAMES.has(cleaned.toLowerCase())) continue;
+        names.add(cleaned);
+      }
+    }
+    return Array.from(names);
   }
 
   private toPostId(post: WpPost): string {
@@ -229,6 +254,7 @@ export class WordPressComicProvider implements Provider {
       description: this.stripHtml(post.excerpt?.rendered || "").slice(0, 240),
       coverUrl: this.postCover(post),
       providerId: this.id,
+      genres: this.postGenres(post),
       releaseDate: post.date || post.modified
     };
   }
@@ -335,6 +361,7 @@ export class WordPressComicProvider implements Provider {
       title: this.stripHtml(post.title?.rendered || post.slug),
       description: this.stripHtml(post.excerpt?.rendered || post.content?.rendered || "").slice(0, 600),
       coverUrl: this.postCover(post),
+      genres: this.postGenres(post),
       providerId: this.id
     };
   }

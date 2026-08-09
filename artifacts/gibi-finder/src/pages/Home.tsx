@@ -563,7 +563,7 @@ export default function Home() {
                             return (
                               <div className="flex flex-wrap gap-1 mt-2">
                                 {item.genres.slice(0, 2).map((g: string) => (
-                                  <span key={g} className="bg-yellow-200 text-black text-3xs font-extrabold uppercase px-1.5 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]">
+                                  <span key={g} className="bg-yellow-200 genre-tag-text text-3xs font-extrabold uppercase px-1.5 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]">
                                     {g}
                                   </span>
                                 ))}

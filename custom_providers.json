@@ -96,7 +96,7 @@
     "name": "HentaiFox",
     "language": "en",
     "baseUrl": "https://hentaifox.com/",
-    "active": false
+    "active": true
   },
   {
     "id": "toonily",
@@ -110,7 +110,7 @@
     "name": "Hentai2Read",
     "language": "en",
     "baseUrl": "https://hentai2read.com/",
-    "active": false
+    "active": true
   },
   {
     "id": "hq-desejo",
@@ -131,14 +131,16 @@
     "name": "Quadrinhos de Sexo",
     "language": "pt",
     "baseUrl": "https://www.quadrinhosdesexo.com/",
-    "active": false
+    "engine": "wordpress-comic",
+    "active": true
   },
   {
     "id": "quadrinhos-eroticos",
     "name": "Quadrinhos Eroticos",
     "language": "pt",
     "baseUrl": "https://www.quadrinhoseroticos.blog/",
-    "active": false
+    "engine": "wordpress-comic",
+    "active": true
   },
   {
     "id": "jon-domingues",
@@ -210,7 +212,7 @@
     "language": "pt",
     "baseUrl": "https://superhentais.com.br/",
     "engine": "wordpress-comic",
-    "active": true
+    "active": false
   },
   {
     "id": "hentaidatia",
@@ -226,6 +228,6 @@
     "language": "pt",
     "baseUrl": "https://www.muitohentai.com/",
     "engine": "wordpress-comic",
-    "active": true
+    "active": false
   }
 ]
