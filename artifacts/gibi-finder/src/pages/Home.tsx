@@ -158,6 +158,9 @@ export default function Home() {
 
   const [onlineResults, setOnlineResults] = useState<UnifiedSearchResult[] | null>(null);
   const [onlineSearching, setOnlineSearching] = useState(false);
+  // Distinct from "zero results": set only when the request itself failed
+  // (network error, non-2xx, timeout), so the empty state never lies about why.
+  const [onlineSearchError, setOnlineSearchError] = useState<string | null>(null);
   const [searchedQuery, setSearchedQuery] = useState("");
   const [adultSearchWarning, setAdultSearchWarning] = useState<{ hiddenCount: number; adultQuery: boolean } | null>(null);
   const [publisherFilter, setPublisherFilter] = useState<PublisherFilter>("all");
@@ -215,7 +218,9 @@ export default function Home() {
     onlineSearchAbortRef.current = controller;
 
     setSearchedQuery(query);
-    clearResults();
+    clearResults(); // Clear AI results if any
+    setOnlineResults(null);
+    setOnlineSearchError(null);
     setAdultSearchWarning(null);
     setPublisherFilter("all");
     setReleaseSort(null);
@@ -230,6 +235,10 @@ export default function Home() {
 
     setOnlineSearching(true);
     setOnlineResults(null);
+    // Guard against a provider hanging past the point where the "pesquisando..."
+    // message stops being informative — the backend itself times out slow
+    // providers around 7s, so 15s here is purely a client-side backstop.
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
     try {
       const res = await fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(query)}&nsfw=${isNsfw}`, { signal: controller.signal });
@@ -259,15 +268,28 @@ export default function Home() {
           }, user?.id);
         }
       } else {
+        setOnlineSearchError("Os provedores não responderam corretamente. Tente novamente em instantes.");
         setOnlineResults([]);
       }
     } catch (err: any) {
-      if (err?.name !== "AbortError") {
+      if (err?.name === "AbortError") {
+        // Two different things call .abort() on this exact controller: a
+        // newer search superseding this one (onlineSearchAbortRef no longer
+        // points at `controller` — stay silent, the newer call owns the UI
+        // now) or our own 15s timeout (ref is unchanged — that's a real,
+        // user-facing failure).
+        if (onlineSearchAbortRef.current === controller) {
+          setOnlineSearchError("A busca demorou demais para responder. Tente novamente.");
+          setOnlineResults([]);
+        }
+      } else {
         console.error(err);
+        setOnlineSearchError("Falha ao buscar nos provedores. Verifique sua conexão e tente novamente.");
         setOnlineResults([]);
       }
     } finally {
-      if (!controller.signal.aborted) setOnlineSearching(false);
+      clearTimeout(timeout);
+      if (onlineSearchAbortRef.current === controller) setOnlineSearching(false);
     }
   };
 
@@ -333,8 +355,25 @@ export default function Home() {
           </div>
         )}
 
+        {/* Online search failed outright — kept distinct from "zero results" so
+            the message never tells the user their search simply came up empty. */}
+        {onlineSearchError && !onlineSearching && (
+          <div ref={resultsRef} className="scroll-mt-24 mt-8 text-center py-16 border-4 border-black bg-red-50 comic-shadow-sm space-y-4">
+            <AlertTriangle className="w-12 h-12 text-primary mx-auto" strokeWidth={3} />
+            <h3 className="font-display text-2xl text-black">NÃO FOI POSSÍVEL BUSCAR AGORA</h3>
+            <p className="font-sans font-bold text-gray-600 max-w-md mx-auto">{onlineSearchError}</p>
+            <button
+              type="button"
+              onClick={() => searchByOnline(searchedQuery)}
+              className="inline-flex items-center gap-2 bg-secondary text-black font-display text-sm uppercase px-6 py-3 border-4 border-black rounded-lg comic-shadow-sm hover:bg-yellow-400 transition-colors"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        )}
+
         {/* Online Aggregated Search Results */}
-        {onlineResults && !onlineSearching && (() => {
+        {onlineResults && !onlineSearching && !onlineSearchError && (() => {
           const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
           const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai"];
           const empties = getEmptySources();
