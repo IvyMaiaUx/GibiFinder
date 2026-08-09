@@ -276,9 +276,6 @@ export function ReaderSettingsPanel({
                 options={[{ label: "2x", value: 2 }, { label: "3x", value: 3 }, { label: "4x", value: 4 }, { label: "5x", value: 5 }]}
               />
             </Row>
-            <Row label="Zoom por duplo-toque">
-              <Toggle on={settings.doubleTapZoom} onChange={(v) => set("doubleTapZoom", v)} />
-            </Row>
           </Section>
 
           <Section title="Interface">
