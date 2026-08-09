@@ -1267,7 +1267,13 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                       {selectedResult.sources.map((src) => (
                         <button
                           key={`${src.providerId}-${src.id}`}
-                          onClick={() => loadChapters(src)}
+                          onClick={() => {
+                            // Manual pick — reset the auto-fallback budget so this
+                            // fresh attempt isn't silently starved by an earlier
+                            // automatic chain that already used it up.
+                            fallbackAttemptsRef.current = 0;
+                            loadChapters(src);
+                          }}
                           className={cn(
                             "px-3 py-1.5 font-display text-xs border-2 border-black transition-all flex items-center gap-1.5",
                             selectedSource?.providerId === src.providerId && selectedSource?.id === src.id
@@ -1301,6 +1307,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                     const targetSource = selectedResult?.sources.find(
                       s => s.providerId === lastReadProgress.providerId
                     ) || { providerId: lastReadProgress.providerId, id: lastReadProgress.mangaId, title: lastReadProgress.title };
+                    fallbackAttemptsRef.current = 0;
                     await loadChapters(targetSource);
                   }
                   const targetChapter = {
@@ -2130,7 +2137,12 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               pageAspectRef.current = {};
               pageDimsRef.current = {};
             }}
-            onTestProvider={() => { if (selectedSource) loadChapters(selectedSource); }}
+            onTestProvider={() => {
+              if (selectedSource) {
+                fallbackAttemptsRef.current = 0;
+                loadChapters(selectedSource);
+              }
+            }}
           />
         </div>
       )}
