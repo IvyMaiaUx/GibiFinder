@@ -157,8 +157,10 @@ function firstRunDefaults(): Partial<ReaderSettings> {
   return isMobile ? { immersion: "cinema" } : {};
 }
 
-const hasPersistedGlobalSettings =
-  typeof localStorage !== "undefined" && localStorage.getItem(GLOBAL_KEY) !== null;
+// readJson() already wraps the storage read in try/catch (blocked/denied Web
+// Storage shouldn't crash module init) — reuse it here instead of a raw
+// localStorage.getItem() so this probe gets the same safety.
+const hasPersistedGlobalSettings = readJson<Partial<ReaderSettings> | null>(GLOBAL_KEY, null) !== null;
 
 let globalSettings: ReaderSettings = {
   ...READER_SETTINGS_DEFAULTS,
