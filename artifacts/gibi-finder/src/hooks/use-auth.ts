@@ -22,10 +22,19 @@ export function useAuth() {
     try {
       const saved = localStorage.getItem(AUTH_KEY) || sessionStorage.getItem(AUTH_KEY);
       if (saved) {
-        setUser(JSON.parse(saved));
+        const restored = JSON.parse(saved) as UserSession;
+        setUser(restored);
+        // Restoring an already-logged-in session (the common case — every
+        // normal page load, not just a fresh login) previously never pulled
+        // the account's current favorites/history/progress: the page just
+        // trusted whatever this browser last cached, so changes made on
+        // another device only showed up after manually visiting Coleção or
+        // Histórico. Sync in the background so every page load is current.
+        syncUserData(restored.id);
       }
     } catch {}
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const login = async (username: string, password: string, rememberMe: boolean = true): Promise<boolean> => {

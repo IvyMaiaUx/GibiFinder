@@ -9,7 +9,7 @@ import { Link2, AlertCircle, Loader2, Star, BookOpen, ExternalLink, ShoppingCart
 import { useToast } from "@/hooks/use-toast";
 import { cn, translateToPt, cleanSynopsis, getGeneratedSynopsis } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
-import { authHeaders } from "@/lib/authToken";
+import { isFavorite as isFavoriteLib, toggleFavorite as toggleFavoriteLib } from "@/lib/favorites";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -100,54 +100,22 @@ export default function ResultDetail() {
 
   useEffect(() => {
     if (!itemMangaId) return;
-    try {
-      const favorites = JSON.parse(localStorage.getItem("gibi-finder:favorites") || "[]") as any[];
-      const favorited = favorites.some((f: any) => f.mangaId === itemMangaId && f.providerId === itemProviderId);
-      setIsFavorited(favorited);
-    } catch {}
+    setIsFavorited(isFavoriteLib(itemProviderId, itemMangaId));
   }, [itemMangaId, itemProviderId]);
 
   const toggleFavorite = () => {
     if (!itemMangaId) return;
-    try {
-      const favorites = JSON.parse(localStorage.getItem("gibi-finder:favorites") || "[]") as any[];
-      const existsIndex = favorites.findIndex((f: any) => f.mangaId === itemMangaId && f.providerId === itemProviderId);
-      
-      let newFavorites = [...favorites];
-      if (existsIndex > -1) {
-        newFavorites.splice(existsIndex, 1);
-        setIsFavorited(false);
-        toast({
-          title: "Removido dos favoritos",
-          description: "O gibi foi removido da sua coleção.",
-        });
-      } else {
-        newFavorites.push({
-          providerId: itemProviderId,
-          mangaId: itemMangaId,
-          title: resultData?.titulo || resultData?.revista || initialTitle || "Sem título",
-          coverUrl: (resultData as any)?.coverUrl || (resultData as any)?.images?.[0] || initialCoverUrl || undefined,
-          description: (resultData as any)?.sinopse || (resultData as any)?.descricao || initialDescription || "",
-          timestamp: Date.now()
-        });
-        setIsFavorited(true);
-        toast({
-          title: "Adicionado aos favoritos!",
-          description: "O gibi foi salvo na sua coleção.",
-        });
-      }
-      localStorage.setItem("gibi-finder:favorites", JSON.stringify(newFavorites));
-
-      if (user) {
-        fetch(`${BASE}/api/auth/favorites/sync`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeaders() },
-          body: JSON.stringify({ userId: user.id, favorites: newFavorites })
-        }).catch(err => console.error("Error syncing favorite to server:", err));
-      }
-    } catch (err) {
-      console.error("Error toggling favorite:", err);
-    }
+    const added = toggleFavoriteLib({
+      providerId: itemProviderId,
+      mangaId: itemMangaId,
+      title: resultData?.titulo || resultData?.revista || initialTitle || "Sem título",
+      coverUrl: (resultData as any)?.coverUrl || (resultData as any)?.images?.[0] || initialCoverUrl || undefined,
+      description: (resultData as any)?.sinopse || (resultData as any)?.descricao || initialDescription || "",
+    }, user?.id);
+    setIsFavorited(added);
+    toast(added
+      ? { title: "Adicionado aos favoritos!", description: "O gibi foi salvo na sua coleção." }
+      : { title: "Removido dos favoritos", description: "O gibi foi removido da sua coleção." });
   };
 
   const [stats, setStats] = useState<any | null>(null);

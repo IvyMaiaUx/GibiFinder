@@ -1365,18 +1365,45 @@ router.get("/auth/favorites", async (req: Request, res: Response) => {
   } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
 });
 
-// POST /api/auth/favorites/sync - sync favorites to database
+// POST /api/auth/favorites/sync - merge local and server favorites
+//
+// IMPORTANT: this used to be delete-all-then-insert-posted, which is
+// destructive across multiple devices — every call replaced the ENTIRE
+// account favorites list with just whatever this one device's local storage
+// currently held. A device whose local list was stale/empty (a fresh
+// browser, or one that just hadn't been used in a while) would silently wipe
+// every favorite added from other devices the moment it synced. Fixed to the
+// same fetch-existing/merge-by-key/replace-with-merged pattern already used
+// by /auth/history/search/sync and /auth/history/reading/sync.
 router.post("/auth/favorites/sync", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
   const userId = sessionUserId(req);
   const { favorites } = req.body;
   if (!userId || !Array.isArray(favorites)) { res.status(400).json({ error: "bad_request" }); return; }
   try {
+    const { data: existing } = await supabase.from("user_favorites").select("*").eq("user_id", userId);
+    const keyOf = (providerId: string, mangaId: string) => `${providerId}:${mangaId}`;
+    const merged = new Map<string, any>();
+    for (const f of existing || []) {
+      merged.set(keyOf(f.provider_id, f.manga_id), {
+        providerId: f.provider_id,
+        mangaId: f.manga_id,
+        title: f.title,
+        coverUrl: f.cover_url,
+        description: f.description,
+        timestamp: Number(f.timestamp)
+      });
+    }
+    for (const f of favorites) {
+      if (f?.providerId && f?.mangaId) merged.set(keyOf(f.providerId, f.mangaId), f);
+    }
+    const mergedFavorites = Array.from(merged.values());
+
     const { error: delErr } = await supabase.from("user_favorites").delete().eq("user_id", userId);
     if (delErr) { req.log.error({ err: delErr }, "favorites delete error"); res.status(500).json({ error: "db_error" }); return; }
 
-    if (favorites.length > 0) {
-      const rows = favorites.map((f: any) => ({
+    if (mergedFavorites.length > 0) {
+      const rows = mergedFavorites.map((f: any) => ({
         user_id: userId,
         provider_id: f.providerId,
         manga_id: f.mangaId,
@@ -1388,6 +1415,22 @@ router.post("/auth/favorites/sync", async (req: Request, res: Response) => {
       const { error: insErr } = await supabase.from("user_favorites").insert(rows);
       if (insErr) { req.log.error({ err: insErr }, "favorites insert error"); res.status(500).json({ error: "db_error" }); return; }
     }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+// DELETE /api/auth/favorites - remove a single favorite (explicit removal,
+// unlike /sync above which only ever adds/merges — never drops rows it
+// wasn't told about).
+router.delete("/auth/favorites", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const userId = sessionUserId(req);
+  const { providerId, mangaId } = req.query as Record<string, string>;
+  if (!userId || !providerId || !mangaId) { res.status(400).json({ error: "bad_request" }); return; }
+  try {
+    await supabase.from("user_favorites").delete().eq("user_id", userId).eq("provider_id", providerId).eq("manga_id", mangaId);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "server_error" });
@@ -1635,9 +1678,33 @@ router.post("/auth/history/reading/sync", async (req: Request, res: Response) =>
     }
 
     if (progress && typeof progress === "object") {
+      // Same fetch-existing/merge-by-key/replace-with-merged pattern as
+      // history above — this used to delete every progress row for the user
+      // and reinsert only what this one device posted, which would drop the
+      // resume position for every other work the moment a second device
+      // (with a smaller local progress map) synced.
+      const { data: existingProgress } = await supabase.from("user_reading_progress").select("*").eq("user_id", userId);
+      const mergedProgress = new Map<string, any>();
+      for (const row of existingProgress || []) {
+        mergedProgress.set(row.progress_key, {
+          chapterId: row.chapter_id,
+          chapterNum: row.chapter_num || "",
+          pageNumber: Number(row.page_number || 1),
+          title: row.title,
+          coverUrl: row.cover_url || undefined,
+          providerId: row.provider_id || undefined,
+          mangaId: row.manga_id || undefined,
+          language: row.language || undefined,
+          updatedAt: row.updated_at
+        });
+      }
+      for (const [key, item] of Object.entries(progress as Record<string, any>)) {
+        mergedProgress.set(key, item);
+      }
+
       const { error: delProgErr } = await supabase.from("user_reading_progress").delete().eq("user_id", userId);
       if (delProgErr) { req.log.error({ err: delProgErr }, "reading progress delete error"); res.status(500).json({ error: "db_error" }); return; }
-      const rows = Object.entries(progress).map(([key, item]: [string, any]) => ({
+      const rows = Array.from(mergedProgress.entries()).map(([key, item]: [string, any]) => ({
         user_id: userId,
         progress_key: key,
         chapter_id: item.chapterId,
