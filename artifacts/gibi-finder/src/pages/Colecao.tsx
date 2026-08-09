@@ -8,6 +8,7 @@ import { SafeImage } from "@/components/ui/SafeImage";
 import { useAuth } from "@/hooks/use-auth";
 import { getLocalCompleted, saveLocalCompleted, getSyncedReadingHistory, getSyncedCompleted, removeCompletedRemote, removeReadingByManga, type CompletedReadingItem } from "@/lib/user-history";
 import { getSyncedFavorites } from "@/lib/favorites";
+import { useDocumentMeta } from "@/hooks/use-document-meta";
 
 interface ReadingProgress {
   providerId: string;
@@ -32,6 +33,7 @@ interface FavoriteItem {
 export default function Colecao() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
+  useDocumentMeta({ title: "Minha coleção", noindex: true });
   const [activeTab, setActiveTab] = useState<"progress" | "favorites" | "completed">("progress");
   const [shelfItems, setShelfItems] = useState<ReadingProgress[]>([]);
   const [favoriteItems, setFavoriteItems] = useState<FavoriteItem[]>([]);

@@ -8,6 +8,7 @@ import { isFavorite, toggleFavorite, getFavorites } from "@/lib/favorites";
 import { getLocalProgress, getLocalCompleted } from "@/lib/user-history";
 import { getEmptySources, hasReadableSource, isSourceEmpty } from "@/lib/empty-sources";
 import { useAuth } from "@/hooks/use-auth";
+import { useDocumentMeta } from "@/hooks/use-document-meta";
 
 interface CatalogSource {
   providerId: string;
@@ -209,6 +210,11 @@ function Row({ title, children, onSeeAll }: { title: string; children: React.Rea
 export default function Explore() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
+  useDocumentMeta({
+    title: "Explorar gibis, mangás e HQs",
+    description: "Explore o catálogo completo de gibis, mangás e HQs do Gibi Finder por tipo, editora e gênero.",
+    path: "/explorar",
+  });
   const [popular, setPopular] = useState<UnifiedCatalogItem[]>([]);
   const [latest, setLatest] = useState<UnifiedCatalogItem[]>([]);
   const [typeFilter, setTypeFilter] = useState<"all" | "manga" | "hq" | "gibi">(() => {

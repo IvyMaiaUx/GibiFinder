@@ -12,6 +12,7 @@ import { AdminEngines } from "@/components/admin/AdminEngines";
 import { AdminSystem } from "@/components/admin/AdminSystem";
 import { scoreItem, qualityColor } from "@/components/admin/quality";
 import { CatalogObraPage } from "@/components/admin/CatalogObraPage";
+import { useDocumentMeta } from "@/hooks/use-document-meta";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const STORAGE_KEY = "gibi_admin_key";
@@ -687,6 +688,7 @@ function CatalogManager({ adminKey, items, loading, onReload, byProvider, onRebu
 }
 
 export default function Admin() {
+  useDocumentMeta({ title: "Admin", noindex: true });
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [adminKey, setAdminKey] = useState(localStorage.getItem(STORAGE_KEY) || "");

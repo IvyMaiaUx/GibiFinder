@@ -3,10 +3,12 @@ import { useLocation } from "wouter";
 import { Layout } from "@/components/layout/Layout";
 import { Lock, User, Check, Loader2, LogOut, ArrowRight, UserPlus } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { useDocumentMeta } from "@/hooks/use-document-meta";
 
 export default function Login() {
   const [, setLocation] = useLocation();
   const { user, login, register, logout, loading } = useAuth();
+  useDocumentMeta({ title: "Entrar", noindex: true });
   
   const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState("");

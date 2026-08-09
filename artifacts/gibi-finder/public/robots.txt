@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /provedores
+Disallow: /login
+Disallow: /colecao
+Disallow: /historico
+
+Sitemap: https://gibi-finder.vercel.app/sitemap.xml

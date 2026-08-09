@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn, translateToPt, cleanSynopsis, getGeneratedSynopsis } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { isFavorite as isFavoriteLib, toggleFavorite as toggleFavoriteLib } from "@/lib/favorites";
+import { useDocumentMeta } from "@/hooks/use-document-meta";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -198,6 +199,16 @@ export default function ResultDetail() {
   }, [cleanSin, sinTitle]);
 
   const finalSinopse = ptSinopse || cleanSin || "Sinopse não disponível para este título.";
+
+  // Online results share the id "online" across every work (the real identity
+  // lives in query params), so they get a title/description but no canonical —
+  // there's no single stable URL to point crawlers at.
+  useDocumentMeta({
+    title: sinTitle || undefined,
+    description: cleanSin ? finalSinopse.slice(0, 160) : undefined,
+    path: !isOnlineResult && id ? `/gibi/${id}` : undefined,
+  });
+
   // ComicCard renders `descricao`; online results carry `sinopse`. Fill both.
   const displayResult = resultData
     ? { ...(resultData as any), sinopse: finalSinopse, descricao: finalSinopse }

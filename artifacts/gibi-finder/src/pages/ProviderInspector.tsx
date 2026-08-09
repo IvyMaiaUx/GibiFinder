@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { AlertCircle, CheckCircle2, Loader2, SearchCode, ShieldAlert, XCircle } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { cn } from "@/lib/utils";
+import { useDocumentMeta } from "@/hooks/use-document-meta";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const ADMIN_STORAGE_KEY = "gibi_admin_key";
@@ -398,6 +399,7 @@ export function ProviderInspectorPanel({ initialAdminKey, showBackLink = true }:
 }
 
 export default function ProviderInspector() {
+  useDocumentMeta({ title: "Inspetor de provedores", noindex: true });
   return (
     <Layout>
       <ProviderInspectorPanel />
