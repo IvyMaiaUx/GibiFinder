@@ -7,6 +7,14 @@ interface UseReaderZoomOptions {
   resetKey?: string;
   /** Maximum zoom factor (default 4x). */
   max?: number;
+  /**
+   * Element whose bounding box pan is clamped against — ideally the actual
+   * zoomed content, not the (often larger) scroll container: a page/spread
+   * is frequently narrower than the container it's centered in, and
+   * clamping against the container would let it be dragged partly or fully
+   * out of view. Falls back to the scroll container when omitted.
+   */
+  contentRef?: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -39,7 +47,7 @@ interface UseReaderZoomOptions {
  */
 export function useReaderZoom(
   scrollRef: RefObject<HTMLElement | null>,
-  { enabled, resetKey, max = 4 }: UseReaderZoomOptions,
+  { enabled, resetKey, max = 4, contentRef }: UseReaderZoomOptions,
 ) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -60,12 +68,28 @@ export function useReaderZoom(
     if (!el) return;
 
     const clampZoom = (v: number) => Math.min(max, Math.max(1, v));
-    // Once zoomed, the content is `zoom`x the container's size — panning past
-    // half that overhang in either direction would drag it fully off-screen.
+    // Once zoomed, the content is `zoom`x its own size — panning past half
+    // that overhang in either direction would drag it fully off-screen.
+    // Measured against contentRef (the actual zoomed content) when given —
+    // the scroll container is frequently larger than the content centered
+    // inside it, which would let it be dragged out of view before hitting
+    // this container-sized bound.
     const clampPan = (p: { x: number; y: number }, z: number) => {
-      const rect = el.getBoundingClientRect();
-      const maxX = (rect.width * (z - 1)) / 2;
-      const maxY = (rect.height * (z - 1)) / 2;
+      const target = contentRef?.current || el;
+      const rect = target.getBoundingClientRect();
+      // Some usages apply the zoom transform directly to contentRef's own
+      // element (its rect is then already zoom×'d), others apply it to a
+      // child while contentRef points at a stable, untransformed wrapper
+      // (its rect is already the natural 1x size). Detect which one we got
+      // by checking whether this element currently carries the scale — if
+      // so, back that factor out first so the overhang math below always
+      // works in unscaled units regardless of which pattern the caller used.
+      const isSelfTransformed = target.style.transform.includes("scale(");
+      const unzoom = isSelfTransformed ? zoomRef.current : 1;
+      const width = rect.width / unzoom;
+      const height = rect.height / unzoom;
+      const maxX = (width * (z - 1)) / 2;
+      const maxY = (height * (z - 1)) / 2;
       return {
         x: Math.min(maxX, Math.max(-maxX, p.x)),
         y: Math.min(maxY, Math.max(-maxY, p.y)),
@@ -121,7 +145,15 @@ export function useReaderZoom(
     };
     const onTouchEnd = (e: TouchEvent) => {
       if (e.touches.length < 2) pinchStartDist = 0;
-      if (e.touches.length < 1) dragStart = null;
+      if (e.touches.length === 1 && zoomRef.current > 1) {
+        // Lifting one finger out of a pinch leaves exactly one touch still
+        // down — start a drag from here instead of waiting for a fresh
+        // touchstart, so pinch-then-continue-with-one-finger keeps panning.
+        dragStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        dragStartPan = panRef.current;
+      } else if (e.touches.length < 1) {
+        dragStart = null;
+      }
     };
 
     el.addEventListener("touchstart", onTouchStart, { passive: false });
@@ -132,22 +164,29 @@ export function useReaderZoom(
       el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("touchend", onTouchEnd);
     };
-  }, [enabled, resetKey, scrollRef, max]);
+  }, [enabled, resetKey, scrollRef, contentRef, max]);
 
   // Re-clamp pan whenever zoom changes via the +/- buttons (not just gestures)
   // so a manual zoom-out doesn't leave the pan offset stranded out of bounds.
   useEffect(() => {
-    const el = scrollRef.current;
+    const el = contentRef?.current || scrollRef.current;
     if (!el) return;
     setPan(p => {
       const rect = el.getBoundingClientRect();
-      const maxX = (rect.width * (zoom - 1)) / 2;
-      const maxY = (rect.height * (zoom - 1)) / 2;
+      // Same self-transformed detection as clampPan above — by the time this
+      // effect runs the DOM (and zoomRef) already reflect the new `zoom`, so
+      // dividing a self-transformed rect by it still correctly recovers the
+      // unscaled size.
+      const unzoom = el.style.transform.includes("scale(") ? zoom : 1;
+      const width = rect.width / unzoom;
+      const height = rect.height / unzoom;
+      const maxX = (width * (zoom - 1)) / 2;
+      const maxY = (height * (zoom - 1)) / 2;
       const x = Math.min(maxX, Math.max(-maxX, p.x));
       const y = Math.min(maxY, Math.max(-maxY, p.y));
       return x === p.x && y === p.y ? p : { x, y };
     });
-  }, [zoom, scrollRef]);
+  }, [zoom, scrollRef, contentRef]);
 
   return { zoom, setZoom, pan, setPan };
 }
