@@ -60,6 +60,10 @@ const ADULT_FEATURED_GENRES = ["Yaoi", "Yuri", "Lolicon", "Shotacon", "Bakunyū"
 const HQ_SERIES = ["Batman", "Superman", "Homem-Aranha", "X-Men", "Vingadores", "Liga da Justiça", "Star Wars", "The Boys", "Coringa", "Mulher-Maravilha", "Lanterna Verde", "Flash", "Aquaman", "Capitão América", "Homem de Ferro", "Thor", "Hulk", "Wolverine", "Deadpool", "Pantera Negra", "Venom", "Demolidor", "Quarteto Fantástico", "Guardiões da Galáxia", "Justiceiro"];
 const GIBI_SERIES = ["Turma da Mônica", "Turma da Mônica Jovem", "Mônica", "Cebolinha", "Magali", "Cascão", "Chico Bento", "Almanaque", "Pelezinho", "Ronaldinho Gaúcho", "Menino Maluquinho"];
 const MIN_ROW_ITEMS = 4;
+// How many items a shelf row shows before the user has to open "Ver tudo".
+// Every row already has a full paginated view behind that button, so this is
+// purely about how much of a first impression each shelf gives up front.
+const ROW_DISPLAY_CAP = 30;
 
 const HQ_PROVIDER_IDS = ["comicextra", "jon-domingues", "batcave", "multiverso-hq", "mega-hq", "hq-desejo"];
 const GIBI_PROVIDER_IDS = ["biblioteca-br"];
@@ -325,7 +329,7 @@ export default function Explore() {
         const list = (Array.isArray(items) ? items : []).filter(i => typeOf(i) === typeFilter);
         if (list.length > 0) {
           setCuratedRows(prev => [
-            { key: "all", title: allTitle, items: list.slice(0, 20), seeAllTerm: allTag, seeAllKind: "genre" },
+            { key: "all", title: allTitle, items: list.slice(0, ROW_DISPLAY_CAP), seeAllTerm: allTag, seeAllKind: "genre" },
             ...prev.filter(r => r.key !== "all"),
           ]);
         }
@@ -347,7 +351,7 @@ export default function Explore() {
           title: term,
           items: (Array.isArray(items) ? items : [])
             .filter(i => typeOf(i) === typeFilter)
-            .slice(0, 20),
+            .slice(0, ROW_DISPLAY_CAP),
         }))
         .catch(() => ({ key: `c-${term}`, title: term, items: [] as UnifiedCatalogItem[] }));
 
@@ -458,7 +462,7 @@ export default function Explore() {
     .filter(it => !isInteracted(it) && (it.genres || []).some(g => topGenres.includes(norm(g))))
     .map(it => ({ it, score: (it.genres || []).filter(g => topGenres.includes(norm(g))).length + (it.rating || 0) / 20 }))
     .sort((a, b) => b.score - a.score)
-    .slice(0, 20)
+    .slice(0, ROW_DISPLAY_CAP)
     .map(x => x.it);
 
   // Dynamic genre list: featured genres first, then every other genre that has
@@ -488,7 +492,7 @@ export default function Explore() {
   const franchiseRows: RowData[] = [];
   for (const f of FRANCHISES) {
     const items = itemsInFranchise(f);
-    if (items.length >= MIN_FRANCHISE_ITEMS) franchiseRows.push({ key: `f-${f}`, title: f, items: items.slice(0, 20) });
+    if (items.length >= MIN_FRANCHISE_ITEMS) franchiseRows.push({ key: `f-${f}`, title: f, items: items.slice(0, ROW_DISPLAY_CAP) });
   }
 
   const genreRows: RowData[] = [];
@@ -498,7 +502,7 @@ export default function Explore() {
     // across several categories.
     const items = itemsInGenre(genre).filter(i => !usedInGenreRows.has(i.id));
     if (items.length >= MIN_ROW_ITEMS) {
-      const rowItems = items.slice(0, 20);
+      const rowItems = items.slice(0, ROW_DISPLAY_CAP);
       rowItems.forEach(i => usedInGenreRows.add(i.id));
       genreRows.push({ key: `g-${genre}`, title: genre, items: rowItems });
     }

@@ -268,3 +268,32 @@ CREATE TABLE IF NOT EXISTS user_reader_settings (
 );
 
 ALTER TABLE user_reader_settings DISABLE ROW LEVEL SECURITY;
+
+-- ============================================================
+-- Table: provider_overrides (admin provider toggle/add/delete)
+-- Vercel's serverless filesystem is read-only, so writing back to
+-- custom_providers.json from the admin (toggle/add/delete) silently does
+-- nothing in production. This table is the real persistence layer: a row
+-- with only `active` set overrides an existing bundled provider's on/off
+-- state; a row with `base_url` set is a full custom provider definition
+-- added via the admin; `deleted = true` removes a provider (bundled or
+-- custom) entirely. Read once per warm instance (short TTL) and merged on
+-- top of custom_providers.json at request time.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS provider_overrides (
+  id TEXT PRIMARY KEY,
+  name TEXT,
+  language TEXT,
+  base_url TEXT,
+  engine TEXT,
+  active BOOLEAN,
+  deleted BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- RLS disabled to match every other table in this schema (the app only ever
+-- holds the anon key, no service-role key, so an RLS-enabled table with no
+-- matching policy would just lock the backend itself out). The real access
+-- control boundary for this table is requireAdmin() on the mutating routes
+-- in providers.ts, same as catalog_overrides above.
+ALTER TABLE provider_overrides DISABLE ROW LEVEL SECURITY;

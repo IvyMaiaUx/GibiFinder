@@ -725,7 +725,7 @@ export default function Admin() {
     try {
       const res = await fetch(`${BASE}/api/providers/toggle`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
         body: JSON.stringify({ providerId, active: nextStatus })
       });
       if (res.ok) {

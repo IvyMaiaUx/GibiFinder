@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Loader2, AlertCircle, ShieldAlert } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
 
@@ -19,7 +18,6 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export default function Providers() {
   useDocumentMeta({ title: "Provedores", noindex: true });
-  const { toast } = useToast();
   const [providers, setProviders] = useState<ProviderItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,35 +35,6 @@ export default function Providers() {
       setError("Falha ao se conectar com a API de Provedores.");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleToggle = async (providerId: string, currentStatus: boolean) => {
-    const nextStatus = !currentStatus;
-    
-    // Optimistic UI update
-    setProviders(prev => prev.map(p => p.id === providerId ? { ...p, active: nextStatus } : p));
-
-    try {
-      const res = await fetch(`${BASE}/api/providers/toggle`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerId, active: nextStatus })
-      });
-      if (!res.ok) throw new Error();
-      
-      toast({
-        title: nextStatus ? "Fonte ativada!" : "Fonte desativada!",
-        description: `O provedor ${providerId.toUpperCase()} foi atualizado no agregador.`,
-      });
-    } catch (err) {
-      // Revert UI on failure
-      setProviders(prev => prev.map(p => p.id === providerId ? { ...p, active: currentStatus } : p));
-      toast({
-        title: "Erro ao atualizar",
-        description: "Não foi possível alterar a ativação do provedor.",
-        variant: "destructive"
-      });
     }
   };
 
@@ -154,19 +123,15 @@ export default function Providers() {
                     <span className="font-sans font-extrabold text-2xs text-gray-400 uppercase">
                       ID: {p.id}
                     </span>
-                    
-                    {/* Toggle Button */}
-                    <button
-                      onClick={() => handleToggle(p.id, p.active)}
-                      className={cn(
-                        "font-display text-sm px-4 py-1.5 border-2 border-black rounded transition-all",
-                        p.active 
-                          ? "bg-primary text-white hover:bg-red-600" 
-                          : "bg-secondary text-black hover:bg-yellow-400"
-                      )}
-                    >
-                      {p.active ? "DESATIVAR" : "ATIVAR"}
-                    </button>
+                    {/* Read-only: activating/deactivating providers requires admin
+                        access (Painel Admin) — this page has no login, so it never
+                        should have exposed a working mutation here. */}
+                    <span className={cn(
+                      "font-display text-sm px-4 py-1.5 border-2 border-black rounded",
+                      p.active ? "bg-primary text-white" : "bg-secondary text-black"
+                    )}>
+                      {p.active ? "ATIVO" : "INATIVO"}
+                    </span>
                   </div>
                 </div>
               );

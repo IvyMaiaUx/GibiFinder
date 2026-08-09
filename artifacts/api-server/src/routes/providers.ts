@@ -58,8 +58,9 @@ async function injectRatings(results: any[]) {
 }
 
 // GET /api/providers - List all active providers
-router.get("/providers", (_req: Request, res: Response) => {
+router.get("/providers", async (_req: Request, res: Response) => {
   try {
+    await ProviderManager.ensureOverridesLoaded();
     const list = ProviderManager.listProviders();
     res.json(list);
   } catch (err) {
@@ -151,8 +152,9 @@ router.get("/providers/pages", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/providers/toggle - Toggle provider active state
-router.post("/providers/toggle", (req: Request, res: Response) => {
+// POST /api/providers/toggle - Toggle provider active state (requires admin key)
+router.post("/providers/toggle", async (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   const { providerId, active } = req.body;
   if (!providerId || active === undefined) {
     res.status(400).json({ error: "missing_params", message: "Os parâmetros 'providerId' e 'active' são obrigatórios." });
@@ -160,7 +162,8 @@ router.post("/providers/toggle", (req: Request, res: Response) => {
   }
 
   try {
-    ProviderManager.toggleProvider(providerId, !!active);
+    await ProviderManager.ensureOverridesLoaded();
+    await ProviderManager.toggleProvider(providerId, !!active);
     res.json({ success: true, providerId, active: !!active });
   } catch (err) {
     res.status(500).json({ error: "toggle_failed", message: err instanceof Error ? err.message : String(err) });
@@ -626,7 +629,7 @@ router.get("/providers/inspect", async (req: Request, res: Response) => {
 });
 
 // POST /api/providers/custom - Add a custom provider (requires admin key)
-router.post("/providers/custom", (req: Request, res: Response) => {
+router.post("/providers/custom", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   const { name, language, baseUrl } = req.body;
   if (!name || !language || !baseUrl) {
@@ -635,7 +638,8 @@ router.post("/providers/custom", (req: Request, res: Response) => {
   }
 
   try {
-    const provider = ProviderManager.addCustomProvider(name, language, baseUrl);
+    await ProviderManager.ensureOverridesLoaded();
+    const provider = await ProviderManager.addCustomProvider(name, language, baseUrl);
     res.json({
       success: true,
       provider: {
@@ -653,7 +657,7 @@ router.post("/providers/custom", (req: Request, res: Response) => {
 });
 
 // DELETE /api/providers/custom/:id - Delete a custom provider (requires admin key)
-router.delete("/providers/custom/:id", (req: Request, res: Response) => {
+router.delete("/providers/custom/:id", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   const id = req.params.id as string;
   if (!id) {
@@ -662,7 +666,8 @@ router.delete("/providers/custom/:id", (req: Request, res: Response) => {
   }
 
   try {
-    ProviderManager.deleteCustomProvider(id);
+    await ProviderManager.ensureOverridesLoaded();
+    await ProviderManager.deleteCustomProvider(id);
     res.json({ success: true, id });
   } catch (err) {
     res.status(500).json({ error: "delete_custom_failed", message: err instanceof Error ? err.message : String(err) });
@@ -809,6 +814,7 @@ router.post("/admin/cache/clear", async (req: Request, res: Response) => {
 // GET /api/admin/providers/health — faz busca leve em cada provider ativo e retorna latência
 router.get("/admin/providers/health", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
+  await ProviderManager.ensureOverridesLoaded();
   const providers = ProviderManager.listProviders().filter(p => p.active);
   const results = await Promise.all(
     providers.map(async (p) => {

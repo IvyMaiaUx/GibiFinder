@@ -13,8 +13,19 @@ import { WordPressComicProvider } from "./WordPressComicProvider";
 import { SlimeReadProvider } from "./SlimeReadProvider";
 import { CuratedComicsProvider } from "./CuratedComicsProvider";
 import { InternetArchiveProvider } from "./InternetArchiveProvider";
+import { supabase } from "../lib/supabase";
 import * as fs from "fs";
 import * as path from "path";
+
+type ProviderOverrideRow = {
+  id: string;
+  name: string | null;
+  language: string | null;
+  base_url: string | null;
+  engine: string | null;
+  active: boolean | null;
+  deleted: boolean;
+};
 
 class StubProvider implements Provider {
   constructor(public id: string, public name: string, public language: string) {}
@@ -100,8 +111,26 @@ export class ProviderManager {
     ["hqnow", false]
   ]);
 
+  // Supabase-backed overrides on top of custom_providers.json — see
+  // ensureOverridesLoaded(). Vercel's function filesystem is read-only, so
+  // the fs.writeFileSync calls below are a best-effort for local dev only;
+  // this is what actually persists admin toggle/add/delete in production.
+  private static overridesPromise: Promise<void> | null = null;
+  private static overridesLoadedAt = 0;
+  private static readonly OVERRIDES_TTL_MS = 30_000;
+
   private static getCustomProvidersPath(): string {
     return path.join(process.cwd(), "custom_providers.json");
+  }
+
+  private static instantiateProvider(item: { id: string; name: string; language: string; baseUrl: string; engine?: string | null }): Provider {
+    return item.engine === "wordpress-comic"
+      ? new WordPressComicProvider(item.id, item.name, item.language, item.baseUrl)
+      : item.engine === "orion"
+        ? new OrionProvider(item.id, item.name, item.language, item.baseUrl)
+        : item.engine === "slimeread"
+          ? new SlimeReadProvider(item.id, item.name, item.language, item.baseUrl)
+          : new MadaraProvider(item.id, item.name, item.language, item.baseUrl);
   }
 
   static loadCustomProviders() {
@@ -111,19 +140,76 @@ export class ProviderManager {
         const content = fs.readFileSync(filePath, "utf-8");
         const list = JSON.parse(content) as Array<{ id: string; name: string; language: string; baseUrl: string; active?: boolean; engine?: string }>;
         for (const item of list) {
-          const provider = item.engine === "wordpress-comic"
-            ? new WordPressComicProvider(item.id, item.name, item.language, item.baseUrl)
-            : item.engine === "orion"
-              ? new OrionProvider(item.id, item.name, item.language, item.baseUrl)
-              : item.engine === "slimeread"
-                ? new SlimeReadProvider(item.id, item.name, item.language, item.baseUrl)
-                : new MadaraProvider(item.id, item.name, item.language, item.baseUrl);
-          this.registerProvider(provider);
+          this.registerProvider(this.instantiateProvider(item));
           this.activeStates.set(item.id, item.active !== false);
         }
       }
     } catch (err) {
       logger.error({ err: err }, "Failed to load custom providers:");
+    }
+  }
+
+  // Fetches provider_overrides once per OVERRIDES_TTL_MS (memoized per warm
+  // instance) and applies them on top of the custom_providers.json baseline:
+  // a row with base_url is a full custom provider added via the admin
+  // (registered if not already present), a row with only `active` toggles an
+  // existing provider, and `deleted` removes it (bundled or custom) — this is
+  // what makes admin actions in providers.ts actually take effect and
+  // survive across serverless invocations. No-op if Supabase isn't configured.
+  static async ensureOverridesLoaded(force = false): Promise<void> {
+    if (!supabase) return;
+    const stale = Date.now() - this.overridesLoadedAt > this.OVERRIDES_TTL_MS;
+    if (!force && this.overridesPromise && !stale) return this.overridesPromise;
+
+    // Stamp loadedAt before the fetch resolves (not after) so concurrent
+    // calls in the same tick see the in-flight promise as fresh and await
+    // it instead of each kicking off their own duplicate Supabase query.
+    this.overridesLoadedAt = Date.now();
+    this.overridesPromise = (async () => {
+      try {
+        const { data, error } = await supabase.from("provider_overrides").select("*");
+        if (error) throw error;
+        for (const row of (data || []) as ProviderOverrideRow[]) {
+          if (row.deleted) {
+            this.providers.delete(row.id);
+            this.activeStates.delete(row.id);
+            continue;
+          }
+          if (row.base_url && !this.providers.has(row.id)) {
+            this.registerProvider(this.instantiateProvider({
+              id: row.id,
+              name: row.name || row.id,
+              language: row.language || "pt",
+              baseUrl: row.base_url,
+              engine: row.engine
+            }));
+          }
+          if (this.providers.has(row.id) && row.active !== null) {
+            this.activeStates.set(row.id, row.active);
+          }
+        }
+      } catch (err) {
+        logger.error({ err: err }, "Failed to load provider overrides from Supabase:");
+        // Let the next call retry sooner instead of waiting out the full TTL.
+        this.overridesLoadedAt = 0;
+      }
+    })();
+
+    return this.overridesPromise;
+  }
+
+  // Throws when Supabase IS configured but the write genuinely fails, so
+  // toggleProvider/addCustomProvider/deleteCustomProvider (and their routes)
+  // don't report success for a change that didn't actually persist — the
+  // exact "looked like it worked, disappeared later" failure mode this
+  // override layer exists to fix. A missing Supabase config is a different,
+  // expected case (no durable layer available) and stays a silent no-op.
+  private static async persistOverride(row: Partial<ProviderOverrideRow> & { id: string }): Promise<void> {
+    if (!supabase) return;
+    const { error } = await supabase.from("provider_overrides").upsert({ ...row, updated_at: new Date().toISOString() });
+    if (error) {
+      logger.error({ err: error }, "Failed to persist provider override to Supabase:");
+      throw error;
     }
   }
 
@@ -155,11 +241,12 @@ export class ProviderManager {
     return this.providers.get(id);
   }
 
-  static toggleProvider(id: string, active: boolean) {
+  static async toggleProvider(id: string, active: boolean): Promise<void> {
     if (this.providers.has(id)) {
       this.activeStates.set(id, active);
+      await this.persistOverride({ id, active });
 
-      // Persist toggled state for custom providers
+      // Best-effort for local dev — no-op on Vercel's read-only filesystem.
       try {
         const filePath = this.getCustomProvidersPath();
         if (fs.existsSync(filePath)) {
@@ -176,7 +263,7 @@ export class ProviderManager {
     }
   }
 
-  static addCustomProvider(name: string, language: string, baseUrl: string): Provider {
+  static async addCustomProvider(name: string, language: string, baseUrl: string): Promise<Provider> {
     const id = name
       .toLowerCase()
       .normalize("NFD")
@@ -192,7 +279,9 @@ export class ProviderManager {
     const provider = new MadaraProvider(id, name, language, baseUrl);
     this.registerProvider(provider);
     this.activeStates.set(id, true);
+    await this.persistOverride({ id, name, language, base_url: baseUrl, engine: null, active: true, deleted: false });
 
+    // Best-effort for local dev — no-op on Vercel's read-only filesystem.
     try {
       const filePath = this.getCustomProvidersPath();
       let list: any[] = [];
@@ -208,11 +297,13 @@ export class ProviderManager {
     return provider;
   }
 
-  static deleteCustomProvider(id: string) {
+  static async deleteCustomProvider(id: string): Promise<void> {
     if (!this.providers.has(id)) return;
     this.providers.delete(id);
     this.activeStates.delete(id);
+    await this.persistOverride({ id, deleted: true });
 
+    // Best-effort for local dev — no-op on Vercel's read-only filesystem.
     try {
       const filePath = this.getCustomProvidersPath();
       if (fs.existsSync(filePath)) {
@@ -281,6 +372,33 @@ export class ProviderManager {
     ].map(text => this.normalizeText(text));
 
     return searchable.some(text => this.adultTerms.some(term => text.includes(this.normalizeText(term))));
+  }
+
+  // A few adapters fall back to a single hardcoded generic tag ("Hentai",
+  // "Doujinshi", "Adulto") when they can't scrape a real genre for an item.
+  // Titles get grouped across providers by normalized-title match only, so a
+  // coincidental title collision with an unrelated work would otherwise let
+  // that generic tag bleed into a group that already has real genre data
+  // (or vice versa, two unrelated generic tags piling onto the same group).
+  // Once a group has any specific (non-generic) genre, stop mixing in generic
+  // ones from other sources — they don't add real information.
+  private static readonly GENERIC_FALLBACK_GENRES = new Set(["hentai", "doujinshi", "adulto"]);
+
+  private static mergeGenres(existing: string[] | undefined, incoming: string[] | undefined): string[] | undefined {
+    if (!incoming || incoming.length === 0) return existing;
+    if (!existing || existing.length === 0) return incoming;
+
+    // Symmetric: as soon as EITHER side contributes a specific genre, generic
+    // fallback tags are dropped from BOTH sides — not just the incoming one.
+    // Filtering only one side made this order-dependent (a group that started
+    // out generic-only would keep its fallback tag forever, even after a
+    // later provider added real genres for the same title).
+    const combined = [...existing, ...incoming];
+    const isSpecific = (genre: string) => !this.GENERIC_FALLBACK_GENRES.has(this.normalizeText(genre));
+    const hasSpecific = combined.some(isSpecific);
+
+    const result = hasSpecific ? combined.filter(isSpecific) : combined;
+    return Array.from(new Set(result));
   }
 
   private static getReleaseTime(date?: string): number {
@@ -470,6 +588,7 @@ export class ProviderManager {
   }
 
   static async searchWithMetadata(query: string, nsfw?: boolean, providerIds?: string[]): Promise<{ results: UnifiedSearchResult[]; hiddenAdultCount: number; adultQuery: boolean }> {
+    await this.ensureOverridesLoaded();
     // Optional provider scoping: e.g. HQ/Gibi rows only need the curated library,
     // so we skip the slow manga providers and the search returns almost instantly.
     const scope = providerIds && providerIds.length ? new Set(providerIds) : null;
@@ -519,11 +638,7 @@ export class ProviderManager {
         if (!existing.description && result.description) {
           existing.description = result.description;
         }
-        if (!existing.genres && result.genres) {
-          existing.genres = result.genres;
-        } else if (existing.genres && result.genres) {
-          existing.genres = Array.from(new Set([...existing.genres, ...result.genres]));
-        }
+        existing.genres = this.mergeGenres(existing.genres, result.genres);
         existing.releaseDate = this.pickNewestReleaseDate(existing.releaseDate, result.releaseDate);
         existing.isAdult = this.isAdultResult(existing) || this.isAdultResult(result);
       } else {
@@ -570,25 +685,33 @@ export class ProviderManager {
     };
   }
 
+  // A cold instance hit directly with a deep link (e.g. a bookmarked chapter
+  // URL) skips search/catalog entirely, so it wouldn't otherwise know about a
+  // provider that only exists via a persisted admin override — ensure those
+  // are loaded here too, not just on the aggregate read paths.
   static async getDetails(providerId: string, id: string): Promise<MangaDetails> {
+    await this.ensureOverridesLoaded();
     const provider = this.getProvider(providerId);
     if (!provider) throw new Error(`Provider not found: ${providerId}`);
     return this.withRetry(() => provider.getDetails(id));
   }
 
   static async getChapters(providerId: string, id: string): Promise<Chapter[]> {
+    await this.ensureOverridesLoaded();
     const provider = this.getProvider(providerId);
     if (!provider) throw new Error(`Provider not found: ${providerId}`);
     return this.withRetry(() => provider.getChapters(id));
   }
 
   static async getPages(providerId: string, chapterId: string): Promise<Page[]> {
+    await this.ensureOverridesLoaded();
     const provider = this.getProvider(providerId);
     if (!provider) throw new Error(`Provider not found: ${providerId}`);
     return this.withRetry(() => provider.getPages(chapterId));
   }
 
   static async getCatalog(listType: "popular" | "latest", nsfw?: boolean): Promise<UnifiedSearchResult[]> {
+    await this.ensureOverridesLoaded();
     const activeProviders = Array.from(this.providers.values()).filter(
       p => this.activeStates.get(p.id) === true
     );
@@ -639,11 +762,7 @@ export class ProviderManager {
         if (!existing.description && result.description) {
           existing.description = result.description;
         }
-        if (!existing.genres && result.genres) {
-          existing.genres = result.genres;
-        } else if (existing.genres && result.genres) {
-          existing.genres = Array.from(new Set([...existing.genres, ...result.genres]));
-        }
+        existing.genres = this.mergeGenres(existing.genres, result.genres);
         existing.releaseDate = this.pickNewestReleaseDate(existing.releaseDate, result.releaseDate);
         existing.isAdult = this.isAdultResult(existing) || this.isAdultResult(result);
       } else {
@@ -681,6 +800,7 @@ export class ProviderManager {
   private static async collectFullCatalogRaw(nsfw?: boolean, forceCrawl = false): Promise<{
     raw: SearchResult[]; providerRaw: Record<string, number>; errors: Record<string, string>;
   }> {
+    await this.ensureOverridesLoaded();
     const activeProviders = Array.from(this.providers.values()).filter(
       p => this.activeStates.get(p.id) === true
     );
@@ -745,6 +865,7 @@ export class ProviderManager {
   // Fetch a large set of titles for a single genre, on demand. Providers with a
   // real genre filter (MangaDex) use it; others contribute their catalog matches.
   static async getByGenre(genre: string, nsfw?: boolean): Promise<UnifiedSearchResult[]> {
+    await this.ensureOverridesLoaded();
     const activeProviders = Array.from(this.providers.values()).filter(
       p => this.activeStates.get(p.id) === true
     );
@@ -775,7 +896,7 @@ export class ProviderManager {
         }
         if (!existing.coverUrl && result.coverUrl) existing.coverUrl = result.coverUrl;
         if (!existing.description && result.description) existing.description = result.description;
-        if (result.genres) existing.genres = Array.from(new Set([...(existing.genres || []), ...result.genres]));
+        existing.genres = this.mergeGenres(existing.genres, result.genres);
       } else {
         groups.set(norm, {
           id: `${norm}_group`,
