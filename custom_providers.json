@@ -39,35 +39,35 @@
     "name": "Hentai Home",
     "language": "pt",
     "baseUrl": "https://www.hentaihome.net/",
-    "active": true
+    "active": false
   },
   {
     "id": "universo-hentai",
     "name": "Universo Hentai",
     "language": "pt",
     "baseUrl": "https://universohentai.com/",
-    "active": true
+    "active": false
   },
   {
     "id": "hentai-teca",
     "name": "Hentai Teca",
     "language": "pt",
     "baseUrl": "https://hentaiteca.net/",
-    "active": true
+    "active": false
   },
   {
     "id": "sombras-de-hentai",
     "name": "Sombras de Hentai",
     "language": "pt",
     "baseUrl": "https://sombrasdehentai.com/",
-    "active": true
+    "active": false
   },
   {
     "id": "mega-hentai",
     "name": "MegaHentai",
     "language": "pt",
     "baseUrl": "https://megahentai.biz/",
-    "active": true
+    "active": false
   },
   {
     "id": "mangago",
@@ -80,7 +80,15 @@
     "id": "insta-hentai",
     "name": "InstaHentai",
     "language": "pt",
-    "baseUrl": "http://instahentai.com/",
+    "baseUrl": "https://instahentai.com/",
+    "active": false
+  },
+  {
+    "id": "tankou-hentai",
+    "name": "TankouHentai",
+    "language": "pt",
+    "baseUrl": "https://tankouhentai.com/",
+    "engine": "madara",
     "active": true
   },
   {
@@ -88,7 +96,7 @@
     "name": "HentaiFox",
     "language": "en",
     "baseUrl": "https://hentaifox.com/",
-    "active": true
+    "active": false
   },
   {
     "id": "toonily",
@@ -102,35 +110,35 @@
     "name": "Hentai2Read",
     "language": "en",
     "baseUrl": "https://hentai2read.com/",
-    "active": true
+    "active": false
   },
   {
     "id": "hq-desejo",
     "name": "HQDesejo",
     "language": "pt",
     "baseUrl": "https://www.hqdesexo.com/",
-    "active": true
+    "active": false
   },
   {
     "id": "my-manga-comics",
     "name": "MyMangaComics",
     "language": "en",
     "baseUrl": "https://mymangacomics.com/",
-    "active": true
+    "active": false
   },
   {
     "id": "quadrinhos-de-sexo",
     "name": "Quadrinhos de Sexo",
     "language": "pt",
     "baseUrl": "https://www.quadrinhosdesexo.com/",
-    "active": true
+    "active": false
   },
   {
     "id": "quadrinhos-eroticos",
     "name": "Quadrinhos Eroticos",
     "language": "pt",
     "baseUrl": "https://www.quadrinhoseroticos.blog/",
-    "active": true
+    "active": false
   },
   {
     "id": "jon-domingues",
@@ -170,7 +178,7 @@
     "language": "pt",
     "baseUrl": "https://slimeread.app/",
     "engine": "slimeread",
-    "active": true
+    "active": false
   },
   {
     "id": "manga-livre",
