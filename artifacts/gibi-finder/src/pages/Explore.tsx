@@ -270,19 +270,29 @@ export default function Explore() {
   const loadCatalog = useCallback(async (nsfw: boolean) => {
     setLoading(true);
     setError(null);
+    // Backstop against a provider hanging: each provider is already capped at
+    // ~12s server-side, but this guarantees the UI always reaches a terminal
+    // state instead of spinning indefinitely if the request itself stalls.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
     try {
       const [pRes, lRes] = await Promise.all([
-        fetch(`${BASE}/api/providers/catalog?listType=popular&nsfw=${nsfw}`),
-        fetch(`${BASE}/api/providers/catalog?listType=latest&nsfw=${nsfw}`),
+        fetch(`${BASE}/api/providers/catalog?listType=popular&nsfw=${nsfw}`, { signal: controller.signal }),
+        fetch(`${BASE}/api/providers/catalog?listType=latest&nsfw=${nsfw}`, { signal: controller.signal }),
       ]);
       if (!pRes.ok || !lRes.ok) throw new Error();
       setPopular(await pRes.json() as UnifiedCatalogItem[]);
       setLatest(await lRes.json() as UnifiedCatalogItem[]);
-    } catch {
-      setError("Não foi possível carregar o catálogo agora. Tente novamente mais tarde.");
+    } catch (err) {
+      setError(
+        err instanceof DOMException && err.name === "AbortError"
+          ? "O catálogo demorou demais para responder. Tente novamente."
+          : "Não foi possível carregar o catálogo agora. Tente novamente mais tarde."
+      );
       setPopular([]);
       setLatest([]);
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
     }
   }, []);
@@ -541,8 +551,15 @@ export default function Explore() {
         )}
 
         {error && (
-          <div className="bg-red-50 border-4 border-black text-black font-bold p-4 flex items-center gap-2">
-            <AlertCircle className="w-6 h-6 text-primary shrink-0" /> <span>{error}</span>
+          <div className="bg-red-50 border-4 border-black text-black font-bold p-4 flex flex-wrap items-center gap-3">
+            <AlertCircle className="w-6 h-6 text-primary shrink-0" /> <span className="flex-1 min-w-[200px]">{error}</span>
+            <button
+              type="button"
+              onClick={() => loadCatalog(isNsfw)}
+              className="inline-flex items-center gap-2 bg-secondary text-black font-display text-sm uppercase px-4 py-2 border-4 border-black rounded-lg comic-shadow-sm hover:bg-yellow-400 transition-colors shrink-0"
+            >
+              Tentar novamente
+            </button>
           </div>
         )}
 
