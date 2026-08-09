@@ -102,6 +102,22 @@ export function useReaderZoom(
       y: (t[0].clientY + t[1].clientY) / 2,
     });
 
+    // setZoom/setPan only reach zoomRef/panRef on the next effect flush, which
+    // lags a native touch event by a frame or more. If touchend follows the
+    // last pinch touchmove before that flush, onTouchEnd would read the
+    // pre-gesture zoom/pan and start the drag-continuation from a stale
+    // point. Update the refs synchronously alongside the state so any touch
+    // handler — including one firing in the same tick — always sees the
+    // latest values.
+    const applyZoom = (z: number) => {
+      zoomRef.current = z;
+      setZoom(z);
+    };
+    const applyPan = (p: { x: number; y: number }) => {
+      panRef.current = p;
+      setPan(p);
+    };
+
     let pinchStartDist = 0;
     let pinchStartZoom = 1;
     let pinchStartPan = { x: 0, y: 0 };
@@ -134,13 +150,13 @@ export function useReaderZoom(
         const nowMid = mid(e.touches);
         const panX = pinchStartPan.x + (nowMid.x - pinchStartMid.x);
         const panY = pinchStartPan.y + (nowMid.y - pinchStartMid.y);
-        setZoom(newZoom);
-        setPan(clampPan({ x: panX, y: panY }, newZoom));
+        applyZoom(newZoom);
+        applyPan(clampPan({ x: panX, y: panY }, newZoom));
       } else if (e.touches.length === 1 && dragStart && zoomRef.current > 1) {
         e.preventDefault();
         const dx = e.touches[0].clientX - dragStart.x;
         const dy = e.touches[0].clientY - dragStart.y;
-        setPan(clampPan({ x: dragStartPan.x + dx, y: dragStartPan.y + dy }, zoomRef.current));
+        applyPan(clampPan({ x: dragStartPan.x + dx, y: dragStartPan.y + dy }, zoomRef.current));
       }
     };
     const onTouchEnd = (e: TouchEvent) => {
