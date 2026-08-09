@@ -910,8 +910,28 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     container.addEventListener("scroll", onScroll, { passive: true });
     computeCurrent();
 
+    // Also recompute whenever the page list's total height changes — not
+    // just on 'scroll'. A page finishing its image load swaps a
+    // height-reserved spacer for the real <img>, which is usually a
+    // different height and shifts every page below it, without firing a
+    // 'scroll' event. On a very long chapter, if that shift lands right as
+    // the user stops scrolling, computeCurrent never re-runs to notice: the
+    // virtualization window (driven by currentPage) can end up permanently
+    // behind the reader's real position, and the remaining pages stay blank
+    // placeholders forever since nothing ever nudges the window forward
+    // again. Watching the content wrapper's size closes that gap.
+    const contentEl = zoomContentRef.current;
+    const resizeObserver = contentEl
+      ? new ResizeObserver(() => {
+          if (raf) return;
+          raf = requestAnimationFrame(computeCurrent);
+        })
+      : null;
+    if (contentEl && resizeObserver) resizeObserver.observe(contentEl);
+
     return () => {
       container.removeEventListener("scroll", onScroll);
+      resizeObserver?.disconnect();
       if (raf) cancelAnimationFrame(raf);
     };
   }, [readerMode, showReader, pages.length, selectedChapter?.id]);
