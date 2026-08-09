@@ -19,7 +19,8 @@ import {
   ChevronsRight,
   Settings,
   Scissors,
-  Minimize2
+  Minimize2,
+  Download
 } from "lucide-react";
 import { cn, proxyPdfUrl, proxyCoverUrl } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
@@ -1066,6 +1067,39 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readerMode, currentPage, prevChapter, spreads, splitSide, splitSet, settings.splitMode, settings.haptics]);
 
+  const [downloadingPage, setDownloadingPage] = useState(false);
+  // Most provider images are hotlinking-protected, so a plain <a download>
+  // just opens them in a new tab instead of saving — fetch through the same
+  // image proxy already used for covers (same-origin, sidesteps CORS) and
+  // save the bytes as a blob. Falls back to opening the raw URL if even that
+  // fails (e.g. the proxy itself can't reach the source).
+  const downloadCurrentPage = async () => {
+    const rawUrl = pages[currentPage]?.url;
+    if (!rawUrl || downloadingPage) return;
+    setDownloadingPage(true);
+    try {
+      const res = await fetch(proxyCoverUrl(rawUrl) || rawUrl);
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const blob = await res.blob();
+      const ext = rawUrl.match(/\.(jpe?g|png|webp|gif|avif)(?:\?|$)/i)?.[1]?.toLowerCase() || "jpg";
+      const safeTitle = (selectedResult?.title || mangaTitle || "pagina").replace(/[\\/:*?"<>|]+/g, "_").trim();
+      const chapterLabel = selectedChapter?.chapterNum ? `_cap${selectedChapter.chapterNum}` : "";
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = `${safeTitle}${chapterLabel}_p${currentPage + 1}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      console.error("Falha ao baixar página, abrindo direto:", err);
+      window.open(rawUrl, "_blank", "noopener,noreferrer");
+    } finally {
+      setDownloadingPage(false);
+    }
+  };
+
   // Keyboard shortcuts: ← → ↑ ↓ Space Home End Esc.
   useEffect(() => {
     if (!showReader || pages.length === 0) return;
@@ -1769,7 +1803,12 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
           {/* Reader Body */}
           <div
             ref={scrollContainerRef}
-            className="flex-1 overflow-auto overscroll-contain flex justify-center p-0 sm:p-4"
+            // justify-center clips the side that "overflows" once pinch-zoom
+            // makes the page bigger than this scrollable container — you'd
+            // zoom in and be unable to scroll to whatever got centered past
+            // the edge. Same fix PdfReader.tsx already uses: drop centering
+            // while zoomed so every part of the page stays reachable.
+            className={cn("flex-1 overflow-auto overscroll-contain flex p-0 sm:p-4", zoom > 1 ? "justify-start" : "justify-center")}
             // Promote to its own GPU layer + reserve scrollbar space so passing a
             // page doesn't repaint-jitter (iOS) or shift horizontally (desktop).
             style={{ transform: "translateZ(0)", scrollbarGutter: "stable" }}
@@ -1800,7 +1839,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               </div>
             ) : readerMode === "scroll" ? (
               /* Continuous Scroll Mode */
-              <div className="max-w-2xl w-full space-y-1 sm:space-y-4 flex flex-col items-center" style={{ zoom }}>
+              <div className={cn("max-w-2xl w-full space-y-1 sm:space-y-4 flex flex-col", zoom > 1 ? "items-start" : "items-center")} style={{ zoom }}>
                 {pages.map((p, idx) => {
                   // Virtualized: only pages in the active window mount their image.
                   const inWindow = idx >= vWinStart && idx <= vWinEnd;
@@ -1869,10 +1908,13 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               <div className={cn("w-full h-full flex flex-col justify-between items-center gap-4", doubleActive ? "max-w-6xl" : "max-w-xl")}>
                 <div
                   className={cn(
-                    "flex-1 flex justify-center w-full gap-0.5 relative group cursor-pointer",
+                    "flex-1 flex w-full gap-0.5 relative group cursor-pointer",
+                    zoom > 1 ? "justify-start" : "justify-center",
                     // Width-fit tall pages align to the top so they scroll cleanly;
-                    // height/whole fits are centred in the viewport.
-                    !doubleActive && fitFor(currentPage) === "width" ? "items-start" : "items-center",
+                    // height/whole fits are centred in the viewport — unless zoomed,
+                    // in which case centering would clip the overflowing side and
+                    // make part of the page unreachable by scroll.
+                    zoom > 1 ? "items-start" : (!doubleActive && fitFor(currentPage) === "width" ? "items-start" : "items-center"),
                   )}
                   onClick={(e) => {
                     // Configurable 3 tap zones (default flips prev/next in RTL).
@@ -2042,6 +2084,15 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                   <button onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))} disabled={zoom >= 4} className="opacity-70 hover:opacity-100 disabled:opacity-20 p-1" title="Mais zoom"><ZoomIn className="w-4 h-4" strokeWidth={3} /></button>
                 </div>
               )}
+              <button
+                onClick={downloadCurrentPage}
+                disabled={downloadingPage || !pages[currentPage]?.url}
+                className="hidden xs:flex opacity-70 hover:opacity-100 disabled:opacity-20 shrink-0 p-1 border-l pl-2 ml-1"
+                style={{ borderColor: "var(--rd-border)" }}
+                title="Baixar esta página"
+              >
+                {downloadingPage ? <Loader2 className="w-4 h-4 animate-spin" strokeWidth={3} /> : <Download className="w-4 h-4" strokeWidth={3} />}
+              </button>
               <button
                 onClick={() => nextChapter && readChapter(nextChapter)}
                 disabled={!nextChapter}
