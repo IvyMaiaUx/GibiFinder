@@ -105,7 +105,7 @@ function ContinueCard({ item, onClick }: { item: { title: string; coverUrl?: str
   return (
     <button
       onClick={onClick}
-      className="group relative w-32 sm:w-40 shrink-0 bg-white border-4 border-black rounded-xl overflow-hidden text-left comic-shadow-sm hover:translate-y-[-4px] hover:shadow-[6px_6px_0_rgba(0,0,0,1)] transition-all"
+      className="group relative w-32 sm:w-40 shrink-0 snap-start bg-white border-4 border-black rounded-xl overflow-hidden text-left comic-shadow-sm hover:translate-y-[-4px] hover:shadow-[6px_6px_0_rgba(0,0,0,1)] transition-all"
     >
       <div className="relative aspect-[3/4] bg-zinc-950 border-b-4 border-black overflow-hidden">
         <SafeImage src={item.coverUrl} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" />
@@ -133,7 +133,7 @@ function CatalogCard({ item, onOpen, onToggleFav, favorited, status, full }: {
       onClick={onOpen}
       className={cn(
         "group relative cursor-pointer bg-white border-4 border-black rounded-xl overflow-hidden comic-shadow-sm hover:translate-y-[-4px] hover:shadow-[6px_6px_0_rgba(0,0,0,1)] hover:bg-yellow-50 transition-all",
-        full ? "w-full" : "w-32 sm:w-40 shrink-0"
+        full ? "w-full" : "w-32 sm:w-40 shrink-0 snap-start"
       )}
     >
       <div className="relative aspect-[3/4] bg-zinc-950 border-b-4 border-black overflow-hidden">
@@ -196,7 +196,10 @@ function Row({ title, children, onSeeAll }: { title: string; children: React.Rea
           </div>
         </div>
       </div>
-      <div ref={scrollerRef} className="flex gap-3 sm:gap-4 overflow-x-auto pb-3 -mx-1 px-1 scroll-smooth [scrollbar-width:thin]">
+      {/* snap-x + overscroll-x-contain: without these, a touch swipe drags
+          the row to an arbitrary stop mid-card (feels "off"/floaty) and can
+          bleed into the page's own scroll/edge-swipe-back gesture. */}
+      <div ref={scrollerRef} className="flex gap-3 sm:gap-4 overflow-x-auto pb-3 -mx-1 px-1 scroll-smooth snap-x snap-mandatory overscroll-x-contain [scrollbar-width:thin]">
         {children}
       </div>
     </section>
