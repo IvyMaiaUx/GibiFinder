@@ -102,6 +102,11 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // Fullscreen States & Handlers
   const readerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // Whichever reader mode is actually rendering the zoomed content (the
+  // scroll-mode column or the page-mode image row) — tighter bounds for
+  // useReaderZoom's pan clamping than scrollContainerRef, which is the
+  // outer scrollable area and often larger than the content centered in it.
+  const zoomContentRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
   // Virtualization: measured height of each page (keeps off-window spacers the
   // right size so scroll position never jumps).
@@ -217,13 +222,29 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     // no-op there — true fullscreen on iPhone requires installing the app (PWA).
     try {
       const req = el.requestFullscreen || el.webkitRequestFullscreen;
-      req?.call(el);
+      const result = req?.call(el);
+      // Android Chrome lets a page rotate freely while in native fullscreen,
+      // even with the phone's own rotation-lock switch on — it treats
+      // fullscreen as the page opting into controlling its own orientation.
+      // Lock to whatever orientation we're already in so entering immersion
+      // doesn't silently override the user's rotation lock. Not supported
+      // everywhere (notably iOS) — best-effort, and only meaningful inside
+      // fullscreen, so do it after the request settles.
+      const lockCurrentOrientation = () => {
+        try { (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })?.lock?.(screen.orientation.type); } catch { /* ignore */ }
+      };
+      if (result && typeof (result as Promise<void>).then === "function") {
+        (result as Promise<void>).then(lockCurrentOrientation).catch(() => {});
+      } else {
+        lockCurrentOrientation();
+      }
     } catch { /* ignore */ }
   }, []);
 
   const exitReaderFullscreen = useCallback(() => {
     const anyDoc = document as Document & { webkitFullscreenElement?: Element; webkitExitFullscreen?: () => void };
     if (!(anyDoc.fullscreenElement || anyDoc.webkitFullscreenElement)) return;
+    try { (screen.orientation as unknown as { unlock?: () => void })?.unlock?.(); } catch { /* ignore */ }
     try { (document.exitFullscreen || anyDoc.webkitExitFullscreen)?.call(document); } catch { /* ignore */ }
   }, []);
 
@@ -276,11 +297,12 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
   // In-reader zoom (pinch) — extracted into a reusable hook (Phase 1),
   // now driven by the user's zoom settings.
-  const { zoom, setZoom } = useReaderZoom(scrollContainerRef, {
+  const { zoom, setZoom, pan } = useReaderZoom(scrollContainerRef, {
     enabled: showReader,
     // When "remember zoom" is on, keep a stable key so zoom persists across pages.
     resetKey: settings.rememberZoom ? "keep" : `${selectedChapter?.id}-${readerMode}`,
     max: settings.maxZoom,
+    contentRef: zoomContentRef,
   });
 
   // Lock the page body while the reader is open so only the reader's own
@@ -1904,7 +1926,15 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               </div>
             ) : readerMode === "scroll" ? (
               /* Continuous Scroll Mode */
-              <div className={cn("max-w-2xl w-full space-y-1 sm:space-y-4 flex flex-col", zoom > 1 ? "items-start" : "items-center")} style={{ zoom }}>
+              <div
+                ref={zoomContentRef}
+                className={cn("max-w-2xl w-full space-y-1 sm:space-y-4 flex flex-col", zoom > 1 ? "items-start" : "items-center")}
+                // transform (not the `zoom` CSS property) — compositor-only,
+                // so it stays smooth continuously tracking a pinch instead of
+                // reflowing layout on every touchmove. pan comes from the
+                // same gesture (see useReaderZoom).
+                style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "center top" }}
+              >
                 {pages.map((p, idx) => {
                   // Virtualized: only pages in the active window mount their image.
                   const inWindow = idx >= vWinStart && idx <= vWinEnd;
@@ -1972,6 +2002,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               /* Page by Page Mode (single or smart double-page) */
               <div className={cn("w-full h-full flex flex-col justify-between items-center gap-4", doubleActive ? "max-w-6xl" : "max-w-xl")}>
                 <div
+                  ref={zoomContentRef}
                   className={cn(
                     "flex-1 flex w-full gap-0.5 relative group cursor-pointer",
                     zoom > 1 ? "justify-start" : "justify-center",
@@ -2022,7 +2053,15 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                             src={pages[currentPage]?.url}
                             alt={`Página ${pages[currentPage]?.pageNumber} (${showLeft ? "esquerda" : "direita"})`}
                             className="absolute top-0 left-0 h-full max-w-none select-none pointer-events-none"
-                            style={{ transform: `translateX(${showLeft ? "0%" : "-50%"})`, transformOrigin: "left top", zoom }}
+                            // Scale via transform (smooth, see useReaderZoom) composed with the
+                            // existing crop translateX — pan is skipped here since panning would
+                            // shift which half of the double-wide image the crop window shows.
+                            // Order matters: scale() must be listed first (CSS transform lists
+                            // apply right-to-left, so translateX runs on the pre-scale local
+                            // coordinates to pick the half, and scale() then zooms that already-
+                            // cropped view — the reverse order shifts by half the *unscaled*
+                            // width regardless of zoom, cropping the wrong pixels once zoomed).
+                            style={{ transform: `scale(${zoom}) translateX(${showLeft ? "0%" : "-50%"})`, transformOrigin: "left top" }}
                             onLoad={(e) => recordAspect(currentPage, e.currentTarget as HTMLImageElement)}
                           />
                         </div>
@@ -2043,7 +2082,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                             ? "max-h-[88vh] max-w-[50%] object-contain" // double: keep proportion, no stretch
                             : fitClass(fitFor(pi)),
                         )}
-                        style={{ zoom }}
+                        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
                         onLoad={(e) => recordAspect(pi, e.currentTarget as HTMLImageElement)}
                       />
                     ))
