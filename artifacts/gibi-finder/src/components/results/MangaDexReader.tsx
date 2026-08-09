@@ -258,14 +258,13 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // In-reader zoom (pinch + double-tap) — extracted into a reusable hook (Phase 1),
+  // In-reader zoom (pinch) — extracted into a reusable hook (Phase 1),
   // now driven by the user's zoom settings.
   const { zoom, setZoom } = useReaderZoom(scrollContainerRef, {
     enabled: showReader,
     // When "remember zoom" is on, keep a stable key so zoom persists across pages.
     resetKey: settings.rememberZoom ? "keep" : `${selectedChapter?.id}-${readerMode}`,
     max: settings.maxZoom,
-    doubleTap: settings.doubleTapZoom,
   });
 
   // Lock the page body while the reader is open so only the reader's own

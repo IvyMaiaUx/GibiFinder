@@ -82,7 +82,6 @@ export function PdfReader({
     enabled: true,
     resetKey: settings.rememberZoom ? "keep" : `${readerMode}`,
     max: settings.maxZoom,
-    doubleTap: settings.doubleTapZoom,
   });
 
   // ---- Fullscreen (desktop / iPad; no-op on iPhone Safari) ----

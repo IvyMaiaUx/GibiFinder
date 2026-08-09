@@ -29,7 +29,6 @@ export interface ReaderSettings {
   // Zoom
   rememberZoom: boolean;
   maxZoom: number;
-  doubleTapZoom: boolean;
   // Interface
   autoHideMs: number; // 0 = never hide
   showPageNumber: boolean;
@@ -68,7 +67,6 @@ export const READER_SETTINGS_DEFAULTS: ReaderSettings = {
   splitMode: "manual",
   rememberZoom: false,
   maxZoom: 4,
-  doubleTapZoom: true,
   autoHideMs: 4000,
   showPageNumber: true,
   showProgress: true,
@@ -140,8 +138,22 @@ function readJson<T>(key: string, fallback: T): T {
   }
 }
 
+// First-run-only nudge: touch devices default straight to the "cinema" immersion
+// level (chrome hidden, tap to reveal) instead of "clean" (chrome visible, then
+// auto-hides after autoHideMs). Only applies before any preference is persisted —
+// the instant a user changes any reader setting, that saved blob takes over and
+// this has no further effect, mobile or not.
+function firstRunDefaults(): Partial<ReaderSettings> {
+  if (typeof window === "undefined") return {};
+  const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+  const ua = navigator.userAgent || "";
+  const isMobile = coarse || /iP(hone|ad|od)|Android/.test(ua);
+  return isMobile ? { immersion: "cinema" } : {};
+}
+
 let globalSettings: ReaderSettings = {
   ...READER_SETTINGS_DEFAULTS,
+  ...firstRunDefaults(),
   ...readJson<Partial<ReaderSettings>>(GLOBAL_KEY, {}),
 };
 let workOverrides: Record<string, Partial<ReaderSettings>> = readJson(WORK_KEY, {});
@@ -223,7 +235,7 @@ export const BUILTIN_PROFILES: ReaderProfile[] = [
 const PROFILES_KEY = "gibi-finder:reader-profiles";
 const PROFILE_FIELDS: (keyof ReaderSettings)[] = [
   "readingMode", "direction", "fitMode", "doublePage", "splitMode", "theme",
-  "autoHideMs", "maxZoom", "rememberZoom", "doubleTapZoom", "preloadAhead",
+  "autoHideMs", "maxZoom", "rememberZoom", "preloadAhead",
   "immersion", "customBg", "customUi", "barOpacity", "shadow",
 ];
 
