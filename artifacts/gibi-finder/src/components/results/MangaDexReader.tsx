@@ -22,7 +22,7 @@ import {
   Minimize2,
   Download
 } from "lucide-react";
-import { cn, proxyPdfUrl, proxyCoverUrl } from "@/lib/utils";
+import { cn, proxyPdfUrl, proxyCoverUrl, buildStoreZip } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { useReaderZoom } from "@/components/reader/useReaderZoom";
 import { useReaderSettings, readerThemeVars, type TapAction } from "@/components/reader/useReaderSettings";
@@ -1067,42 +1067,78 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readerMode, currentPage, prevChapter, spreads, splitSide, splitSet, settings.splitMode, settings.haptics]);
 
-  const [downloadingPage, setDownloadingPage] = useState(false);
-  // Most provider images are hotlinking-protected, so a plain <a download>
-  // just opens them in a new tab instead of saving — fetch through the same
-  // image proxy already used for covers (same-origin, sidesteps CORS) and
-  // save the bytes as a blob. Falls back to opening the raw URL if even that
-  // fails (e.g. the proxy itself can't reach the source).
-  const downloadCurrentPage = async () => {
-    const rawUrl = pages[currentPage]?.url;
-    if (!rawUrl || downloadingPage) return;
-    setDownloadingPage(true);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-    try {
-      const res = await fetch(proxyCoverUrl(rawUrl) || rawUrl, { signal: controller.signal });
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const contentType = res.headers.get("content-type") || "";
-      if (!contentType.startsWith("image/")) throw new Error(`unexpected content-type: ${contentType}`);
-      const blob = await res.blob();
-      const ext = rawUrl.match(/\.(jpe?g|png|webp|gif|avif)(?:\?|$)/i)?.[1]?.toLowerCase() || "jpg";
-      const safeTitle = (selectedResult?.title || mangaTitle || "pagina").replace(/[\\/:*?"<>|]+/g, "_").trim();
-      const chapterLabel = selectedChapter?.chapterNum ? `_cap${selectedChapter.chapterNum}` : "";
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = objectUrl;
-      a.download = `${safeTitle}${chapterLabel}_p${currentPage + 1}.${ext}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(objectUrl);
-    } catch (err) {
-      console.error("Falha ao baixar página, abrindo direto:", err);
-      window.open(rawUrl, "_blank", "noopener,noreferrer");
-    } finally {
-      clearTimeout(timeout);
-      setDownloadingPage(false);
+  const [chapterDownload, setChapterDownload] = useState<{ done: number; total: number } | null>(null);
+  // Downloads every page of the current chapter as a single .cbz (a plain ZIP
+  // — the format comic readers expect). Hand-rolled STORE-only ZIP writer
+  // instead of pulling in a library like JSZip: adding a new npm dependency
+  // here can't be verified without running pnpm install / the build, and
+  // page images are already compressed (jpeg/webp/png), so "store" (no
+  // re-compression) is the right mode anyway — same tradeoff real CBZ tools
+  // make.
+  const downloadChapter = async () => {
+    if (chapterDownload || pages.length === 0) return;
+    setChapterDownload({ done: 0, total: pages.length });
+
+    const safeTitle = (selectedResult?.title || mangaTitle || "capitulo").replace(/[\\/:*?"<>|]+/g, "_").trim();
+    const chapterLabel = selectedChapter?.chapterNum ? `_cap${selectedChapter.chapterNum}` : "";
+    const padLength = String(pages.length).length;
+
+    const fetchOne = async (rawUrl: string, index: number): Promise<{ name: string; data: Uint8Array } | null> => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      try {
+        const res = await fetch(proxyCoverUrl(rawUrl) || rawUrl, { signal: controller.signal });
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const contentType = res.headers.get("content-type") || "";
+        if (!contentType.startsWith("image/")) throw new Error(`unexpected content-type: ${contentType}`);
+        const buf = new Uint8Array(await res.arrayBuffer());
+        const ext = rawUrl.match(/\.(jpe?g|png|webp|gif|avif)(?:\?|$)/i)?.[1]?.toLowerCase() || "jpg";
+        return { name: `${String(index + 1).padStart(padLength, "0")}.${ext}`, data: buf };
+      } catch (err) {
+        console.error(`Falha ao baixar página ${index + 1} do capítulo:`, err);
+        return null;
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+
+    // Bounded concurrency — pages.length can be 40+, and firing them all at
+    // once would hammer the proxy/source and blow past its own rate limits.
+    const CONCURRENCY = 4;
+    const entries: ({ name: string; data: Uint8Array } | null)[] = new Array(pages.length).fill(null);
+    let nextIndex = 0;
+    const worker = async () => {
+      while (true) {
+        const i = nextIndex++;
+        if (i >= pages.length) return;
+        const url = pages[i]?.url;
+        entries[i] = url ? await fetchOne(url, i) : null;
+        setChapterDownload(prev => prev && { done: prev.done + 1, total: prev.total });
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pages.length) }, worker));
+
+    const files = entries.filter((e): e is { name: string; data: Uint8Array } => e !== null);
+    if (files.length === 0) {
+      console.error("Nenhuma página do capítulo pôde ser baixada.");
+      setChapterDownload(null);
+      return;
     }
+
+    const zipBlob = buildStoreZip(files);
+    const objectUrl = URL.createObjectURL(zipBlob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = `${safeTitle}${chapterLabel}.cbz`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
+
+    if (files.length < pages.length) {
+      console.error(`${pages.length - files.length} de ${pages.length} páginas falharam e foram puladas no .cbz.`);
+    }
+    setChapterDownload(null);
   };
 
   // Keyboard shortcuts: ← → ↑ ↓ Space Home End Esc.
@@ -2089,15 +2125,23 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                   <button onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))} disabled={zoom >= 4} className="opacity-70 hover:opacity-100 disabled:opacity-20 p-1" title="Mais zoom"><ZoomIn className="w-4 h-4" strokeWidth={3} /></button>
                 </div>
               )}
-              <button
-                onClick={downloadCurrentPage}
-                disabled={downloadingPage || !pages[currentPage]?.url}
-                className="hidden xs:flex opacity-70 hover:opacity-100 disabled:opacity-20 shrink-0 p-1 border-l pl-2 ml-1"
-                style={{ borderColor: "var(--rd-border)" }}
-                title="Baixar esta página"
-              >
-                {downloadingPage ? <Loader2 className="w-4 h-4 animate-spin" strokeWidth={3} /> : <Download className="w-4 h-4" strokeWidth={3} />}
-              </button>
+              {/* PDF/external sources already have their own direct download
+                  link (the "Somente download" panel) — this is only for
+                  image-page chapters, which never had one. */}
+              {!pages[currentPage]?.url?.startsWith("pdf:") && (
+                <button
+                  onClick={downloadChapter}
+                  disabled={!!chapterDownload || pages.length === 0}
+                  className="hidden xs:flex items-center gap-1 opacity-70 hover:opacity-100 disabled:opacity-40 shrink-0 p-1 border-l pl-2 ml-1"
+                  style={{ borderColor: "var(--rd-border)" }}
+                  title="Baixar capítulo (.cbz)"
+                >
+                  {chapterDownload
+                    ? <span className="text-3xs font-bold tabular-nums">{chapterDownload.done}/{chapterDownload.total}</span>
+                    : null}
+                  {chapterDownload ? <Loader2 className="w-4 h-4 animate-spin" strokeWidth={3} /> : <Download className="w-4 h-4" strokeWidth={3} />}
+                </button>
+              )}
               <button
                 onClick={() => nextChapter && readChapter(nextChapter)}
                 disabled={!nextChapter}
