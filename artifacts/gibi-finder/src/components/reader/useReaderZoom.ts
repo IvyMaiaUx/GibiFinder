@@ -23,10 +23,14 @@ interface UseReaderZoomOptions {
  * Because `transform` doesn't grow the layout box the way `zoom` did, native
  * `overflow: auto` scrolling can no longer reach the part of a zoomed page that
  * extends past the viewport — so this hook also tracks `pan` (one-finger drag
- * once zoomed, and pinch continues to zoom around the gesture's own midpoint),
- * clamped so the content can't be dragged entirely off-screen.
+ * once zoomed), clamped so the content can't be dragged entirely off-screen.
  *
- * - two-finger pinch zooms (around the pinch midpoint) and pans together
+ * - two-finger pinch changes zoom (growing from each usage's own fixed
+ *   transform-origin) and pans by however far the pinch's own midpoint moves
+ *   on screen — not a pixel-perfect "keep this exact point under the fingers"
+ *   anchor (that needs knowing the transformed element's untransformed layout
+ *   position too, which this hook doesn't have), but tracks a pinch closely
+ *   enough to feel natural without that complexity.
  * - one-finger drag pans once zoomed in
  * (non-passive listeners so both gestures are preventable)
  *
@@ -97,13 +101,15 @@ export function useReaderZoom(
       if (e.touches.length === 2 && pinchStartDist > 0) {
         e.preventDefault();
         const newZoom = clampZoom(pinchStartZoom * (dist(e.touches) / pinchStartDist));
-        // Keep the point under the fingers roughly in place as the scale
-        // changes, then let the pinch midpoint's own movement pan on top —
-        // matches how pinch-zoom feels in native photo viewers.
+        // Scale grows from the element's own transform-origin (fixed, set
+        // where each usage applies this hook's `zoom`); pan tracks the pinch
+        // midpoint's own on-screen movement on top of that — simpler than
+        // (and avoids the math error of) trying to keep the exact point
+        // under the fingers pixel-anchored, which would need this hook to
+        // know the transformed element's untransformed layout position too.
         const nowMid = mid(e.touches);
-        const scaleRatio = newZoom / pinchStartZoom;
-        const panX = pinchStartMid.x - (pinchStartMid.x - pinchStartPan.x) * scaleRatio + (nowMid.x - pinchStartMid.x);
-        const panY = pinchStartMid.y - (pinchStartMid.y - pinchStartPan.y) * scaleRatio + (nowMid.y - pinchStartMid.y);
+        const panX = pinchStartPan.x + (nowMid.x - pinchStartMid.x);
+        const panY = pinchStartPan.y + (nowMid.y - pinchStartMid.y);
         setZoom(newZoom);
         setPan(clampPan({ x: panX, y: panY }, newZoom));
       } else if (e.touches.length === 1 && dragStart && zoomRef.current > 1) {
