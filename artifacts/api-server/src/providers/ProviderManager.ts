@@ -17,6 +17,12 @@ import { supabase } from "../lib/supabase";
 import * as fs from "fs";
 import * as path from "path";
 
+// A UnifiedSearchResult still carrying whether its coverUrl/description came
+// from an adult-only source (see mergeAdultAwareField/finalizeGroupResults/
+// stripAdultSources) — internal to the grouping pipeline, never returned
+// past stripAdultSources to callers outside this class.
+type GroupedResult = UnifiedSearchResult & { _coverIsAdult: boolean; _descIsAdult: boolean };
+
 type ProviderOverrideRow = {
   id: string;
   name: string | null;
@@ -478,22 +484,26 @@ export class ProviderManager {
   }
 
   // Final pass over every assembled group: recomputes isAdult from the full
-  // merged sources/genres/title (as before), and — for a group that ends up
-  // NOT adult — scrubs any coverUrl/description whose provenance is still
-  // adult-only. That only happens when no safe source in the group ever
-  // contributed its own cover/description, i.e. there is no safe
-  // alternative to prefer; showing nothing is safer than leaking the one
-  // (adult-sourced) value that exists.
+  // merged sources/genres/title (as before), and carries each field's
+  // provenance forward on the result (as non-public _coverIsAdult/
+  // _descIsAdult markers) instead of deciding here whether to scrub.
+  //
+  // A group with BOTH a safe and an adult source is still isAdult: true at
+  // this point (isAdultResult sees the adult source is still attached) —
+  // scrubbing only on `!isAdult` here would skip exactly the mixed-group
+  // case this fix targets, since that group only becomes isAdult: false
+  // later, once stripAdultSources() removes the adult side for the SFW
+  // path. Scrubbing has to happen there instead, where it's known whether
+  // this particular emission is the SFW (adult side dropped) or NSFW
+  // (adult side kept) one — see stripAdultSources below.
   private static finalizeGroupResults(
     groups: Map<string, UnifiedSearchResult>,
     provenance: Map<string, { coverIsAdult: boolean; descIsAdult: boolean }>,
-  ): UnifiedSearchResult[] {
+  ): GroupedResult[] {
     return Array.from(groups.entries()).map(([norm, result]) => {
       const isAdult = this.isAdultResult(result);
       const prov = provenance.get(norm);
-      const coverUrl = !isAdult && prov?.coverIsAdult ? undefined : result.coverUrl;
-      const description = !isAdult && prov?.descIsAdult ? undefined : result.description;
-      return { ...result, coverUrl, description, isAdult };
+      return { ...result, isAdult, _coverIsAdult: prov?.coverIsAdult ?? false, _descIsAdult: prov?.descIsAdult ?? false };
     });
   }
 
@@ -513,7 +523,17 @@ export class ProviderManager {
     return this.getReleaseTime(next) > this.getReleaseTime(current) ? next : current;
   }
 
-  private static stripAdultSources(result: UnifiedSearchResult): UnifiedSearchResult | null {
+  // _coverIsAdult/_descIsAdult are only meaningful inside the grouping
+  // pipeline (see GroupedResult above) — drop them before a result is
+  // actually returned to a caller outside this class, on any path that
+  // doesn't already go through stripAdultSources (which produces a plain
+  // UnifiedSearchResult itself).
+  private static stripInternalFields(result: GroupedResult): UnifiedSearchResult {
+    const { _coverIsAdult, _descIsAdult, ...rest } = result;
+    return rest;
+  }
+
+  private static stripAdultSources(result: GroupedResult): UnifiedSearchResult | null {
     const adultSources = result.sources.filter(source => this.isAdultProvider(source.providerId));
     const safeSources = result.sources.filter(source => !this.isAdultProvider(source.providerId));
 
@@ -523,10 +543,25 @@ export class ProviderManager {
         return !this.adultTerms.some(term => normalized.includes(this.normalizeText(term)));
       });
 
+      // This is the SFW emission of a mixed group (the adult side is being
+      // dropped right here) — a cover/description whose only source was
+      // adult has no safe alternative to fall back to, so it must be
+      // scrubbed now rather than surviving into an isAdult: false result.
+      // The NSFW emission of this same group (nsfw=true callers, which
+      // never call stripAdultSources) keeps the adult-sourced value —
+      // scrubbing in finalizeGroupResults instead would have removed it
+      // from that view too, which isn't what a user who opted into NSFW
+      // content wants.
+      const coverUrl = result._coverIsAdult ? undefined : result.coverUrl;
+      const description = result._descIsAdult ? undefined : result.description;
+      const safe = this.stripInternalFields(result);
+
       return {
-        ...result,
+        ...safe,
         sources: safeSources,
         genres: safeGenres.length > 0 ? safeGenres : undefined,
+        coverUrl,
+        description,
         isAdult: false
       };
     }
@@ -534,7 +569,7 @@ export class ProviderManager {
     if (this.isAdultResult(result)) return null;
 
     return {
-      ...result,
+      ...this.stripInternalFields(result),
       isAdult: false
     };
   }
@@ -726,7 +761,7 @@ export class ProviderManager {
     const allResults = this.finalizeGroupResults(groups, coverProvenance);
     const relevantResults = allResults.filter(result => this.isRelevantSearchResult(query, result));
     const visibleResults = (nsfw
-      ? relevantResults
+      ? relevantResults.map(result => this.stripInternalFields(result))
       : relevantResults
         .map(result => this.stripAdultSources(result))
         .filter((result): result is UnifiedSearchResult => result !== null))
@@ -813,7 +848,8 @@ export class ProviderManager {
 
     const allResults = this.finalizeGroupResults(groups, coverProvenance);
 
-    return nsfw ? allResults : allResults.filter(result => !result.isAdult);
+    return (nsfw ? allResults : allResults.filter(result => !result.isAdult))
+      .map(result => this.stripInternalFields(result));
   }
 
   // Collect raw (un-unified) items from every active provider, with a per-provider
@@ -916,13 +952,14 @@ export class ProviderManager {
       const existing = groups.get(norm);
       if (existing) {
         this.mergeIntoGroup(existing, result, norm, coverProvenance);
+        existing.releaseDate = this.pickNewestReleaseDate(existing.releaseDate, result.releaseDate);
       } else {
         groups.set(norm, this.createGroupEntry(result, norm, coverProvenance));
       }
     }
     const all = this.finalizeGroupResults(groups, coverProvenance);
     return nsfw
-      ? all.filter(r => r.isAdult)
+      ? all.filter(r => r.isAdult).map(r => this.stripInternalFields(r))
       : all.map(r => this.stripAdultSources(r)).filter((r): r is UnifiedSearchResult => r !== null);
   }
 }
