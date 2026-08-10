@@ -3,6 +3,7 @@ import { logger } from "../lib/logger";
 import https from "https";
 import http from "http";
 import { nextDriveKey } from "../lib/driveKeys";
+import { isPrivateOrInternalHost, resolveAndPinPublicHost } from "../lib/urlSafety";
 
 const router = Router();
 
@@ -14,30 +15,47 @@ interface FetchResult {
 
 // Follow redirects and buffer the response. PDFs can be large, so callers
 // should only point this at reasonable comic files.
+//
+// This route is public and unauthenticated, so every host it's about to
+// connect to — the initial target AND each redirect hop, since a public URL
+// can 30x to an internal one just as easily as being one directly — has to
+// be checked, not just the URL the caller first supplied. Resolving the
+// hostname text isn't enough on its own (a domain can answer with a public
+// IP right up until the moment we actually connect — "DNS rebinding"), so
+// this pins the request's connection to the exact address
+// resolveAndPinPublicHost validated via a custom `lookup`, instead of
+// letting Node re-resolve DNS independently at connect time.
 function fetchBuffer(url: string, redirects = 0): Promise<FetchResult> {
   return new Promise((resolve, reject) => {
     if (redirects > 5) {
       reject(new Error("too_many_redirects"));
       return;
     }
-    const client = url.startsWith("https") ? https : http;
-    const headers = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept": "application/pdf,*/*;q=0.8",
-    };
-    const req = client.get(url, { headers }, (res) => {
-      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        fetchBuffer(res.headers.location, redirects + 1).then(resolve).catch(reject);
-        return;
-      }
-      const chunks: Buffer[] = [];
-      res.on("error", reject);
-      res.on("data", (chunk) => chunks.push(chunk as Buffer));
-      res.on("end", () => {
-        resolve({ status: res.statusCode || 200, headers: res.headers, buffer: Buffer.concat(chunks) });
+    const parsed = new URL(url);
+    resolveAndPinPublicHost(parsed.hostname).then(pinned => {
+      const client = parsed.protocol === "https:" ? https : http;
+      const headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/pdf,*/*;q=0.8",
+      };
+      const req = client.get(url, {
+        headers,
+        lookup: (_hostname, _options, callback) => callback(null, pinned.address, pinned.family),
+      }, (res) => {
+        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          const nextUrl = new URL(res.headers.location, url).toString();
+          fetchBuffer(nextUrl, redirects + 1).then(resolve).catch(reject);
+          return;
+        }
+        const chunks: Buffer[] = [];
+        res.on("error", reject);
+        res.on("data", (chunk) => chunks.push(chunk as Buffer));
+        res.on("end", () => {
+          resolve({ status: res.statusCode || 200, headers: res.headers, buffer: Buffer.concat(chunks) });
+        });
       });
-    });
-    req.on("error", reject);
+      req.on("error", reject);
+    }).catch(reject);
   });
 }
 
@@ -60,6 +78,10 @@ router.get("/pdf-proxy", async (req: Request, res: Response) => {
       const parsed = new URL(rawUrl);
       if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
         res.status(400).json({ error: "invalid_protocol" });
+        return;
+      }
+      if (isPrivateOrInternalHost(parsed.hostname)) {
+        res.status(400).json({ error: "blocked_private_url", message: "URLs locais ou privadas não podem ser buscadas." });
         return;
       }
       targetUrl = rawUrl;

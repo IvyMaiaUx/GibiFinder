@@ -5,6 +5,7 @@ import { getOverrides, applyOverrides, overrideKey, upsertOverride } from "../li
 import { hasDriveKey } from "../lib/driveKeys";
 import { scrapeComicSynopsisDetailed } from "../lib/synopsisScraper";
 import { requireAdmin } from "../lib/auth";
+import { isPrivateOrInternalHost, resolveAndPinPublicHost, BlockedHostError } from "../lib/urlSafety";
 
 const router = Router();
 
@@ -273,14 +274,45 @@ function unique<T>(items: T[]): T[] {
   return Array.from(new Set(items));
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 12000) {
+// Used across the whole admin "inspect a provider URL" feature — the page
+// fetch, the WordPress REST probes, and every candidate image it probes.
+// This is admin-gated (requireAdmin, checked once by the route below), but
+// it still fetches whatever URL an admin points it at (or that it extracts
+// from that page's own HTML, for the image probes) — a real SSRF surface,
+// just behind a higher trust bar than the fully public image/pdf proxies.
+//
+// Validates the resolved address before every connection AND every
+// redirect hop (native `fetch` follows redirects on its own by default —
+// redirect: "manual" here plus this loop is what lets each hop actually get
+// checked, instead of only the URL the caller first supplied). Unlike
+// imageProxy/pdfProxy, this can't pin the validated address to the actual
+// connection (fetch/undici resolve DNS internally, with no equivalent to
+// http/https's `lookup` option) — so there's still a narrow race window
+// where a DNS answer could flip between this check and fetch's own
+// resolution. Real elimination of that gap would need a custom undici
+// Agent/connector; left as a known, documented gap given the admin-only
+// trust level here (see the fully pinned version in lib/urlSafety.ts +
+// imageProxy.ts/pdfProxy.ts for the public, higher-risk routes).
+async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 12000, redirects = 0): Promise<Response> {
+  if (redirects > 5) throw new Error("too_many_redirects");
+
+  const parsed = new URL(url);
+  await resolveAndPinPublicHost(parsed.hostname); // throws BlockedHostError if private/internal
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let res: Response;
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    res = await fetch(url, { ...init, redirect: "manual", signal: controller.signal });
   } finally {
     clearTimeout(timeout);
   }
+
+  if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
+    const nextUrl = new URL(res.headers.get("location")!, url).toString();
+    return fetchWithTimeout(nextUrl, init, timeoutMs, redirects + 1);
+  }
+  return res;
 }
 
 function extractImageCandidates(html: string, baseUrl: string) {
@@ -472,22 +504,6 @@ function detectHtmlEngine(origin: string, html: string): string | null {
   return null;
 }
 
-function isPrivateInspectionTarget(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (["localhost", "127.0.0.1", "::1", "0.0.0.0"].includes(host)) return true;
-  if (/^127\./.test(host)) return true;
-  if (/^10\./.test(host)) return true;
-  if (/^0\./.test(host)) return true; // 0.0.0.0/8 — routes to localhost on many systems
-  if (/^192\.168\./.test(host)) return true;
-  if (/^169\.254\./.test(host)) return true;
-  // IPv6 loopback, link-local (fe80::/10) and unique-local (fc00::/7)
-  if (/^::1$/.test(host)) return true;
-  if (/^fe[89ab][0-9a-f]:/i.test(host)) return true;
-  if (/^f[cd][0-9a-f]{2}:/i.test(host)) return true;
-  const private172 = host.match(/^172\.(\d+)\./);
-  return Boolean(private172 && Number(private172[1]) >= 16 && Number(private172[1]) <= 31);
-}
-
 router.get("/providers/inspect", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   const target = req.query.url as string;
@@ -504,7 +520,7 @@ router.get("/providers/inspect", async (req: Request, res: Response) => {
     res.status(400).json({ error: "invalid_url", message: "Informe uma URL http/https valida." });
     return;
   }
-  if (isPrivateInspectionTarget(parsed.hostname)) {
+  if (isPrivateOrInternalHost(parsed.hostname)) {
     res.status(400).json({ error: "blocked_private_url", message: "URLs locais ou privadas nao podem ser inspecionadas pelo admin online." });
     return;
   }
@@ -624,6 +640,10 @@ router.get("/providers/inspect", async (req: Request, res: Response) => {
       ].filter(Boolean).length
     });
   } catch (err) {
+    if (err instanceof BlockedHostError) {
+      res.status(400).json({ error: "blocked_private_url", message: "URLs locais ou privadas nao podem ser inspecionadas pelo admin online." });
+      return;
+    }
     res.status(500).json({ error: "inspect_failed", message: err instanceof Error ? err.message : String(err) });
   }
 });
