@@ -84,10 +84,25 @@ export class MadaraProvider implements Provider {
     return this.baseUrl.includes("jondomingues.com");
   }
 
+  // `id`/`chapterId` reach this straight from the public, unauthenticated
+  // /api/providers/details and /pages routes — a "generic" id (post:...)
+  // is meant to be a same-site path scraped out of this provider's own
+  // HTML, but `new URL(path, this.baseUrl)` silently ignores `baseUrl`
+  // entirely whenever `path` itself parses as an absolute URL (e.g. a
+  // crafted id of `post:http://169.254.169.254/latest/meta-data/`), turning
+  // this into an SSRF: the server fetches whatever host the caller named
+  // and reflects the parsed response back. Refuse any id whose resolved
+  // origin doesn't match this provider's own — a real scraped path can
+  // never produce anything else.
   private getContentUrl(id: string): string {
     if (this.isGenericId(id)) {
       const path = id.replace(/^post:/, "").replace(/^\/+|\/+$/g, "");
-      return new URL(`${path}/`, this.baseUrl).toString();
+      const url = new URL(`${path}/`, this.baseUrl);
+      const baseOrigin = new URL(this.baseUrl).origin;
+      if (url.origin !== baseOrigin) {
+        throw new Error(`Refusing content URL outside ${baseOrigin}: ${id}`);
+      }
+      return url.toString();
     }
     return `${this.baseUrl}manga/${id}/`;
   }

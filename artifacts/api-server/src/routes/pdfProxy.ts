@@ -3,6 +3,7 @@ import { logger } from "../lib/logger";
 import https from "https";
 import http from "http";
 import { nextDriveKey } from "../lib/driveKeys";
+import { isPrivateOrInternalHost } from "../lib/urlSafety";
 
 const router = Router();
 
@@ -10,6 +11,17 @@ interface FetchResult {
   status: number;
   headers: Record<string, string | string[] | undefined>;
   buffer: Buffer;
+}
+
+// This route is public and unauthenticated, so every host it's about to
+// connect to — the initial target AND each redirect hop, since a public URL
+// can 30x to an internal one just as easily as being one directly — has to
+// be checked, not just the URL the caller first supplied.
+function assertPublicHost(url: string): void {
+  const parsed = new URL(url);
+  if (isPrivateOrInternalHost(parsed.hostname)) {
+    throw new Error(`blocked_private_url: ${parsed.hostname}`);
+  }
 }
 
 // Follow redirects and buffer the response. PDFs can be large, so callers
@@ -20,6 +32,12 @@ function fetchBuffer(url: string, redirects = 0): Promise<FetchResult> {
       reject(new Error("too_many_redirects"));
       return;
     }
+    try {
+      assertPublicHost(url);
+    } catch (err) {
+      reject(err);
+      return;
+    }
     const client = url.startsWith("https") ? https : http;
     const headers = {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -27,7 +45,8 @@ function fetchBuffer(url: string, redirects = 0): Promise<FetchResult> {
     };
     const req = client.get(url, { headers }, (res) => {
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        fetchBuffer(res.headers.location, redirects + 1).then(resolve).catch(reject);
+        const nextUrl = new URL(res.headers.location, url).toString();
+        fetchBuffer(nextUrl, redirects + 1).then(resolve).catch(reject);
         return;
       }
       const chunks: Buffer[] = [];
@@ -60,6 +79,10 @@ router.get("/pdf-proxy", async (req: Request, res: Response) => {
       const parsed = new URL(rawUrl);
       if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
         res.status(400).json({ error: "invalid_protocol" });
+        return;
+      }
+      if (isPrivateOrInternalHost(parsed.hostname)) {
+        res.status(400).json({ error: "blocked_private_url", message: "URLs locais ou privadas não podem ser buscadas." });
         return;
       }
       targetUrl = rawUrl;

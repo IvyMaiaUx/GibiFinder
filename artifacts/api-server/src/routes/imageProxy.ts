@@ -2,8 +2,21 @@ import { Router, Request, Response } from "express";
 import { logger } from "../lib/logger";
 import https from "https";
 import http from "http";
+import { isPrivateOrInternalHost } from "../lib/urlSafety";
 
 const router = Router();
+
+// This route is public and unauthenticated (it exists to proxy hotlink-
+// blocked cover images for anyone browsing the site), so every host it's
+// about to connect to — the initial target AND each redirect hop, since a
+// public URL can 30x to an internal one just as easily as being one
+// directly — has to be checked, not just the URL the caller first supplied.
+function assertPublicHost(url: string): void {
+  const parsed = new URL(url);
+  if (isPrivateOrInternalHost(parsed.hostname)) {
+    throw new Error(`blocked_private_url: ${parsed.hostname}`);
+  }
+}
 
 function fetchImage(url: string, headers: any, redirects = 0): Promise<{ status: number; headers: any; buffer: Buffer }> {
   return new Promise((resolve, reject) => {
@@ -11,10 +24,17 @@ function fetchImage(url: string, headers: any, redirects = 0): Promise<{ status:
       reject(new Error("too_many_redirects"));
       return;
     }
+    try {
+      assertPublicHost(url);
+    } catch (err) {
+      reject(err);
+      return;
+    }
     const client = url.startsWith("https") ? https : http;
     const req = client.get(url, { headers }, (res) => {
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        fetchImage(res.headers.location, headers, redirects + 1).then(resolve).catch(reject);
+        const nextUrl = new URL(res.headers.location, url).toString();
+        fetchImage(nextUrl, headers, redirects + 1).then(resolve).catch(reject);
         return;
       }
       const chunks: any[] = [];
@@ -53,6 +73,11 @@ router.get("/image-proxy", async (req: Request, res: Response) => {
   // Allow any valid HTTP/HTTPS host to be proxied for covers
   if (targetUrl.protocol !== "http:" && targetUrl.protocol !== "https:") {
     res.status(400).json({ error: "invalid_protocol", message: "Apenas HTTP/HTTPS são permitidos." });
+    return;
+  }
+
+  if (isPrivateOrInternalHost(targetUrl.hostname)) {
+    res.status(400).json({ error: "blocked_private_url", message: "URLs locais ou privadas não podem ser buscadas." });
     return;
   }
 

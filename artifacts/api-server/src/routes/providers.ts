@@ -5,6 +5,7 @@ import { getOverrides, applyOverrides, overrideKey, upsertOverride } from "../li
 import { hasDriveKey } from "../lib/driveKeys";
 import { scrapeComicSynopsisDetailed } from "../lib/synopsisScraper";
 import { requireAdmin } from "../lib/auth";
+import { isPrivateOrInternalHost } from "../lib/urlSafety";
 
 const router = Router();
 
@@ -472,22 +473,6 @@ function detectHtmlEngine(origin: string, html: string): string | null {
   return null;
 }
 
-function isPrivateInspectionTarget(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (["localhost", "127.0.0.1", "::1", "0.0.0.0"].includes(host)) return true;
-  if (/^127\./.test(host)) return true;
-  if (/^10\./.test(host)) return true;
-  if (/^0\./.test(host)) return true; // 0.0.0.0/8 — routes to localhost on many systems
-  if (/^192\.168\./.test(host)) return true;
-  if (/^169\.254\./.test(host)) return true;
-  // IPv6 loopback, link-local (fe80::/10) and unique-local (fc00::/7)
-  if (/^::1$/.test(host)) return true;
-  if (/^fe[89ab][0-9a-f]:/i.test(host)) return true;
-  if (/^f[cd][0-9a-f]{2}:/i.test(host)) return true;
-  const private172 = host.match(/^172\.(\d+)\./);
-  return Boolean(private172 && Number(private172[1]) >= 16 && Number(private172[1]) <= 31);
-}
-
 router.get("/providers/inspect", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   const target = req.query.url as string;
@@ -504,7 +489,7 @@ router.get("/providers/inspect", async (req: Request, res: Response) => {
     res.status(400).json({ error: "invalid_url", message: "Informe uma URL http/https valida." });
     return;
   }
-  if (isPrivateInspectionTarget(parsed.hostname)) {
+  if (isPrivateOrInternalHost(parsed.hostname)) {
     res.status(400).json({ error: "blocked_private_url", message: "URLs locais ou privadas nao podem ser inspecionadas pelo admin online." });
     return;
   }
