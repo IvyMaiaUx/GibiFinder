@@ -2151,8 +2151,8 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               few seconds after a tap that (on a touch device) usually also
               lands on a prev/next-page tap zone, doing something else at the
               same time. Missing that 2-3s window meant no visible way out at
-              all short of killing the tab. Now always mounted — dimmed to
-              stay unobtrusive during "clean" reading, full opacity during the
+              all short of killing the tab. Now always mounted — dimmed
+              during inactivity in cinema/immersion, full opacity during the
               brief activity window — so there's always something on screen
               to tap toward, not a control that can vanish entirely. */}
           {immersion !== "clean" && (
