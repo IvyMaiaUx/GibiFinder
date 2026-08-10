@@ -2144,10 +2144,22 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
             </button>
           )}
 
-          {/* Cinema/Immersion escape hatch — appears on activity so the reader can
-              always leave the immersive levels (chrome is hidden there). */}
-          {immersion !== "clean" && uiActive && (
-            <div className="fixed top-4 right-4 z-[113] flex gap-2 animate-in fade-in duration-200">
+          {/* Cinema/Immersion escape hatch. Used to unmount entirely unless
+              `uiActive` (a 2-3s window after a tap/mouse-move) was true — real
+              user report: stuck in fullscreen/cinema mode with no way out,
+              because the ONLY exit was this button, and it only existed for a
+              few seconds after a tap that (on a touch device) usually also
+              lands on a prev/next-page tap zone, doing something else at the
+              same time. Missing that 2-3s window meant no visible way out at
+              all short of killing the tab. Now always mounted — dimmed
+              during inactivity in cinema/immersion, full opacity during the
+              brief activity window — so there's always something on screen
+              to tap toward, not a control that can vanish entirely. */}
+          {immersion !== "clean" && (
+            <div className={cn(
+              "fixed top-4 right-4 z-[113] flex gap-2 transition-opacity duration-300",
+              uiActive ? "opacity-100" : "opacity-40"
+            )}>
               <button
                 onClick={() => setShowSettings(true)}
                 className="p-2 rounded-full border backdrop-blur-sm"
