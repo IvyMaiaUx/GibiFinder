@@ -33,45 +33,56 @@ export function CatalogCard({ item, onOpen, onToggleFav, favorited, status, full
   full?: boolean;
 }) {
   return (
+    // A native <button> drives onOpen (was a clickable <div> — unreachable and
+    // uninvokable by keyboard). The favorite star is a sibling <button>, not
+    // nested inside it: two interactive elements can't nest in valid HTML,
+    // and browsers silently mis-parse (and mis-handle clicks on) a button
+    // inside a button. This wrapping <div> keeps the same relative/group
+    // positioning context so both buttons still lay out identically.
     <div
-      onClick={onOpen}
       className={cn(
-        "group relative cursor-pointer bg-white border-4 border-black rounded-xl overflow-hidden comic-shadow-sm hover:translate-y-[-4px] hover:shadow-[6px_6px_0_rgba(0,0,0,1)] hover:bg-yellow-50 transition-all",
+        "group relative bg-white border-4 border-black rounded-xl overflow-hidden comic-shadow-sm hover:translate-y-[-4px] hover:shadow-[6px_6px_0_rgba(0,0,0,1)] hover:bg-yellow-50 transition-all",
         full ? "w-full" : "w-32 sm:w-40 shrink-0 snap-start"
       )}
     >
-      <div className="relative aspect-[3/4] bg-zinc-950 border-b-4 border-black overflow-hidden">
-        <SafeImage src={item.coverUrl} alt={item.title} className={cn("w-full h-full object-cover group-hover:scale-105 transition-transform", status && "opacity-90")} loading="lazy" />
-        {status && (
-          <span className={cn(
-            "absolute top-1.5 left-1.5 flex items-center gap-0.5 text-white text-3xs font-display px-1.5 py-0.5 border border-black rounded",
-            status === "reading" ? "bg-primary" : "bg-emerald-600"
-          )}>
-            {status === "reading" ? <><BookOpen className="w-2.5 h-2.5" /> LENDO</> : <><CheckCircle2 className="w-2.5 h-2.5" /> LIDO</>}
-          </span>
-        )}
-        {onToggleFav && (
-          <button
-            type="button"
-            onClick={onToggleFav}
-            className={cn(
-              "absolute top-1.5 right-1.5 p-1.5 border-2 border-black rounded-full transition-colors shadow-[2px_2px_0_rgba(0,0,0,1)]",
-              favorited ? "bg-secondary text-black" : "bg-white/90 text-gray-500 hover:bg-secondary hover:text-black"
-            )}
-            title={favorited ? "Remover dos favoritos" : "Adicionar aos favoritos"}
-          >
-            <Star className={cn("w-3.5 h-3.5", favorited && "fill-black")} strokeWidth={3} />
-          </button>
-        )}
-        {item.rating !== undefined && (
-          <span className="absolute bottom-1 left-1 flex items-center gap-0.5 bg-[#FFD166] text-black px-1.5 py-0.5 border border-black rounded font-display text-2xs font-black">
-            <Star className="w-2.5 h-2.5 fill-black" strokeWidth={2.5} /> {(item.rating / 2).toFixed(1)}
-          </span>
-        )}
-      </div>
-      <div className="p-2">
-        <h4 className="font-display text-xs sm:text-sm text-black leading-tight line-clamp-2 group-hover:text-primary">{item.title}</h4>
-      </div>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="block w-full text-left cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-secondary"
+      >
+        <div className="relative aspect-[3/4] bg-zinc-950 border-b-4 border-black overflow-hidden">
+          <SafeImage src={item.coverUrl} alt={item.title} className={cn("w-full h-full object-cover group-hover:scale-105 transition-transform", status && "opacity-90")} loading="lazy" />
+          {status && (
+            <span className={cn(
+              "absolute top-1.5 left-1.5 flex items-center gap-0.5 text-white text-3xs font-display px-1.5 py-0.5 border border-black rounded",
+              status === "reading" ? "bg-primary" : "bg-emerald-600"
+            )}>
+              {status === "reading" ? <><BookOpen className="w-2.5 h-2.5" /> LENDO</> : <><CheckCircle2 className="w-2.5 h-2.5" /> LIDO</>}
+            </span>
+          )}
+          {item.rating !== undefined && (
+            <span className="absolute bottom-1 left-1 flex items-center gap-0.5 bg-[#FFD166] text-black px-1.5 py-0.5 border border-black rounded font-display text-2xs font-black">
+              <Star className="w-2.5 h-2.5 fill-black" strokeWidth={2.5} /> {(item.rating / 2).toFixed(1)}
+            </span>
+          )}
+        </div>
+        <div className="p-2">
+          <h4 className="font-display text-xs sm:text-sm text-black leading-tight line-clamp-2 group-hover:text-primary">{item.title}</h4>
+        </div>
+      </button>
+      {onToggleFav && (
+        <button
+          type="button"
+          onClick={onToggleFav}
+          className={cn(
+            "absolute top-1.5 right-1.5 p-1.5 border-2 border-black rounded-full transition-colors shadow-[2px_2px_0_rgba(0,0,0,1)]",
+            favorited ? "bg-secondary text-black" : "bg-white/90 text-gray-500 hover:bg-secondary hover:text-black"
+          )}
+          title={favorited ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+        >
+          <Star className={cn("w-3.5 h-3.5", favorited && "fill-black")} strokeWidth={3} />
+        </button>
+      )}
     </div>
   );
 }

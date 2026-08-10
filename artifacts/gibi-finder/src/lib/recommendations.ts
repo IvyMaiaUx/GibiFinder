@@ -73,17 +73,24 @@ export function getGenreBasedSuggestions<T extends RecommendableItem>(pool: T[],
  * "Se você gostou disso, veja também" — ranks `pool` by genre overlap with a
  * single `current` item, for a title's own detail page (not the user's whole
  * history like getGenreBasedSuggestions above).
+ *
+ * Excludes by `current.sources` (providerId+id), not by `id`: `pool` items
+ * are catalog groups with a generated normalized-title group id, while the
+ * currently-viewed title is identified by a provider-specific source id —
+ * those never collide, so comparing `.id` directly let the current title
+ * show up in its own "similar" row.
  */
-export function getSimilarByGenre<T extends RecommendableItem & { id?: string }>(
+export function getSimilarByGenre<T extends RecommendableItem>(
   pool: T[],
-  current: RecommendableItem & { id?: string },
+  current: RecommendableItem,
   limit = 8
 ): T[] {
   const currentGenres = new Set((current.genres || []).map(norm));
   if (currentGenres.size === 0) return [];
+  const currentKeys = new Set((current.sources || []).map(s => keyOf(s.providerId, s.id)));
 
   return pool
-    .filter(it => it.id !== current.id && (it.genres || []).some(g => currentGenres.has(norm(g))))
+    .filter(it => !it.sources?.some(s => currentKeys.has(keyOf(s.providerId, s.id))) && (it.genres || []).some(g => currentGenres.has(norm(g))))
     .map(it => ({ it, score: (it.genres || []).filter(g => currentGenres.has(norm(g))).length + (it.rating || 0) / 20 }))
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)

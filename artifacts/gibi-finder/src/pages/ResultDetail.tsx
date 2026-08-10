@@ -88,20 +88,31 @@ export default function ResultDetail() {
   // history. Only meaningful once onlineDetails has resolved (need its
   // genres), and only for online-catalog titles (the ones with a real
   // multi-provider genre catalog to pull from).
+  //
+  // isNsfw is tracked as state (not read once inline) and re-fetches on
+  // "nsfw-change" — same pattern as Explore.tsx/Colecao.tsx/Home.tsx — so
+  // toggling +18 while this page stays open doesn't leave stale results
+  // from the previous catalog visibility on screen.
+  const [isNsfw, setIsNsfw] = useState(() => document.documentElement.classList.contains("nsfw"));
+  useEffect(() => {
+    const onNsfw = () => setIsNsfw(document.documentElement.classList.contains("nsfw"));
+    window.addEventListener("nsfw-change", onNsfw);
+    return () => window.removeEventListener("nsfw-change", onNsfw);
+  }, []);
+
   const [similarItems, setSimilarItems] = useState<CatalogItem[]>([]);
   useEffect(() => {
     const genres: string[] = onlineDetails?.genres || [];
     if (!isOnlineResult || genres.length === 0) { setSimilarItems([]); return; }
-    const isNsfw = document.documentElement.classList.contains("nsfw");
     const controller = new AbortController();
     fetch(`${BASE}/api/providers/by-genre?genre=${encodeURIComponent(genres[0])}&nsfw=${isNsfw}`, { signal: controller.signal })
       .then(res => res.ok ? res.json() : [])
       .then((pool: CatalogItem[]) => {
-        setSimilarItems(getSimilarByGenre(pool, { id: mangaId, genres }, 10));
+        setSimilarItems(getSimilarByGenre(pool, { genres, sources: [{ providerId, id: mangaId }] }, 10));
       })
       .catch(err => { if (err.name !== "AbortError") console.error("Failed to load similar titles:", err); });
     return () => controller.abort();
-  }, [isOnlineResult, mangaId, onlineDetails?.genres]);
+  }, [isOnlineResult, providerId, mangaId, onlineDetails?.genres, isNsfw]);
 
   const openCatalogItem = (item: CatalogItem) => {
     const src = item.sources?.[0];
