@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Layout } from "@/components/layout/Layout";
 import { Lock, User, Check, Loader2, LogOut, ArrowRight, UserPlus } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
@@ -35,16 +34,13 @@ export default function Login() {
 
   if (loading) {
     return (
-      <Layout>
         <div className="flex items-center justify-center py-24">
           <Loader2 className="w-12 h-12 animate-spin text-primary" />
         </div>
-      </Layout>
     );
   }
 
   return (
-    <Layout>
       <div className="max-w-md mx-auto mt-8 md:mt-16 px-4 select-none">
         {user ? (
           /* Logged In View */
@@ -171,6 +167,5 @@ export default function Login() {
           </div>
         )}
       </div>
-    </Layout>
   );
 }

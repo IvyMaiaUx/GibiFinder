@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { Layout } from "@/components/layout/Layout";
 import { Trophy, Flame, Loader2, AlertCircle } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
@@ -82,9 +81,8 @@ export default function Ranking() {
   };
 
   return (
-    <Layout>
       <div className="max-w-4xl mx-auto pb-16 select-none">
-        
+
         {/* Banner Title */}
         <div className="text-center mb-12">
           <div className="inline-block relative">
@@ -180,6 +178,5 @@ export default function Ranking() {
         )}
 
       </div>
-    </Layout>
   );
 }

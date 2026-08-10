@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { Layout } from "@/components/layout/Layout";
 import { Link, useLocation } from "wouter";
 import { Search, ChevronRight, FileX, Trash2, RotateCcw, BookOpen, Clock } from "lucide-react";
 import { formatComicDate, cn, isAdultProviderId } from "@/lib/utils";
@@ -136,9 +135,8 @@ export default function History() {
     : visibleReading;
 
   return (
-    <Layout>
       <div className="max-w-5xl mx-auto pb-16">
-        
+
         {/* Header section */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
           <div>
@@ -347,6 +345,5 @@ export default function History() {
         )}
 
       </div>
-    </Layout>
   );
 }

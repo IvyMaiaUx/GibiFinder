@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useGetResult } from "@workspace/api-client-react";
-import { Layout } from "@/components/layout/Layout";
 import { ComicCard } from "@/components/results/ComicCard";
 import { FeedbackActions } from "@/components/results/FeedbackActions";
 import { MangaDexReader } from "@/components/results/MangaDexReader";
@@ -11,6 +10,8 @@ import { cn, translateToPt, cleanSynopsis, getGeneratedSynopsis } from "@/lib/ut
 import { useAuth } from "@/hooks/use-auth";
 import { isFavorite as isFavoriteLib, toggleFavorite as toggleFavoriteLib } from "@/lib/favorites";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
+import { getSimilarByGenre } from "@/lib/recommendations";
+import { CatalogCard, CatalogRow, type CatalogItem } from "@/components/results/CatalogCard";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -80,6 +81,33 @@ export default function ResultDetail() {
       .finally(() => setLoadingOnline(false));
     return () => controller.abort();
   }, [isOnlineResult, id, providerId, mangaId]);
+
+  // "Se você gostou disso, veja também" — same genre-overlap heuristic as
+  // Explore's "Sugestões pra você" row (lib/recommendations.ts), scored
+  // against just this title's own genres instead of the user's whole
+  // history. Only meaningful once onlineDetails has resolved (need its
+  // genres), and only for online-catalog titles (the ones with a real
+  // multi-provider genre catalog to pull from).
+  const [similarItems, setSimilarItems] = useState<CatalogItem[]>([]);
+  useEffect(() => {
+    const genres: string[] = onlineDetails?.genres || [];
+    if (!isOnlineResult || genres.length === 0) { setSimilarItems([]); return; }
+    const isNsfw = document.documentElement.classList.contains("nsfw");
+    const controller = new AbortController();
+    fetch(`${BASE}/api/providers/by-genre?genre=${encodeURIComponent(genres[0])}&nsfw=${isNsfw}`, { signal: controller.signal })
+      .then(res => res.ok ? res.json() : [])
+      .then((pool: CatalogItem[]) => {
+        setSimilarItems(getSimilarByGenre(pool, { id: mangaId, genres }, 10));
+      })
+      .catch(err => { if (err.name !== "AbortError") console.error("Failed to load similar titles:", err); });
+    return () => controller.abort();
+  }, [isOnlineResult, mangaId, onlineDetails?.genres]);
+
+  const openCatalogItem = (item: CatalogItem) => {
+    const src = item.sources?.[0];
+    if (!src) return;
+    setLocation(`/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}`);
+  };
 
   // Hook for database results
   const { data: dbData, isLoading: loadingDb, error: dbError } = useGetResult(id, {
@@ -215,7 +243,6 @@ export default function ResultDetail() {
     : resultData;
 
   return (
-    <Layout>
       <div className="max-w-4xl mx-auto pb-16">
         {cameFromExplore ? (
           <button
@@ -337,7 +364,15 @@ export default function ResultDetail() {
               return (
                 <div className="space-y-12 animate-in fade-in duration-200">
                   <ComicCard result={displayResult as any} isMain />
-                  
+
+                  {similarItems.length > 0 && (
+                    <CatalogRow title="Se você gostou disso, veja também">
+                      {similarItems.map(item => (
+                        <CatalogCard key={item.id} item={item} onOpen={() => openCatalogItem(item)} />
+                      ))}
+                    </CatalogRow>
+                  )}
+
                   {driveEmbedUrl ? (
                     <div className="space-y-6">
                       <div className="bg-white p-4 border-4 border-black rounded-xl comic-shadow">
@@ -511,7 +546,6 @@ export default function ResultDetail() {
           </div>
         )}
       </div>
-    </Layout>
   );
 }
 

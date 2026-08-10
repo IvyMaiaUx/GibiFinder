@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { Layout } from "@/components/layout/Layout";
 import { Loader2, AlertCircle, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
@@ -43,9 +42,8 @@ export default function Providers() {
   }, []);
 
   return (
-    <Layout>
       <div className="max-w-4xl mx-auto space-y-8 select-none">
-        
+
         {/* Banner Title */}
         <div className="bg-primary text-white border-4 border-black p-6 rounded-xl comic-shadow relative overflow-hidden transform -rotate-1">
           <div className="absolute top-0 right-0 w-24 h-24 opacity-10 bg-[radial-gradient(white_1px,transparent_1px)] [background-size:6px_6px] pointer-events-none" />
@@ -152,6 +150,5 @@ export default function Providers() {
         </div>
 
       </div>
-    </Layout>
   );
 }

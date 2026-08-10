@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { Layout } from "@/components/layout/Layout";
 import { Hero } from "@/components/home/Hero";
 import { SearchPanel } from "@/components/home/SearchPanel";
 import { ResultView } from "@/components/results/ResultView";
@@ -333,7 +332,6 @@ export default function Home() {
   };
 
   return (
-    <Layout>
       <div className="max-w-6xl mx-auto relative z-10 pb-16">
         <Hero />
         <SearchPanel 
@@ -601,6 +599,5 @@ export default function Home() {
           );
         })()}
       </div>
-    </Layout>
   );
 }

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SettingsSync } from "@/components/reader/SettingsSync";
+import { Layout } from "@/components/layout/Layout";
 import { Loader2 } from "lucide-react";
 
 const Home = lazy(() => import("@/pages/Home"));
@@ -18,9 +19,13 @@ const ProviderInspector = lazy(() => import("@/pages/ProviderInspector"));
 const Login = lazy(() => import("@/pages/Login"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
+// Sits inside the persistent Layout's <main> (see Router below), not the
+// bare viewport — full min-h-screen here would fight that container's own
+// height/padding. Just fills the content area so header/nav never blink
+// out from under it while a lazy page chunk loads.
 function PageLoader() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
+    <div className="flex items-center justify-center py-24">
       <Loader2 className="w-10 h-10 animate-spin text-primary" strokeWidth={2.5} />
     </div>
   );
@@ -35,21 +40,45 @@ const queryClient = new QueryClient({
   },
 });
 
+// Every route except /admin shares this one persistent Layout instance —
+// Header/BottomNav used to live inside each page's own <Layout> wrapper, so
+// swapping routes unmounted and remounted the whole chrome (a header/nav
+// blink on every navigation, plus a bare full-viewport spinner with no
+// chrome at all while the next page's lazy chunk loaded). Layout now wraps
+// the Suspense/Switch once, so only the inner content swaps.
+//
+// /admin is deliberately excluded: it manages its own chrome entirely (a
+// <Layout minimal> login gate, then a completely different AdminShell after
+// auth) and was never designed to sit inside this Layout too.
+function MainRoutes() {
+  return (
+    <Layout>
+      <Suspense fallback={<PageLoader />}>
+        <Switch>
+          <Route path="/" component={Home} />
+          <Route path="/historico" component={History} />
+          <Route path="/ranking" component={Ranking} />
+          <Route path="/gibi/:id" component={ResultDetail} />
+          <Route path="/colecao" component={Colecao} />
+          <Route path="/provedores" component={Providers} />
+          <Route path="/provedores/inspector" component={ProviderInspector} />
+          <Route path="/explorar" component={Explore} />
+          <Route path="/login" component={Login} />
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
+    </Layout>
+  );
+}
+
 function Router() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Switch>
-        <Route path="/" component={Home} />
-        <Route path="/historico" component={History} />
-        <Route path="/ranking" component={Ranking} />
-        <Route path="/gibi/:id" component={ResultDetail} />
-        <Route path="/colecao" component={Colecao} />
         <Route path="/admin" component={Admin} />
-        <Route path="/provedores" component={Providers} />
-        <Route path="/provedores/inspector" component={ProviderInspector} />
-        <Route path="/explorar" component={Explore} />
-        <Route path="/login" component={Login} />
-        <Route component={NotFound} />
+        <Route>
+          <MainRoutes />
+        </Route>
       </Switch>
     </Suspense>
   );
