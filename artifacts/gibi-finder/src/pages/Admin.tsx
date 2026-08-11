@@ -1249,7 +1249,13 @@ export default function Admin() {
             <div className="flex items-center justify-center py-24"><Loader2 className="w-12 h-12 animate-spin text-primary" /></div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {providers.map(p => (
+              {providers.map(p => {
+                // bato/hqnow are registered as placeholders (ProviderManager's
+                // StubProvider) — no scraper was ever implemented, so they always
+                // return zero results even when active. Flagged explicitly so an
+                // admin doesn't activate one expecting real catalog data.
+                const isStub = p.id === "bato" || p.id === "hqnow";
+                return (
                 <div key={p.id} className={`bg-white border-4 border-black p-4 relative flex flex-col justify-between ${p.active ? "comic-shadow-sm" : "opacity-75"}`}>
                   <div className="absolute top-3 right-3 flex items-center gap-1.5">
                     <span className={`w-3.5 h-3.5 rounded-full border-2 border-black inline-block ${p.active ? "bg-green-500 animate-pulse" : "bg-gray-400"}`} />
@@ -1267,12 +1273,18 @@ export default function Admin() {
                           Custom
                         </span>
                       )}
+                      {isStub && (
+                        <span className="font-sans font-extrabold text-2xs px-2 py-0.5 border-2 border-black rounded uppercase bg-red-100 text-red-700">
+                          Sem scraper
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-gray-600 font-semibold font-sans leading-tight">
                       {p.id === "mangadex" && "Agregador global multilingue de mangás com API integrada em tempo real."}
                       {p.id === "comicextra" && "Fonte de HQs americanas digitalizadas em inglês de forma direta."}
                       {p.id === "mugiwaras" && "Provedor nacional focado em mangás de One Piece e lançamentos populares."}
-                      {["bato", "mangafire", "hqnow"].includes(p.id) && `Provedor de contingência para o catálogo do ${p.name} (Plugin inativo).`}
+                      {p.id === "mangafire" && "Agregador de mangás com catálogo próprio."}
+                      {isStub && "Placeholder registrado no sistema, mas sem scraper implementado — sempre retorna 0 resultados, mesmo ativado."}
                       {p.isCustom && `Provedor customizado autogerenciado conectado via Madara API em ${p.baseUrl}`}
                     </p>
                   </div>
@@ -1297,7 +1309,8 @@ export default function Admin() {
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )
         )}
