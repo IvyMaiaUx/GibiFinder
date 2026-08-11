@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { Search, Clock, Trophy, BookMarked, Compass, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { PrefetchLink } from "@/components/ui/PrefetchLink";
 
 export function Header({ minimal = false }: { minimal?: boolean } = {}) {
   const [location, setLocation] = useLocation();
@@ -101,19 +102,19 @@ export function Header({ minimal = false }: { minimal?: boolean } = {}) {
             const isActive = location === item.path;
             const Icon = item.icon;
             return (
-              <Link
+              <PrefetchLink
                 key={item.path}
                 href={item.path}
                 className={cn(
                   "flex items-center gap-2 font-display text-xl px-4 py-2 border-4 border-black rounded-lg transition-all comic-shadow-sm comic-hover comic-active",
-                  isActive 
-                    ? "bg-white text-black translate-y-[-2px] shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]" 
+                  isActive
+                    ? "bg-white text-black translate-y-[-2px] shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
                     : "bg-transparent text-black hover:bg-white/50"
                 )}
               >
                 <Icon className="w-5 h-5" strokeWidth={3} />
                 {item.label}
-              </Link>
+              </PrefetchLink>
             );
           })}
         </nav>

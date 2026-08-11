@@ -1,6 +1,7 @@
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { Search, Compass, BookMarked, Clock, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PrefetchLink } from "@/components/ui/PrefetchLink";
 
 const ITEMS = [
   { path: "/", label: "Buscar", icon: Search },
@@ -22,7 +23,7 @@ export function BottomNav() {
       {ITEMS.map(({ path, label, icon: Icon }) => {
         const active = location === path;
         return (
-          <Link
+          <PrefetchLink
             key={path}
             href={path}
             className={cn(
@@ -32,7 +33,7 @@ export function BottomNav() {
           >
             <Icon className={cn("w-5 h-5 transition-transform", active && "scale-110")} strokeWidth={active ? 3 : 2.5} />
             {label}
-          </Link>
+          </PrefetchLink>
         );
       })}
     </nav>
