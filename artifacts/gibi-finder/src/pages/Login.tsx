@@ -1,19 +1,57 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Lock, User, Check, Loader2, LogOut, ArrowRight, UserPlus } from "lucide-react";
+import { Lock, User, Check, Loader2, LogOut, ArrowRight, UserPlus, BookOpenCheck, BookOpen, Star } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
+import { isAdultProviderId } from "@/lib/utils";
+import { getSyncedCompleted, getLocalProgress } from "@/lib/user-history";
+import { getSyncedFavorites } from "@/lib/favorites";
 
 export default function Login() {
   const [, setLocation] = useLocation();
   const { user, login, register, logout, loading } = useAuth();
   useDocumentMeta({ title: "Entrar", noindex: true });
-  
+
   const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Reading stats — this data already existed (completed chapters, in-
+  // progress shelf, favorites all get synced for Coleção already), it just
+  // never showed up anywhere the account itself could see it. Same +18
+  // visibility filter Coleção uses, so this doesn't leak an adult read
+  // count while +18 mode is off.
+  const [isNsfw, setIsNsfw] = useState(() => document.documentElement.classList.contains("nsfw"));
+  const [stats, setStats] = useState({ titlesRead: 0, reading: 0, favorites: 0 });
+  useEffect(() => {
+    const onNsfw = () => setIsNsfw(document.documentElement.classList.contains("nsfw"));
+    window.addEventListener("nsfw-change", onNsfw);
+    return () => window.removeEventListener("nsfw-change", onNsfw);
+  }, []);
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      const [completed, favorites] = await Promise.all([
+        getSyncedCompleted(user.id),
+        getSyncedFavorites(user.id),
+      ]);
+      if (cancelled) return;
+      const visibleCompleted = completed.filter(c => isAdultProviderId(c.providerId) === isNsfw);
+      const completedChapterKeys = new Set(visibleCompleted.map(c => `${c.providerId}|${c.mangaId}|${c.chapterId}`));
+      const titlesRead = new Set(visibleCompleted.map(c => `${c.providerId}|${c.mangaId}`)).size;
+      const reading = Object.values(getLocalProgress()).filter(p =>
+        p.providerId && p.mangaId &&
+        isAdultProviderId(p.providerId) === isNsfw &&
+        !completedChapterKeys.has(`${p.providerId}|${p.mangaId}|${p.chapterId}`)
+      ).length;
+      const favoritesCount = favorites.filter(f => isAdultProviderId(f.providerId) === isNsfw).length;
+      setStats({ titlesRead, reading, favorites: favoritesCount });
+    })();
+    return () => { cancelled = true; };
+  }, [user, isNsfw]);
 
   // If already logged in and loading is done, we can show the logged-in state on this page
   const handleSubmit = async (e: React.FormEvent) => {
@@ -58,8 +96,38 @@ export default function Login() {
             <p className="font-sans font-bold text-xs text-gray-500 mt-2 uppercase">
               Membro desde: {new Date(user.created_at).toLocaleDateString("pt-BR")}
             </p>
-            
-            <div className="mt-8 flex flex-col gap-3">
+
+            {/* Reading stats — each tile deep-links into the matching
+                Coleção tab instead of just repeating the generic "Ir para
+                Minha Estante" button below. */}
+            <div className="grid grid-cols-3 gap-2 mt-6">
+              <button
+                onClick={() => setLocation("/colecao?tab=completed")}
+                className="bg-white border-2 border-black rounded-lg py-3 px-1 flex flex-col items-center gap-1 hover:bg-emerald-50 transition-colors"
+              >
+                <BookOpenCheck className="w-4 h-4 text-emerald-600" strokeWidth={2.5} />
+                <span className="font-display text-xl text-black leading-none">{stats.titlesRead}</span>
+                <span className="font-sans font-bold text-[10px] text-gray-500 uppercase tracking-wide">Lidos</span>
+              </button>
+              <button
+                onClick={() => setLocation("/colecao?tab=progress")}
+                className="bg-white border-2 border-black rounded-lg py-3 px-1 flex flex-col items-center gap-1 hover:bg-blue-50 transition-colors"
+              >
+                <BookOpen className="w-4 h-4 text-primary" strokeWidth={2.5} />
+                <span className="font-display text-xl text-black leading-none">{stats.reading}</span>
+                <span className="font-sans font-bold text-[10px] text-gray-500 uppercase tracking-wide">Lendo</span>
+              </button>
+              <button
+                onClick={() => setLocation("/colecao?tab=favorites")}
+                className="bg-white border-2 border-black rounded-lg py-3 px-1 flex flex-col items-center gap-1 hover:bg-yellow-50 transition-colors"
+              >
+                <Star className="w-4 h-4 text-secondary fill-secondary" strokeWidth={2.5} />
+                <span className="font-display text-xl text-black leading-none">{stats.favorites}</span>
+                <span className="font-sans font-bold text-[10px] text-gray-500 uppercase tracking-wide">Favoritos</span>
+              </button>
+            </div>
+
+            <div className="mt-6 flex flex-col gap-3">
               <button 
                 onClick={() => setLocation("/colecao")}
                 className="w-full bg-secondary text-black border-4 border-black py-3.5 font-display text-lg comic-shadow flex items-center justify-center gap-2 hover:bg-yellow-300 transition-colors uppercase tracking-wider"
