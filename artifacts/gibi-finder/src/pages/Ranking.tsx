@@ -160,6 +160,7 @@ export default function Ranking() {
                     <SafeImage
                       src={item.coverUrl}
                       alt={item.title}
+                      width={160}
                       className="w-full h-full object-cover"
                     />
                     {openingId === item.id && (

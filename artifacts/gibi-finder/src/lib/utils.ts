@@ -291,10 +291,13 @@ const OUTDATED_COVERS_MAP: Record<string, string> = {
 /**
  * Returns the cover URL routed through our image proxy to bypass
  * hotlinking/CORS restrictions from external CDNs (MangaDex, ComicExtra, etc.)
+ * `width`, when given, asks the proxy to resize+re-encode server-side (e.g.
+ * catalog grid cards render covers at ~120-200px — no reason to ship a
+ * provider's full-resolution art for that) — see api-server's imageProxy.ts.
  */
-export function proxyCoverUrl(url: string | undefined | null): string | undefined {
+export function proxyCoverUrl(url: string | undefined | null, width?: number): string | undefined {
   if (!url) return undefined;
-  
+
   // Clean up outdated hardcoded MangaDex cover references on-the-fly
   for (const [outdatedId, newPlaceholder] of Object.entries(OUTDATED_COVERS_MAP)) {
     if (url.includes(outdatedId)) {
@@ -306,7 +309,8 @@ export function proxyCoverUrl(url: string | undefined | null): string | undefine
   try {
     const parsed = new URL(url);
     if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-      return `${BASE}/api/image-proxy?url=${encodeURIComponent(url)}`;
+      const proxied = `${BASE}/api/image-proxy?url=${encodeURIComponent(url)}`;
+      return width ? `${proxied}&w=${width}` : proxied;
     }
   } catch {
     // Not a valid URL — return as-is

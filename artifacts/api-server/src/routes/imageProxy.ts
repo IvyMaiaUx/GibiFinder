@@ -6,6 +6,32 @@ import { isPrivateOrInternalHost, resolveAndPinPublicHost } from "../lib/urlSafe
 
 const router = Router();
 
+// Catalog/search grid cards render covers at ~120-200px, but providers'
+// coverUrl is routinely full-resolution (MangaDex's .512.jpg, etc.) — a page
+// with ~25 cards was downloading several MB of pixels never shown past
+// thumbnail size. `?w=` resizes server-side before the bytes ever reach the
+// client. Best-effort: if sharp fails for any reason (corrupt/unsupported
+// input, native binding missing on some runtime, ...) this falls back to the
+// untouched original buffer rather than breaking the image entirely.
+const MAX_PROXY_WIDTH = 800; // guards against a caller requesting an absurd/abusive size
+async function resizeIfRequested(buffer: Buffer, contentType: string, widthParam: unknown): Promise<{ buffer: Buffer; contentType: string }> {
+  const width = Math.min(Math.max(Number(widthParam) || 0, 0), MAX_PROXY_WIDTH);
+  if (!width || !contentType.startsWith("image/") || contentType.includes("svg")) {
+    return { buffer, contentType };
+  }
+  try {
+    const sharp = (await import("sharp")).default;
+    const resized = await sharp(buffer)
+      .resize({ width, withoutEnlargement: true })
+      .webp({ quality: 82 })
+      .toBuffer();
+    return { buffer: resized, contentType: "image/webp" };
+  } catch (err) {
+    logger.error({ err }, "Image proxy resize failed, serving original");
+    return { buffer, contentType };
+  }
+}
+
 // This route is public and unauthenticated (it exists to proxy hotlink-
 // blocked cover images for anyone browsing the site), so every host it's
 // about to connect to — the initial target AND each redirect hop, since a
@@ -98,14 +124,15 @@ router.get("/image-proxy", async (req: Request, res: Response) => {
       return;
     }
 
-    const contentType = result.headers["content-type"] || "image/jpeg";
+    const upstreamContentType = result.headers["content-type"] || "image/jpeg";
+    const { buffer, contentType } = await resizeIfRequested(result.buffer, upstreamContentType, req.query.w);
 
     res.set({
       "Content-Type": contentType,
       "Cache-Control": "public, max-age=86400, s-maxage=86400",
       "Access-Control-Allow-Origin": "*",
     });
-    res.send(result.buffer);
+    res.send(buffer);
   } catch (err) {
     logger.error({ err: err }, "Image proxy error:");
     res.status(502).json({ error: "proxy_failed", message: "Falha ao buscar imagem do servidor externo." });

@@ -526,6 +526,7 @@ export default function Home() {
                         <SafeImage
                           src={item.coverUrl}
                           alt={item.title}
+                          width={320}
                           className="w-full h-full object-cover transition-transform group-hover:scale-105"
                           loading="lazy"
                         />

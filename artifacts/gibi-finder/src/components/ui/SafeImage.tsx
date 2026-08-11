@@ -9,24 +9,29 @@ interface SafeImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   className?: string;
   /** Fired when a real src was given but every load attempt failed (broken cover). */
   onBroken?: () => void;
+  /** Requests a server-resized thumbnail at this width (px) via the image
+      proxy — pass the card/thumbnail's actual render width, not the source's
+      full resolution. Omit for full-size covers (hero, detail pages). */
+  width?: number;
 }
 
-export function SafeImage({ src, alt, className, onLoad, onBroken, ...props }: SafeImageProps) {
+export function SafeImage({ src, alt, className, onLoad, onBroken, width, ...props }: SafeImageProps) {
   // Lazy-init with the proxied URL so the <img> renders on first paint without
   // going through an intermediate undefined→url transition (eliminates the brief
   // white/placeholder flash when the component mounts or remounts).
-  const [currentSrc, setCurrentSrc] = useState<string | undefined>(() => src ? proxyCoverUrl(src) : undefined);
+  const [currentSrc, setCurrentSrc] = useState<string | undefined>(() => src ? proxyCoverUrl(src, width) : undefined);
   const [retryStage, setRetryStage] = useState<0 | 1 | 2>(0); // 0: proxied, 1: original direct, 2: failed placeholder
 
   useEffect(() => {
     if (src) {
-      setCurrentSrc(proxyCoverUrl(src));
+      setCurrentSrc(proxyCoverUrl(src, width));
       setRetryStage(0);
     } else {
       setCurrentSrc(undefined);
       setRetryStage(2);
     }
-  }, [src]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, width]);
 
   const handleError = () => {
     if (retryStage === 0 && src) {
