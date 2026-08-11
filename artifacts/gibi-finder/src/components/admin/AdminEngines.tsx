@@ -80,7 +80,7 @@ export function AdminEngines({ providers, onGoProviders }: { providers: any[]; o
               <div className="flex flex-wrap items-center gap-2 mt-1">
                 {meta.reusable && <span className="text-2xs font-bold uppercase bg-secondary border-2 border-black px-2 py-0.5">Reutilizável</span>}
                 <span className="text-2xs font-bold uppercase bg-muted border-2 border-black px-2 py-0.5">{provs.length} provider(s)</span>
-                <span className="text-2xs font-bold uppercase border-2 border-black px-2 py-0.5 bg-white">{online} on · {provs.length - online} off</span>
+                <span className="text-2xs font-bold uppercase border-2 border-black px-2 py-0.5 bg-white">{online} ativos · {provs.length - online} inativos</span>
               </div>
             </div>
           </div>
@@ -149,7 +149,7 @@ export function AdminEngines({ providers, onGoProviders }: { providers: any[]; o
                 </div>
                 <div className="flex items-center gap-2 mb-2">
                   <span className="font-display text-3xl">{provs.length}</span>
-                  <span className="text-xs font-bold text-gray-500 uppercase">provider(s)<br />{online} on · {provs.length - online} off</span>
+                  <span className="text-xs font-bold text-gray-500 uppercase">provider(s)<br />{online} ativos · {provs.length - online} inativos</span>
                 </div>
                 <p className="font-sans font-bold text-gray-500 text-2xs line-clamp-2">{meta.desc}</p>
               </button>

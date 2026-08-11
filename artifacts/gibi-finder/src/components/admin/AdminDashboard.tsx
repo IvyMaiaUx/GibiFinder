@@ -35,7 +35,11 @@ function StatCard({ icon: Icon, label, value, loading, accent, onClick }: {
 }
 
 export function AdminDashboard({ stats, onNavigate }: { stats: DashboardStats; onNavigate: (m: AdminModule) => void }) {
-  const alerts = stats.offlineProviders.map(p => ({ level: "warn" as const, text: `Provider ${p} offline` }));
+  // "offlineProviders" here means desativado (the admin's own on/off toggle),
+  // not a live reachability check — only "PINGAR PROVIDERS" (Sistema tab)
+  // actually probes each site. Worded as such so this doesn't read as an
+  // outage alert for something that's just switched off on purpose.
+  const alerts = stats.offlineProviders.map(p => ({ level: "warn" as const, text: `Provider ${p} desativado` }));
 
   return (
     <div className="space-y-8">
@@ -48,8 +52,8 @@ export function AdminDashboard({ stats, onNavigate }: { stats: DashboardStats; o
           <StatCard icon={Send} label="Enviados" value={stats.sent} onClick={() => onNavigate("catalog")} />
           <StatCard icon={MessageSquare} label="Feedback novo" value={stats.feedbackNew} onClick={() => onNavigate("feedback")} accent={stats.feedbackNew > 0} />
           <StatCard icon={MessageSquare} label="Feedback total" value={stats.feedbackTotal} onClick={() => onNavigate("feedback")} />
-          <StatCard icon={Globe} label="Providers on" value={stats.providersOnline} onClick={() => onNavigate("providers")} />
-          <StatCard icon={Globe} label="Providers off" value={stats.providersOffline} onClick={() => onNavigate("providers")} accent={stats.providersOffline > 0} />
+          <StatCard icon={Globe} label="Providers ativos" value={stats.providersOnline} onClick={() => onNavigate("providers")} />
+          <StatCard icon={Globe} label="Providers inativos" value={stats.providersOffline} onClick={() => onNavigate("providers")} accent={stats.providersOffline > 0} />
         </div>
       </div>
 

@@ -96,7 +96,11 @@ export function AdminSystem({ info, adminKey }: { info: SystemInfo; adminKey?: s
           <HealthCard icon={Cloud} label="Google Drive API" ok={driveKey} detail={driveKey ? "Chave configurada" : driveKey === false ? "GOOGLE_DRIVE_API_KEY ausente" : "—"} />
           <HealthCard icon={HardDrive} label="Cache do catálogo" ok={cachePersisted} detail={cachePersisted ? `Persistido · ${bib?.remoteCount ?? 0} itens` : cachePersisted === false ? "Não persiste (rode o SQL)" : "—"} />
           <HealthCard icon={Library} label="Catálogo" ok={info.catalogTotal !== null ? info.catalogTotal > 0 : null} detail={`${info.catalogTotal ?? "—"} obras · atualizado ${updated}`} />
-          <HealthCard icon={Globe} label="Providers" ok={info.providersOffline === 0 ? true : info.providersOnline > 0 ? null : false} detail={`${info.providersOnline} online · ${info.providersOffline} offline`} />
+          {/* providersOnline/Offline reflect the admin's own active toggle, not a
+              live reachability probe — an intentionally-disabled provider isn't
+              unhealthy, so this only flags red when NOTHING is active. Real
+              per-provider reachability lives in "PINGAR PROVIDERS" below. */}
+          <HealthCard icon={Globe} label="Providers" ok={info.providersOnline > 0} detail={`${info.providersOnline} ativos · ${info.providersOffline} inativos`} />
         </div>
         {info.diag?.errors && Object.keys(info.diag.errors).length > 0 && (
           <p className="font-sans font-bold text-red-600 text-xs mt-2">Erros de provider: {Object.entries(info.diag.errors).map(([k, v]) => `${k}: ${v}`).join(" · ")}</p>
@@ -109,8 +113,8 @@ export function AdminSystem({ info, adminKey }: { info: SystemInfo; adminKey?: s
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="bg-white border-4 border-black p-4"><div className="flex items-center gap-2 text-gray-500 mb-1"><Library className="w-4 h-4" /><span className="font-display text-xs uppercase">Catálogo</span></div><div className="font-display text-3xl">{info.catalogTotal ?? "—"}</div></div>
           <div className="bg-white border-4 border-black p-4"><div className="flex items-center gap-2 text-gray-500 mb-1"><UsersIcon className="w-4 h-4" /><span className="font-display text-xs uppercase">Usuários</span></div><div className="font-display text-3xl">{info.usersTotal ?? "—"}</div></div>
-          <div className="bg-white border-4 border-black p-4"><div className="flex items-center gap-2 text-gray-500 mb-1"><Globe className="w-4 h-4" /><span className="font-display text-xs uppercase">Providers on</span></div><div className="font-display text-3xl">{info.providersOnline}</div></div>
-          <div className="bg-white border-4 border-black p-4"><div className="flex items-center gap-2 text-gray-500 mb-1"><Globe className="w-4 h-4" /><span className="font-display text-xs uppercase">Providers off</span></div><div className="font-display text-3xl">{info.providersOffline}</div></div>
+          <div className="bg-white border-4 border-black p-4"><div className="flex items-center gap-2 text-gray-500 mb-1"><Globe className="w-4 h-4" /><span className="font-display text-xs uppercase">Providers ativos</span></div><div className="font-display text-3xl">{info.providersOnline}</div></div>
+          <div className="bg-white border-4 border-black p-4"><div className="flex items-center gap-2 text-gray-500 mb-1"><Globe className="w-4 h-4" /><span className="font-display text-xs uppercase">Providers inativos</span></div><div className="font-display text-3xl">{info.providersOffline}</div></div>
         </div>
       </div>
 
@@ -204,7 +208,7 @@ export function AdminSystem({ info, adminKey }: { info: SystemInfo; adminKey?: s
           {healthLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" strokeWidth={2.5} />}
           PINGAR PROVIDERS
         </button>
-        <p className="font-sans font-bold text-gray-400 text-xs mb-3">Faz uma busca rápida em cada provider ativo (pode levar ~30s). Use com moderação.</p>
+        <p className="font-sans font-bold text-gray-400 text-xs mb-3">Faz uma busca rápida em cada provider ativo, todos em paralelo (leva poucos segundos, ~6-7s). Use com moderação.</p>
         {healthData && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {healthData.map(p => (
