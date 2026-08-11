@@ -3,7 +3,7 @@ import { logger } from "../lib/logger";
 import https from "https";
 import http from "http";
 import { nextDriveKey } from "../lib/driveKeys";
-import { isPrivateOrInternalHost, resolveAndPinPublicHost } from "../lib/urlSafety";
+import { isPrivateOrInternalHost, resolveAndPinPublicHost, pinnedLookup } from "../lib/urlSafety";
 
 const router = Router();
 
@@ -40,7 +40,7 @@ function fetchBuffer(url: string, redirects = 0): Promise<FetchResult> {
       };
       const req = client.get(url, {
         headers,
-        lookup: (_hostname, _options, callback) => callback(null, pinned.address, pinned.family),
+        lookup: pinnedLookup(pinned),
       }, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           const nextUrl = new URL(res.headers.location, url).toString();
