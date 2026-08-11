@@ -197,6 +197,29 @@
   }
 }
 
+/* Cross-fade when entering/leaving +18 mode. Every one of these selectors
+   is exactly what the NSFW override block below repaints — without this,
+   toggling +18 snapped every border/shadow/background to its new color in
+   the same frame. Respects prefers-reduced-motion (no transition = instant
+   change, same as before this existed). background-image is included
+   because both the light and +18 body dot-pattern are the same
+   radial-gradient shape (just a different color stop), so it interpolates
+   instead of hard-cutting. */
+@media (prefers-reduced-motion: no-preference) {
+  body,
+  .comic-shadow,
+  .comic-shadow-sm,
+  .speech-bubble,
+  .speech-bubble:before,
+  .speech-bubble:after,
+  .bg-white,
+  .border-black,
+  .border-black\/20,
+  .border-black\/10 {
+    transition: background-color 0.4s ease, background-image 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease, color 0.4s ease;
+  }
+}
+
 /* NSFW / Adult Theme Override
    Palette (from the +18 badge design): fundo #0E0B0F, vinho #8B1E3F,
    magenta destaque/glow #E04478, rosa claro #F7C4D5, texto #F5EDF1,
