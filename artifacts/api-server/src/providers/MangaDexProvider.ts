@@ -1,5 +1,6 @@
 ﻿import { Provider, SearchResult, MangaDetails, Chapter, Page } from "./types";
 import { logger } from "../lib/logger";
+import { normalizeTitleForMatch } from "./titleMatch";
 
 const GENRE_EN_PT: Record<string, string> = {
   "Action": "Ação", "Adventure": "Aventura", "Comedy": "Comédia", "Drama": "Drama",
@@ -91,6 +92,51 @@ export class MangaDexProvider implements Provider {
     } catch (err) {
       logger.error({ err: err }, "MangaDex search failed:");
       return [];
+    }
+  }
+
+  // Used only by ProviderManager's cross-provider enrichment pass — not part
+  // of the Provider interface. MangaDex's own catalog title is routinely the
+  // Japanese romanized name ("Boku no Hero Academia"), while the same series
+  // scraped from another provider is filed under its English/localized name
+  // ("My Hero Academia"). Comparing search()'s single title field misses
+  // most well-known series for exactly this reason; MangaDex's own
+  // `altTitles` list (dozens of translations per manga) is what actually
+  // has the localized name as one of its entries, so this checks every
+  // candidate's main title AND all of its altTitles, not just the former.
+  async findBestMatch(query: string, nsfw?: boolean): Promise<SearchResult | null> {
+    try {
+      const ratingQuery = nsfw
+        ? "contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic"
+        : "contentRating[]=safe&contentRating[]=suggestive";
+      const url = `https://api.mangadex.org/manga?title=${encodeURIComponent(query)}&limit=20&includes[]=cover_art&${ratingQuery}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`MangaDex search error: ${res.status}`);
+      const data = await res.json() as any;
+
+      const normQuery = normalizeTitleForMatch(query);
+      for (const item of (data.data || [])) {
+        const titleMap = item.attributes?.title || {};
+        const mainTitle = titleMap.en || titleMap.ja || (Object.values(titleMap).length > 0 ? String(Object.values(titleMap)[0]) : "");
+        const altTitles: string[] = (item.attributes?.altTitles || []).flatMap((entry: any) => Object.values(entry) as string[]);
+        const candidateTitles = [mainTitle, ...altTitles].filter(Boolean);
+        if (!candidateTitles.some(t => normalizeTitleForMatch(t) === normQuery)) continue;
+
+        const id = item.id;
+        const descMap = item.attributes?.description || {};
+        const description = this.extractPtDescription(descMap);
+        const coverRel = item.relationships?.find((r: any) => r.type === "cover_art");
+        const coverFileName = coverRel?.attributes?.fileName;
+        const coverUrl = coverFileName
+          ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.256.jpg`
+          : undefined;
+        const genres = this.extractGenres(item);
+        return { id, title: mainTitle || query, description, coverUrl, genres, providerId: this.id, releaseDate: this.getReleaseDate(item) };
+      }
+      return null;
+    } catch (err) {
+      logger.error({ err: err }, "MangaDex findBestMatch failed:");
+      return null;
     }
   }
 
