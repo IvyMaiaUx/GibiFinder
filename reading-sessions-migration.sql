@@ -1,4 +1,11 @@
 -- Gibi Finder - Fase 2: Reading Sessions
+--
+-- NOTE: this table definition now also lives in supabase-schema.sql (the
+-- main schema was missing it — a fresh deploy from that file alone never
+-- created this table even though the app reads/writes it live). Kept here,
+-- unchanged, for existing databases that already ran this migration
+-- on its own; CREATE TABLE IF NOT EXISTS makes re-running it a no-op either way.
+--
 -- Run this in Supabase SQL Editor before deploying the new version.
 
 CREATE TABLE IF NOT EXISTS reading_sessions (
