@@ -96164,6 +96164,16 @@ init_logger();
 
 // src/providers/MangaDexProvider.ts
 init_logger();
+
+// src/providers/titleMatch.ts
+var MULTIPLICATION_SIGNS = /[×✕✗]/g;
+var COMBINING_DIACRITICS = /[̀-ͯ]/g;
+var NON_WORD_CHARACTERS = /[^\p{L}\p{N}\s]/gu;
+function normalizeTitleForMatch(title) {
+  return title.toLowerCase().replace(MULTIPLICATION_SIGNS, "x").normalize("NFD").replace(COMBINING_DIACRITICS, "").replace(NON_WORD_CHARACTERS, "").replace(/\s+/g, "").trim();
+}
+
+// src/providers/MangaDexProvider.ts
 var GENRE_EN_PT = {
   "Action": "A\xE7\xE3o",
   "Adventure": "Aventura",
@@ -96265,6 +96275,47 @@ var MangaDexProvider = class _MangaDexProvider {
     } catch (err) {
       logger.error({ err }, "MangaDex search failed:");
       return [];
+    }
+  }
+  // Used only by ProviderManager's cross-provider enrichment pass — not part
+  // of the Provider interface. MangaDex's own catalog title is routinely the
+  // Japanese romanized name ("Boku no Hero Academia"), while the same series
+  // scraped from another provider is filed under its English/localized name
+  // ("My Hero Academia"). Comparing search()'s single title field misses
+  // most well-known series for exactly this reason; MangaDex's own
+  // `altTitles` list (dozens of translations per manga) is what actually
+  // has the localized name as one of its entries, so this checks every
+  // candidate's main title AND all of its altTitles, not just the former.
+  async findBestMatch(query, nsfw, signal) {
+    const normQuery = normalizeTitleForMatch(query);
+    if (!normQuery) return null;
+    try {
+      const ratingQuery = nsfw ? "contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic" : "contentRating[]=safe&contentRating[]=suggestive";
+      const url = `https://api.mangadex.org/manga?title=${encodeURIComponent(query)}&limit=20&includes[]=cover_art&${ratingQuery}`;
+      const res = await fetch(url, { signal });
+      if (!res.ok) throw new Error(`MangaDex search error: ${res.status}`);
+      const data = await res.json();
+      for (const item of data.data || []) {
+        const titleMap = item.attributes?.title || {};
+        const mainTitle = titleMap.en || titleMap.ja || (Object.values(titleMap).length > 0 ? String(Object.values(titleMap)[0]) : "");
+        const altTitles = (item.attributes?.altTitles || []).flatMap((entry) => Object.values(entry));
+        const candidateTitles = [mainTitle, ...altTitles].filter(Boolean);
+        if (!candidateTitles.some((t2) => normalizeTitleForMatch(t2) === normQuery)) continue;
+        const id = item.id;
+        const descMap = item.attributes?.description || {};
+        const description = this.extractPtDescription(descMap);
+        const coverRel = item.relationships?.find((r2) => r2.type === "cover_art");
+        const coverFileName = coverRel?.attributes?.fileName;
+        const coverUrl = coverFileName ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.256.jpg` : void 0;
+        const genres = this.extractGenres(item);
+        return { id, title: mainTitle || query, description, coverUrl, genres, providerId: this.id, releaseDate: this.getReleaseDate(item) };
+      }
+      return null;
+    } catch (err) {
+      if (!(err instanceof Error) || err.name !== "AbortError") {
+        logger.error({ err }, "MangaDex findBestMatch failed:");
+      }
+      return null;
     }
   }
   async getDetails(id) {
@@ -99427,7 +99478,7 @@ var ProviderManager = class {
   }
   // Normalizes a string to compare titles (e.g. "One Piece" -> "onepiece")
   static normalizeTitle(title) {
-    return title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w\s]/g, "").replace(/\s+/g, "").trim();
+    return normalizeTitleForMatch(title);
   }
   static normalizeText(text) {
     return text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -99804,8 +99855,71 @@ var ProviderManager = class {
     const resultsArray = await Promise.all(catalogPromises);
     const flatResults = resultsArray.flat();
     const unified = this.unifyCatalog(flatResults, nsfw);
+    await this.enrichFromMangaDex(unified);
     this.catalogCache.set(cacheKey, { items: unified, ts: Date.now() });
     return unified;
+  }
+  // A handful of weaker scrapers (ComicExtra, MangaFire, Madara-based sites,
+  // ...) fall back to a generic placeholder description when the source
+  // page's own markup gives nothing usable ("HQ importada de ComicExtra.",
+  // "Disponivel no portal X.", etc.), and some never scrape a cover at all.
+  // Matched loosely (provider name changes per site, "Dispon[ií]vel" catches
+  // both accent variants already seen in the codebase) rather than as an
+  // exhaustive per-provider list, since new custom providers add their own
+  // wording over time.
+  static PLACEHOLDER_DESCRIPTION_PATTERNS = [
+    /HQ importada de ComicExtra/i,
+    /\(MangaFire catalog\)/i,
+    /\(Manga Plus catalog\)/i,
+    /did not return details/i,
+    /Dispon[ií]vel no portal/i,
+    /Mang[áa]? ?dispon[ií]vel no portal/i,
+    /Gibi importado da biblioteca Google Drive/i,
+    /Biblioteca Virtual de Quintana/i
+  ];
+  static hasUsableDescription(description) {
+    if (!description || !description.trim()) return false;
+    return !this.PLACEHOLDER_DESCRIPTION_PATTERNS.some((p2) => p2.test(description));
+  }
+  static ENRICH_MAX_ITEMS = 24;
+  static ENRICH_CONCURRENCY = 6;
+  static ENRICH_TIMEOUT_MS = 3500;
+  // Best-effort backfill for items whose only sources are the weak scrapers
+  // above: searches MangaDex by title and fills in a real cover/pt-BR
+  // synopsis when it finds a confident title match, mutating the items in
+  // place (same pattern as injectRatings() in routes/providers.ts). Items
+  // that already have a MangaDex source are skipped — the merge in
+  // unifyCatalog already gave them MangaDex's own cover/description.
+  // Capped (ENRICH_MAX_ITEMS) and time-boxed (ENRICH_TIMEOUT_MS per lookup,
+  // ENRICH_CONCURRENCY in flight) so a large/slow enrichment pass can't blow
+  // this request's time budget; any single lookup failing just leaves that
+  // item as it was, same fail-open shape as the rest of this pipeline.
+  static async enrichFromMangaDex(items) {
+    const mangadex = this.providers.get("mangadex");
+    if (!(mangadex instanceof MangaDexProvider) || this.activeStates.get("mangadex") !== true) return;
+    const candidates = items.filter(
+      (item) => !item.sources.some((s2) => s2.providerId === "mangadex") && (!item.coverUrl || !this.hasUsableDescription(item.description))
+    ).slice(0, this.ENRICH_MAX_ITEMS);
+    if (candidates.length === 0) return;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < candidates.length) {
+        const item = candidates[cursor++];
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.ENRICH_TIMEOUT_MS);
+        try {
+          const match = await mangadex.findBestMatch(item.title, item.isAdult === true, controller.signal);
+          if (!match) continue;
+          if (!item.coverUrl && match.coverUrl) item.coverUrl = match.coverUrl;
+          if (!this.hasUsableDescription(item.description) && match.description) item.description = match.description;
+        } catch (err) {
+          logger.error({ err }, `MangaDex enrichment failed for "${item.title}"`);
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(this.ENRICH_CONCURRENCY, candidates.length) }, worker));
   }
   // Groups a flat list of provider results into unified titles (merging sources,
   // covers, descriptions and genres), then filters by the nsfw flag. Shared by

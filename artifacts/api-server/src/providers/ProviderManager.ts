@@ -13,6 +13,7 @@ import { WordPressComicProvider } from "./WordPressComicProvider";
 import { SlimeReadProvider } from "./SlimeReadProvider";
 import { CuratedComicsProvider } from "./CuratedComicsProvider";
 import { InternetArchiveProvider } from "./InternetArchiveProvider";
+import { normalizeTitleForMatch } from "./titleMatch";
 import { supabase } from "../lib/supabase";
 import * as fs from "fs";
 import * as path from "path";
@@ -349,13 +350,7 @@ export class ProviderManager {
 
   // Normalizes a string to compare titles (e.g. "One Piece" -> "onepiece")
   private static normalizeTitle(title: string): string {
-    return title
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "") // remove accents
-      .replace(/[^\w\s]/g, "") // remove special characters
-      .replace(/\s+/g, "") // remove spaces
-      .trim();
+    return normalizeTitleForMatch(title);
   }
 
   private static normalizeText(text: string): string {
@@ -842,8 +837,88 @@ export class ProviderManager {
     const resultsArray = await Promise.all(catalogPromises);
     const flatResults = resultsArray.flat();
     const unified = this.unifyCatalog(flatResults, nsfw);
+    // Runs once per cache fill (~every 5 min, shared by every visitor), not
+    // per request — see enrichFromMangaDex below for why this is safe to
+    // leave in the hot path.
+    await this.enrichFromMangaDex(unified);
     this.catalogCache.set(cacheKey, { items: unified, ts: Date.now() });
     return unified;
+  }
+
+  // A handful of weaker scrapers (ComicExtra, MangaFire, Madara-based sites,
+  // ...) fall back to a generic placeholder description when the source
+  // page's own markup gives nothing usable ("HQ importada de ComicExtra.",
+  // "Disponivel no portal X.", etc.), and some never scrape a cover at all.
+  // Matched loosely (provider name changes per site, "Dispon[ií]vel" catches
+  // both accent variants already seen in the codebase) rather than as an
+  // exhaustive per-provider list, since new custom providers add their own
+  // wording over time.
+  private static readonly PLACEHOLDER_DESCRIPTION_PATTERNS: RegExp[] = [
+    /HQ importada de ComicExtra/i,
+    /\(MangaFire catalog\)/i,
+    /\(Manga Plus catalog\)/i,
+    /did not return details/i,
+    /Dispon[ií]vel no portal/i,
+    /Mang[áa]? ?dispon[ií]vel no portal/i,
+    /Gibi importado da biblioteca Google Drive/i,
+    /Biblioteca Virtual de Quintana/i,
+  ];
+
+  private static hasUsableDescription(description?: string): boolean {
+    if (!description || !description.trim()) return false;
+    return !this.PLACEHOLDER_DESCRIPTION_PATTERNS.some(p => p.test(description));
+  }
+
+  private static readonly ENRICH_MAX_ITEMS = 24;
+  private static readonly ENRICH_CONCURRENCY = 6;
+  private static readonly ENRICH_TIMEOUT_MS = 3500;
+
+  // Best-effort backfill for items whose only sources are the weak scrapers
+  // above: searches MangaDex by title and fills in a real cover/pt-BR
+  // synopsis when it finds a confident title match, mutating the items in
+  // place (same pattern as injectRatings() in routes/providers.ts). Items
+  // that already have a MangaDex source are skipped — the merge in
+  // unifyCatalog already gave them MangaDex's own cover/description.
+  // Capped (ENRICH_MAX_ITEMS) and time-boxed (ENRICH_TIMEOUT_MS per lookup,
+  // ENRICH_CONCURRENCY in flight) so a large/slow enrichment pass can't blow
+  // this request's time budget; any single lookup failing just leaves that
+  // item as it was, same fail-open shape as the rest of this pipeline.
+  private static async enrichFromMangaDex(items: UnifiedSearchResult[]): Promise<void> {
+    const mangadex = this.providers.get("mangadex");
+    if (!(mangadex instanceof MangaDexProvider) || this.activeStates.get("mangadex") !== true) return;
+
+    const candidates = items.filter(item =>
+      !item.sources.some(s => s.providerId === "mangadex") &&
+      (!item.coverUrl || !this.hasUsableDescription(item.description))
+    ).slice(0, this.ENRICH_MAX_ITEMS);
+
+    if (candidates.length === 0) return;
+
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < candidates.length) {
+        const item = candidates[cursor++];
+        // withTimeout() alone races a fallback against the real promise but
+        // never cancels it — the underlying fetch would keep running past
+        // its own "timeout" and past this worker moving on to its next
+        // candidate, letting far more than ENRICH_CONCURRENCY lookups be
+        // in flight at once. An AbortController actually stops the request.
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.ENRICH_TIMEOUT_MS);
+        try {
+          const match = await mangadex.findBestMatch(item.title, item.isAdult === true, controller.signal);
+          if (!match) continue;
+          if (!item.coverUrl && match.coverUrl) item.coverUrl = match.coverUrl;
+          if (!this.hasUsableDescription(item.description) && match.description) item.description = match.description;
+        } catch (err) {
+          logger.error({ err }, `MangaDex enrichment failed for "${item.title}"`);
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(this.ENRICH_CONCURRENCY, candidates.length) }, worker));
   }
 
   // Groups a flat list of provider results into unified titles (merging sources,
