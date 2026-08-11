@@ -6,8 +6,8 @@ import { useState, useEffect } from "react";
 // so unlike the old plain detective.png, these aren't wrapped in an extra
 // comic-border/rounded-full clip here; that would just double up on the
 // artwork's own frame.
-const NORMAL_SRC = "/images/detective-badge-normal.png";
-const NSFW_SRC = "/images/detective-badge-nsfw.png";
+const NORMAL_SRC = "/images/detective-badge-normal.webp";
+const NSFW_SRC = "/images/detective-badge-nsfw.webp";
 
 export function DetectiveIllustration() {
   const [isNsfw, setIsNsfw] = useState(() => document.documentElement.classList.contains("nsfw"));

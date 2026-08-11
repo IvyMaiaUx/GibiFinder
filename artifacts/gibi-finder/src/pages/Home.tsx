@@ -4,7 +4,7 @@ import { SearchPanel } from "@/components/home/SearchPanel";
 import { ResultView } from "@/components/results/ResultView";
 import { useSearchActions } from "@/hooks/use-search-actions";
 import { useLocation } from "wouter";
-import { AlertTriangle, ArrowDown, ArrowUp, BookOpen, Filter, HelpCircle, Loader2, Star } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, BookOpen, Filter, HelpCircle, Loader2, Lock, Star, Unlock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { useAuth } from "@/hooks/use-auth";
@@ -417,7 +417,7 @@ export default function Home() {
                     <h3 className="font-display text-xl text-black uppercase">Editora</h3>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="font-display text-sm text-black uppercase">Lancamento</span>
+                    <span className="font-display text-sm text-black uppercase">Lançamento</span>
                     <div className="flex border-2 border-black rounded-lg overflow-hidden bg-white">
                       <button
                         type="button"
@@ -480,9 +480,9 @@ export default function Home() {
                 <div className="bg-rose-50 border-4 border-rose-600 rounded-xl p-4 comic-shadow-sm flex items-start gap-3">
                   <AlertTriangle className="w-7 h-7 text-rose-600 shrink-0 mt-0.5" strokeWidth={3} />
                   <div>
-                    <h3 className="font-display text-xl text-rose-700 uppercase">Conteudo +18 oculto</h3>
+                    <h3 className="font-display text-xl text-rose-700 uppercase">Conteúdo +18 oculto</h3>
                     <p className="font-sans font-bold text-sm text-rose-900 leading-relaxed">
-                      Esta busca parece ter titulos adultos. {adultSearchWarning.hiddenCount > 0 ? `${adultSearchWarning.hiddenCount} resultado(s) +18 foram escondidos.` : "Ative o modo +18 para pesquisar e exibir esse tipo de conteudo."}
+                      Esta busca parece ter títulos adultos. {adultSearchWarning.hiddenCount > 0 ? `${adultSearchWarning.hiddenCount} resultado(s) +18 foram escondidos.` : "Ative o modo +18 para pesquisar e exibir esse tipo de conteúdo."}
                     </p>
                   </div>
                 </div>
@@ -559,7 +559,7 @@ export default function Home() {
                           </p>
                           {item.releaseDate && (
                             <p className="font-sans text-2xs text-gray-500 font-extrabold uppercase mt-1">
-                              Lancamento: {formatReleaseDate(item.releaseDate)}
+                              Lançamento: {formatReleaseDate(item.releaseDate)}
                             </p>
                           )}
                           {item.genres && item.genres.length > 0 && (() => {
@@ -579,10 +579,11 @@ export default function Home() {
                                 ))}
                                 {isAdult && (
                                   <span className={cn(
-                                    "text-white text-3xs font-extrabold uppercase px-1.5 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]",
+                                    "inline-flex items-center gap-0.5 text-white text-3xs font-extrabold uppercase px-1.5 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]",
                                     isUncensored ? "bg-cyan-500" : "bg-rose-500"
                                   )}>
-                                    {isUncensored ? "🔓 SEM CENSURA" : "🔒 CENSURADO"}
+                                    {isUncensored ? <Unlock className="w-2.5 h-2.5" strokeWidth={3} /> : <Lock className="w-2.5 h-2.5" strokeWidth={3} />}
+                                    {isUncensored ? "SEM CENSURA" : "CENSURADO"}
                                   </span>
                                 )}
                               </div>
