@@ -5,7 +5,9 @@
   "installCommand": "pnpm install --frozen-lockfile=false",
   "framework": null,
   "functions": {
-    "api/index.mjs": { "maxDuration": 30 }
+    "api/index.mjs": {
+      "maxDuration": 30
+    }
   },
   "crons": [
     { "path": "/api/cron/refresh-catalog", "schedule": "0 4 * * *" }

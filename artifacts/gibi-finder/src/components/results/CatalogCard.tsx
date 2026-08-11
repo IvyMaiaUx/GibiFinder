@@ -57,7 +57,7 @@ export function CatalogCard({ item, onOpen, onToggleFav, favorited, status, full
         className="block w-full text-left cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-secondary disabled:cursor-wait"
       >
         <div className="relative aspect-[3/4] bg-zinc-950 border-b-4 border-black overflow-hidden">
-          <SafeImage src={item.coverUrl} alt={item.title} className={cn("w-full h-full object-cover group-hover:scale-105 transition-transform", (status || loading) && "opacity-90")} loading="lazy" />
+          <SafeImage src={item.coverUrl} alt={item.title} width={320} className={cn("w-full h-full object-cover group-hover:scale-105 transition-transform", (status || loading) && "opacity-90")} loading="lazy" />
           {loading && (
             <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
               <Loader2 className="w-6 h-6 text-white animate-spin" strokeWidth={3} />

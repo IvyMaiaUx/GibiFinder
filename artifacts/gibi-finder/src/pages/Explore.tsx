@@ -134,7 +134,7 @@ function ContinueCard({ item, onClick }: { item: { title: string; coverUrl?: str
       className="group relative w-32 sm:w-40 shrink-0 snap-start bg-white border-4 border-black rounded-xl overflow-hidden text-left comic-shadow-sm hover:translate-y-[-4px] hover:shadow-[6px_6px_0_rgba(0,0,0,1)] transition-all"
     >
       <div className="relative aspect-[3/4] bg-zinc-950 border-b-4 border-black overflow-hidden">
-        <SafeImage src={item.coverUrl} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" />
+        <SafeImage src={item.coverUrl} alt={item.title} width={320} className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" />
         <span className="absolute bottom-1 left-1 bg-primary text-white text-3xs font-display px-1.5 py-0.5 border border-black rounded flex items-center gap-1">
           <BookOpen className="w-3 h-3" /> Cap. {item.chapterNum ?? "?"}
         </span>
@@ -528,7 +528,7 @@ export default function Explore() {
           )}>
             <div className="absolute inset-0 opacity-10 bg-[radial-gradient(white_1px,transparent_1px)] [background-size:8px_8px] pointer-events-none" />
             <div className="relative flex flex-col sm:flex-row items-center gap-5 p-5 sm:p-8">
-              <SafeImage src={hero.coverUrl} alt={hero.title} className="w-32 h-48 sm:w-40 sm:h-60 object-cover border-4 border-black rounded-lg shrink-0 comic-shadow-sm" />
+              <SafeImage src={hero.coverUrl} alt={hero.title} width={320} className="w-32 h-48 sm:w-40 sm:h-60 object-cover border-4 border-black rounded-lg shrink-0 comic-shadow-sm" />
               <div className="min-w-0 text-white">
                 <span className="inline-flex items-center gap-1 font-display text-xs uppercase bg-secondary text-black px-2 py-0.5 border-2 border-black rounded mb-2">
                   <Compass className="w-3.5 h-3.5" strokeWidth={3} /> Destaque

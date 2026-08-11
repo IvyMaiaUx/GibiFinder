@@ -291,10 +291,13 @@ const OUTDATED_COVERS_MAP: Record<string, string> = {
 /**
  * Returns the cover URL routed through our image proxy to bypass
  * hotlinking/CORS restrictions from external CDNs (MangaDex, ComicExtra, etc.)
+ * `width`, when given, asks the proxy to resize+re-encode server-side (e.g.
+ * catalog grid cards render covers at ~120-200px — no reason to ship a
+ * provider's full-resolution art for that) — see api-server's imageProxy.ts.
  */
-export function proxyCoverUrl(url: string | undefined | null): string | undefined {
+export function proxyCoverUrl(url: string | undefined | null, width?: number): string | undefined {
   if (!url) return undefined;
-  
+
   // Clean up outdated hardcoded MangaDex cover references on-the-fly
   for (const [outdatedId, newPlaceholder] of Object.entries(OUTDATED_COVERS_MAP)) {
     if (url.includes(outdatedId)) {
@@ -302,11 +305,36 @@ export function proxyCoverUrl(url: string | undefined | null): string | undefine
     }
   }
 
-  if (url.includes("/api/image-proxy")) return url;
+  // Already proxied — e.g. a persisted admin-override cover URL, which
+  // SafeImage/CatalogCard still pass through here with a width. Returning it
+  // untouched (the old behavior) meant those covers silently never got
+  // resized; update/clear the `w` param instead of just passing it along.
+  // Parsed instead of a substring check: `url` here is provider-supplied
+  // (or admin-entered) and a loose `.includes("/api/image-proxy")` would
+  // false-positive on any URL that merely contains that text somewhere in
+  // its query string, not just our own proxy endpoint.
+  let existingProxyUrl: URL | undefined;
+  try {
+    existingProxyUrl = new URL(url, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+  } catch {
+    existingProxyUrl = undefined;
+  }
+  if (existingProxyUrl?.pathname === "/api/image-proxy") {
+    // Rebuild on the original string's own base (relative or absolute,
+    // whichever `url` was) rather than the resolved URL, so an absolute
+    // admin-entered proxy URL doesn't get silently rewritten to relative.
+    const [base] = url.split("?");
+    const params = existingProxyUrl.searchParams;
+    if (width) params.set("w", String(width));
+    else params.delete("w");
+    const qs = params.toString();
+    return qs ? `${base}?${qs}` : base;
+  }
   try {
     const parsed = new URL(url);
     if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-      return `${BASE}/api/image-proxy?url=${encodeURIComponent(url)}`;
+      const proxied = `${BASE}/api/image-proxy?url=${encodeURIComponent(url)}`;
+      return width ? `${proxied}&w=${width}` : proxied;
     }
   } catch {
     // Not a valid URL — return as-is
