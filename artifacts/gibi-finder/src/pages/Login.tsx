@@ -1,15 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { Lock, User, Check, Loader2, LogOut, ArrowRight, UserPlus, BookOpenCheck, BookOpen, Star, Settings, X } from "lucide-react";
+import { Lock, User, Check, Loader2, LogOut, ArrowRight, UserPlus, BookOpenCheck, BookOpen, Star, Settings, X, Camera } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
-import { isAdultProviderId } from "@/lib/utils";
+import { isAdultProviderId, fileToBase64 } from "@/lib/utils";
 import { getSyncedCompleted, getLocalProgress } from "@/lib/user-history";
 import { getSyncedFavorites } from "@/lib/favorites";
 
 export default function Login() {
   const [, setLocation] = useLocation();
-  const { user, login, register, logout, updateAccount, loading } = useAuth();
+  const { user, login, register, logout, updateAccount, updateAvatar, loading } = useAuth();
   useDocumentMeta({ title: "Entrar", noindex: true });
 
   const [isRegister, setIsRegister] = useState(false);
@@ -17,6 +17,28 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Profile picture. Resized to 256px client-side (vs. 1280px for the
+  // "busca por imagem" flow) since this only ever renders at a few dozen
+  // px and gets stored as a DB column, not sent to an AI model.
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // let picking the same file again re-fire onChange
+    if (!file) return;
+    setAvatarUploading(true);
+    try {
+      const dataUri = await fileToBase64(file, 256, 0.85);
+      await updateAvatar(dataUri);
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+  const handleRemoveAvatar = async () => {
+    setAvatarUploading(true);
+    try { await updateAvatar(null); } finally { setAvatarUploading(false); }
+  };
 
   // "Editar conta" — there was previously no way to change your username or
   // recover/change your password from the UI at all.
@@ -146,10 +168,47 @@ export default function Login() {
           <div className="bg-white border-4 border-black p-8 text-center comic-shadow relative overflow-hidden">
             <div className="absolute top-0 right-0 w-24 h-24 opacity-5 bg-[radial-gradient(black_1px,transparent_1px)] [background-size:6px_6px] pointer-events-none" />
             
-            <div className="w-24 h-24 bg-secondary border-4 border-black rounded-full flex items-center justify-center mx-auto mb-6 comic-shadow-sm transform -rotate-3 select-none">
-              <span className="font-display text-4xl text-black leading-none">{user.username.charAt(0).toUpperCase()}</span>
+            <div className="relative w-24 h-24 mx-auto mb-6">
+              <button
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={avatarUploading}
+                title="Trocar foto de perfil"
+                className="w-24 h-24 bg-secondary border-4 border-black rounded-full flex items-center justify-center comic-shadow-sm transform -rotate-3 select-none overflow-hidden disabled:opacity-60"
+              >
+                {avatarUploading ? (
+                  <Loader2 className="w-8 h-8 text-black animate-spin" />
+                ) : user.avatarUrl ? (
+                  <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="font-display text-4xl text-black leading-none">{user.username.charAt(0).toUpperCase()}</span>
+                )}
+              </button>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={handleAvatarChange}
+                className="hidden"
+              />
+              <button
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={avatarUploading}
+                title="Trocar foto de perfil"
+                className="absolute -bottom-1 -right-1 w-8 h-8 bg-primary text-white border-2 border-black rounded-full flex items-center justify-center hover:bg-yellow-400 hover:text-black transition-colors"
+              >
+                <Camera className="w-4 h-4" strokeWidth={2.5} />
+              </button>
+              {user.avatarUrl && !avatarUploading && (
+                <button
+                  onClick={handleRemoveAvatar}
+                  title="Remover foto"
+                  className="absolute -top-1 -left-1 w-6 h-6 bg-white text-gray-500 hover:text-red-600 border-2 border-black rounded-full flex items-center justify-center transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" strokeWidth={3} />
+                </button>
+              )}
             </div>
-            
+
             <span className="inline-block bg-primary text-white font-display text-xs px-3 py-1 border-2 border-black transform rotate-2 mb-2">
               CONECTADO
             </span>

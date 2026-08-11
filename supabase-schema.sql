@@ -111,10 +111,18 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   username TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   email TEXT,
+  avatar_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_profiles_username ON user_profiles(username);
+
+-- Run this once against an existing database — CREATE TABLE IF NOT EXISTS
+-- above is a no-op once user_profiles already exists, so it never picks up
+-- new columns added later. Stores the profile picture as a data URI
+-- (already resized to ~256px client-side before upload), not a Storage
+-- bucket path — no bucket/policy setup needed.
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 
 -- ============================================================
 -- Table: user_favorites (synced estante / collection)
