@@ -414,10 +414,16 @@ export const ADULT_PROVIDER_IDS = ["eightmuses", "hentai-home", "hentai-fox", "h
 /** Whether a provider id belongs to the +18 catalog. */
 export const isAdultProviderId = (id?: string | null): boolean => !!id && ADULT_PROVIDER_IDS.includes(id);
 
-export function fileToBase64(file: File): Promise<string> {
+// Defaults (1280px/0.78) match the "busca por imagem" upload flow, which
+// needs enough detail left for the AI to actually identify the comic.
+// Callers with a smaller/lower-stakes use (e.g. a profile avatar, which
+// only ever renders at a few dozen px and gets stored as a DB column
+// rather than sent to a model) can pass a much smaller maxPx to keep the
+// resulting data URI small.
+export function fileToBase64(file: File, maxPx = 1280, quality = 0.78): Promise<string> {
   return new Promise((resolve, reject) => {
-    const MAX_PX = 1280;
-    const QUALITY = 0.78;
+    const MAX_PX = maxPx;
+    const QUALITY = quality;
 
     const img = new Image();
     const url = URL.createObjectURL(file);

@@ -23,6 +23,7 @@ export interface UserSession {
   id: string;
   username: string;
   email?: string;
+  avatarUrl?: string | null;
   created_at: string;
 }
 
@@ -166,6 +167,37 @@ export function useAuth() {
     }
   };
 
+  // Set (dataUri) or clear (null) the profile picture. No current-password
+  // check like updateAccount — an avatar is cosmetic and reversible, not
+  // worth that friction.
+  const updateAvatar = async (dataUri: string | null): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const res = await fetch(`${BASE}/api/auth/avatar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ avatarUrl: dataUri }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.user) {
+        const updated = data.user as UserSession;
+        if (localStorage.getItem(AUTH_KEY)) {
+          localStorage.setItem(AUTH_KEY, JSON.stringify(updated));
+        } else {
+          sessionStorage.setItem(AUTH_KEY, JSON.stringify(updated));
+        }
+        setUser(updated);
+        window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
+        return { success: true };
+      }
+      const message = data.message || "Não foi possível atualizar a foto";
+      toast({ title: "Erro ao atualizar foto", description: message, variant: "destructive" });
+      return { success: false, message };
+    } catch {
+      toast({ title: "Erro na conexão", description: "Verifique sua internet", variant: "destructive" });
+      return { success: false, message: "network" };
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem(AUTH_KEY);
     sessionStorage.removeItem(AUTH_KEY);
@@ -208,5 +240,5 @@ export function useAuth() {
     ]);
   };
 
-  return { user, loading, login, register, logout, updateAccount, syncFavorites, syncUserData };
+  return { user, loading, login, register, logout, updateAccount, updateAvatar, syncFavorites, syncUserData };
 }

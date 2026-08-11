@@ -1298,7 +1298,7 @@ router.post("/auth/register", async (req: Request, res: Response) => {
     const { data, error } = await supabase
       .from("user_profiles")
       .insert({ username, password_hash, email: email || null })
-      .select("id, username, email, created_at")
+      .select("id, username, email, created_at, avatar_url")
       .single();
 
     if (error) {
@@ -1309,7 +1309,8 @@ router.post("/auth/register", async (req: Request, res: Response) => {
       }
       return;
     }
-    res.json({ success: true, user: data, token: signToken(data.id) });
+    const { avatar_url, ...rest } = data;
+    res.json({ success: true, user: { ...rest, avatarUrl: avatar_url }, token: signToken(data.id) });
   } catch (err) {
     res.status(500).json({ error: "server_error", message: err instanceof Error ? err.message : "Erro desconhecido" });
   }
@@ -1326,7 +1327,7 @@ router.post("/auth/login", async (req: Request, res: Response) => {
   try {
     const { data, error } = await supabase
       .from("user_profiles")
-      .select("id, username, email, created_at, password_hash")
+      .select("id, username, email, created_at, password_hash, avatar_url")
       .eq("username", username)
       .single();
 
@@ -1340,9 +1341,52 @@ router.post("/auth/login", async (req: Request, res: Response) => {
       try { await supabase.from("user_profiles").update({ password_hash: hashPassword(password) }).eq("id", data.id); } catch { /* best effort */ }
     }
 
-    const { password_hash: _, ...user } = data;
-    res.json({ success: true, user, token: signToken(data.id) });
+    const { password_hash: _, avatar_url, ...rest } = data;
+    res.json({ success: true, user: { ...rest, avatarUrl: avatar_url }, token: signToken(data.id) });
   } catch (err) {
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+// POST /api/auth/avatar - set or clear the current session's profile
+// picture. Stored as a data URI directly on user_profiles.avatar_url
+// (requires the `avatar_url TEXT` column — see supabase-schema.sql) rather
+// than Supabase Storage: no bucket/policy setup needed, and avatars here
+// are already resized client-side to ~256px before upload so the payload
+// stays small. No current-password check (unlike /auth/account) — an
+// avatar is low-risk, cosmetic, and reversible, not worth the extra
+// friction login/password changes justify.
+router.post("/auth/avatar", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const userId = sessionUserId(req);
+  if (!userId) { res.status(401).json({ error: "unauthorized", message: "Sessão inválida, faça login novamente" }); return; }
+
+  const { avatarUrl } = req.body as { avatarUrl?: string | null };
+  if (avatarUrl !== null && avatarUrl !== undefined) {
+    if (typeof avatarUrl !== "string" || !/^data:image\/(png|jpe?g|webp);base64,/.test(avatarUrl)) {
+      res.status(400).json({ error: "invalid_avatar", message: "Formato de imagem inválido" }); return;
+    }
+    // Rough byte size from base64 length (~4 chars per 3 bytes). Client
+    // already resizes to ~256px, so a legit upload should land well under
+    // this — this is a backstop against something huge slipping through.
+    const approxBytes = (avatarUrl.length * 3) / 4;
+    if (approxBytes > 600_000) {
+      res.status(400).json({ error: "avatar_too_large", message: "Imagem muito grande" }); return;
+    }
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .update({ avatar_url: avatarUrl ?? null })
+      .eq("id", userId)
+      .select("id, username, email, created_at, avatar_url")
+      .single();
+    if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
+    const { avatar_url, ...rest } = data;
+    res.json({ success: true, user: { ...rest, avatarUrl: avatar_url } });
+  } catch (err) {
+    req.log.error({ err }, "handler failed");
     res.status(500).json({ error: "server_error" });
   }
 });
@@ -1391,7 +1435,7 @@ router.post("/auth/account", async (req: Request, res: Response) => {
       .from("user_profiles")
       .update(update)
       .eq("id", userId)
-      .select("id, username, email, created_at")
+      .select("id, username, email, created_at, avatar_url")
       .single();
 
     if (error) {
@@ -1402,7 +1446,8 @@ router.post("/auth/account", async (req: Request, res: Response) => {
       }
       return;
     }
-    res.json({ success: true, user: data });
+    const { avatar_url, ...rest } = data;
+    res.json({ success: true, user: { ...rest, avatarUrl: avatar_url } });
   } catch (err) {
     req.log.error({ err }, "handler failed");
     res.status(500).json({ error: "server_error" });
