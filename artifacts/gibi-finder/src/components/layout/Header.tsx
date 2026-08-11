@@ -120,13 +120,18 @@ export function Header({ minimal = false }: { minimal?: boolean } = {}) {
 
         {/* Auth Actions (Desktop) */}
         <div className="hidden lg:flex items-center gap-2 border-l-4 border-black/10 pl-4 ml-2">
-          {/* +18 Mode Toggle (Desktop) */}
+          {/* +18 Mode Toggle (Desktop). Active state used to be bg-[#f43f5e] —
+              visually almost identical to the site's own --primary red used
+              on every other CTA (header/buttons), so "ativo" didn't read as
+              a distinct/warning state. Now uses its own dedicated dark
+              palette (bg #0E0B0F / border #24151D / text #F5EDF1 / magenta
+              glow #E04478) instead of just another pink button. */}
           <button
             onClick={toggleNsfw}
             className={cn(
               "font-display text-base border-4 border-black px-4 py-2 rounded-lg comic-shadow-sm transition-all select-none duration-150 uppercase flex items-center justify-center gap-1.5",
-              isNsfw 
-                ? "bg-[#f43f5e] text-white hover:bg-[#e11d48] border-white shadow-[0_0_10px_rgba(244,63,94,0.5)]" 
+              isNsfw
+                ? "bg-[#0E0B0F] text-[#F5EDF1] hover:bg-[#1a1116] border-[#24151D] shadow-[0_0_10px_rgba(224,68,120,0.5)]"
                 : "bg-white text-black hover:bg-gray-100"
             )}
             title="Modo +18"
@@ -163,13 +168,13 @@ export function Header({ minimal = false }: { minimal?: boolean } = {}) {
         {/* Mobile top-bar actions — main nav lives in the bottom bar (BottomNav) */}
         <nav className="lg:hidden flex items-center gap-1">
 
-          {/* +18 Mode Toggle (Mobile) */}
+          {/* +18 Mode Toggle (Mobile) — same active palette as the desktop toggle above. */}
           <button
             onClick={toggleNsfw}
             className={cn(
               "p-1.5 sm:p-2 border-2 sm:border-[3px] rounded-lg transition-all flex items-center justify-center",
-              isNsfw 
-                ? "bg-[#f43f5e] text-white border-white" 
+              isNsfw
+                ? "bg-[#0E0B0F] text-[#F5EDF1] border-[#24151D] shadow-[0_0_8px_rgba(224,68,120,0.5)]"
                 : "bg-white text-black border-black hover:bg-gray-100"
             )}
             title="Modo +18"
