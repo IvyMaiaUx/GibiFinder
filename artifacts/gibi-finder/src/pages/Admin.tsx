@@ -1284,6 +1284,11 @@ export default function Admin() {
                       {p.id === "comicextra" && "Fonte de HQs americanas digitalizadas em inglês de forma direta."}
                       {p.id === "mugiwaras" && "Provedor nacional focado em mangás de One Piece e lançamentos populares."}
                       {p.id === "mangafire" && "Agregador de mangás com catálogo próprio."}
+                      {p.id === "mangaplus" && "MangaPlus (Shueisha) — capítulos oficiais licenciados, em tempo real."}
+                      {p.id === "eightmuses" && "8Muses — conteúdo adulto (+18)."}
+                      {p.id === "nhentai" && "NHentai — conteúdo adulto (+18)."}
+                      {p.id === "biblioteca-br" && "Biblioteca curada de HQs e gibis nacionais via Google Drive/Sites."}
+                      {p.id === "internet-archive" && "Internet Archive — acervo público de quadrinhos digitalizados."}
                       {isStub && "Placeholder registrado no sistema, mas sem scraper implementado — sempre retorna 0 resultados, mesmo ativado."}
                       {p.isCustom && `Provedor customizado autogerenciado conectado via Madara API em ${p.baseUrl}`}
                     </p>

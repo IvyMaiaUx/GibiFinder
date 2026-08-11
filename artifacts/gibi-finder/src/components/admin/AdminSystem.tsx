@@ -208,7 +208,7 @@ export function AdminSystem({ info, adminKey }: { info: SystemInfo; adminKey?: s
           {healthLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" strokeWidth={2.5} />}
           PINGAR PROVIDERS
         </button>
-        <p className="font-sans font-bold text-gray-400 text-xs mb-3">Faz uma busca rápida em cada provider ativo, todos em paralelo (leva poucos segundos, até ~10s). Use com moderação.</p>
+        <p className="font-sans font-bold text-gray-400 text-xs mb-3">Faz uma busca rápida em cada provider ativo, todos em paralelo (leva poucos segundos, ~6-7s). Use com moderação.</p>
         {healthData && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {healthData.map(p => (
