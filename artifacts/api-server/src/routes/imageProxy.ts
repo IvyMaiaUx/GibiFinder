@@ -33,10 +33,7 @@ async function resizeIfRequested(buffer: Buffer, contentType: string, widthParam
     return { buffer: resized, contentType: "image/webp" };
   } catch (err) {
     logger.error({ err }, "Image proxy resize failed, serving original");
-    // TEMP DIAGNOSTIC — remove before merging. No Vercel log access from
-    // here, so surface the real error via a header (never in the body,
-    // doesn't touch the served image) to find out why sharp is throwing.
-    return { buffer, contentType, debugErr: err instanceof Error ? `${err.name}: ${err.message}` : String(err) } as any;
+    return { buffer, contentType };
   }
 }
 
@@ -151,10 +148,7 @@ router.get("/image-proxy", async (req: Request, res: Response) => {
     }
 
     const upstreamContentType = result.headers["content-type"] || "image/jpeg";
-    const resizeResult = await resizeIfRequested(result.buffer, upstreamContentType, req.query.w);
-    const { buffer, contentType } = resizeResult;
-    // TEMP DIAGNOSTIC — remove before merging.
-    if ((resizeResult as any).debugErr) res.set("X-Debug-Resize-Error", (resizeResult as any).debugErr);
+    const { buffer, contentType } = await resizeIfRequested(result.buffer, upstreamContentType, req.query.w);
 
     res.set({
       "Content-Type": contentType,
