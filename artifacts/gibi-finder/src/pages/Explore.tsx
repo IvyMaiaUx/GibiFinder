@@ -1,31 +1,15 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { Layout } from "@/components/layout/Layout";
-import { Loader2, AlertCircle, Compass, Star, ChevronLeft, ChevronRight, Play, BookOpen, CheckCircle2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Loader2, AlertCircle, Compass, Play, Star, BookOpen, ChevronLeft } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { isFavorite, toggleFavorite, getFavorites } from "@/lib/favorites";
 import { getLocalProgress, getLocalCompleted } from "@/lib/user-history";
+import { getGenreBasedSuggestions } from "@/lib/recommendations";
 import { getEmptySources, hasReadableSource, isSourceEmpty } from "@/lib/empty-sources";
 import { useAuth } from "@/hooks/use-auth";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
-
-interface CatalogSource {
-  providerId: string;
-  id: string;
-  title: string;
-}
-
-interface UnifiedCatalogItem {
-  id: string;
-  title: string;
-  coverUrl?: string;
-  description?: string;
-  rating?: number;
-  genres?: string[];
-  isAdult?: boolean;
-  sources: CatalogSource[];
-}
+import { CatalogCard, CatalogRow as Row, type CatalogItem as UnifiedCatalogItem } from "@/components/results/CatalogCard";
 
 interface RowData {
   key: string;
@@ -122,92 +106,6 @@ function ContinueCard({ item, onClick }: { item: { title: string; coverUrl?: str
         <h4 className="font-display text-xs sm:text-sm text-black leading-tight line-clamp-2 group-hover:text-primary">{item.title}</h4>
       </div>
     </button>
-  );
-}
-
-function CatalogCard({ item, onOpen, onToggleFav, favorited, status, full }: {
-  item: UnifiedCatalogItem;
-  onOpen: () => void;
-  onToggleFav: (e: React.MouseEvent) => void;
-  favorited: boolean;
-  status?: "reading" | "read";
-  full?: boolean;
-}) {
-  return (
-    <div
-      onClick={onOpen}
-      className={cn(
-        "group relative cursor-pointer bg-white border-4 border-black rounded-xl overflow-hidden comic-shadow-sm hover:translate-y-[-4px] hover:shadow-[6px_6px_0_rgba(0,0,0,1)] hover:bg-yellow-50 transition-all",
-        full ? "w-full" : "w-32 sm:w-40 shrink-0 snap-start"
-      )}
-    >
-      <div className="relative aspect-[3/4] bg-zinc-950 border-b-4 border-black overflow-hidden">
-        <SafeImage src={item.coverUrl} alt={item.title} className={cn("w-full h-full object-cover group-hover:scale-105 transition-transform", status && "opacity-90")} loading="lazy" />
-        {status && (
-          <span className={cn(
-            "absolute top-1.5 left-1.5 flex items-center gap-0.5 text-white text-3xs font-display px-1.5 py-0.5 border border-black rounded",
-            status === "reading" ? "bg-primary" : "bg-emerald-600"
-          )}>
-            {status === "reading" ? <><BookOpen className="w-2.5 h-2.5" /> LENDO</> : <><CheckCircle2 className="w-2.5 h-2.5" /> LIDO</>}
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={onToggleFav}
-          className={cn(
-            "absolute top-1.5 right-1.5 p-1.5 border-2 border-black rounded-full transition-colors shadow-[2px_2px_0_rgba(0,0,0,1)]",
-            favorited ? "bg-secondary text-black" : "bg-white/90 text-gray-500 hover:bg-secondary hover:text-black"
-          )}
-          title={favorited ? "Remover dos favoritos" : "Adicionar aos favoritos"}
-        >
-          <Star className={cn("w-3.5 h-3.5", favorited && "fill-black")} strokeWidth={3} />
-        </button>
-        {item.rating !== undefined && (
-          <span className="absolute bottom-1 left-1 flex items-center gap-0.5 bg-[#FFD166] text-black px-1.5 py-0.5 border border-black rounded font-display text-2xs font-black">
-            <Star className="w-2.5 h-2.5 fill-black" strokeWidth={2.5} /> {(item.rating / 2).toFixed(1)}
-          </span>
-        )}
-      </div>
-      <div className="p-2">
-        <h4 className="font-display text-xs sm:text-sm text-black leading-tight line-clamp-2 group-hover:text-primary">{item.title}</h4>
-      </div>
-    </div>
-  );
-}
-
-function Row({ title, children, onSeeAll }: { title: string; children: React.ReactNode; onSeeAll?: () => void }) {
-  const scrollerRef = useRef<HTMLDivElement>(null);
-  const scrollBy = (dir: 1 | -1) => {
-    const el = scrollerRef.current;
-    if (el) el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: "smooth" });
-  };
-  return (
-    <section className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="font-display text-xl sm:text-2xl text-black uppercase truncate">{title}</h3>
-        <div className="flex items-center gap-1 shrink-0">
-          {onSeeAll && (
-            <button onClick={onSeeAll} className="font-display text-xs uppercase text-primary hover:underline px-2 py-1">
-              Ver tudo →
-            </button>
-          )}
-          <div className="hidden sm:flex gap-1">
-            <button onClick={() => scrollBy(-1)} className="p-1.5 border-2 border-black rounded bg-white hover:bg-secondary transition-colors" aria-label="Anterior">
-              <ChevronLeft className="w-4 h-4" strokeWidth={3} />
-            </button>
-            <button onClick={() => scrollBy(1)} className="p-1.5 border-2 border-black rounded bg-white hover:bg-secondary transition-colors" aria-label="Próximo">
-              <ChevronRight className="w-4 h-4" strokeWidth={3} />
-            </button>
-          </div>
-        </div>
-      </div>
-      {/* snap-x + overscroll-x-contain: without these, a touch swipe drags
-          the row to an arbitrary stop mid-card (feels "off"/floaty) and can
-          bleed into the page's own scroll/edge-swipe-back gesture. */}
-      <div ref={scrollerRef} className="flex gap-3 sm:gap-4 overflow-x-auto pb-3 -mx-1 px-1 scroll-smooth snap-x snap-mandatory overscroll-x-contain [scrollbar-width:thin]">
-        {children}
-      </div>
-    </section>
   );
 }
 
@@ -447,23 +345,10 @@ export default function Explore() {
     if (item.sources?.some(s => readKeys.has(keyOf(s.providerId, s.id)))) return "read";
     return undefined;
   };
-  const isInteracted = (item: UnifiedCatalogItem) =>
-    item.sources?.some(s => interactedKeys.has(keyOf(s.providerId, s.id)));
-
   // Suggestions: rank the genres the user engaged with, then recommend unseen
-  // catalog titles in those genres.
-  const genreScore = new Map<string, number>();
-  for (const it of uniqueItems) {
-    if (!isInteracted(it)) continue;
-    for (const g of it.genres || []) genreScore.set(norm(g), (genreScore.get(norm(g)) || 0) + 1);
-  }
-  const topGenres = [...genreScore.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([g]) => g);
-  const suggestions = topGenres.length === 0 ? [] : uniqueItems
-    .filter(it => !isInteracted(it) && (it.genres || []).some(g => topGenres.includes(norm(g))))
-    .map(it => ({ it, score: (it.genres || []).filter(g => topGenres.includes(norm(g))).length + (it.rating || 0) / 20 }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, ROW_DISPLAY_CAP)
-    .map(x => x.it);
+  // catalog titles in those genres. Shared with Home.tsx/ResultDetail.tsx —
+  // see lib/recommendations.ts.
+  const suggestions = getGenreBasedSuggestions(uniqueItems, ROW_DISPLAY_CAP);
 
   // Dynamic genre list: featured genres first, then every other genre that has
   // enough items — so the catalog surfaces all available genres, not just a fixed set.
@@ -527,7 +412,6 @@ export default function Explore() {
   void favVersion; // re-render favorites on toggle
 
   return (
-    <Layout>
       <div className="max-w-6xl mx-auto space-y-8 pb-16 select-none">
         {/* Hero */}
         {hero && !loading && !viewAllGenre && (
@@ -724,6 +608,5 @@ export default function Explore() {
           </div>
         )}
       </div>
-    </Layout>
   );
 }
