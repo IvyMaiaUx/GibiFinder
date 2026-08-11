@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { BookOpen, Trash2, Clock, BookOpenCheck, Star, CheckCircle2 } from "lucide-react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { cn, isAdultProviderId } from "@/lib/utils";
 import { authHeaders } from "@/lib/authToken";
 import { SafeImage } from "@/components/ui/SafeImage";
@@ -31,9 +31,17 @@ interface FavoriteItem {
 
 export default function Colecao() {
   const [, setLocation] = useLocation();
+  const search = useSearch();
   const { user } = useAuth();
   useDocumentMeta({ title: "Minha coleção", noindex: true });
-  const [activeTab, setActiveTab] = useState<"progress" | "favorites" | "completed">("progress");
+  // Lets links elsewhere (the profile stats tiles) deep-link straight into a
+  // tab instead of always landing on "Lendo" and making the user click
+  // again — e.g. /colecao?tab=favorites. Falls back to "progress" for any
+  // missing/unrecognized value, same as before this existed.
+  const [activeTab, setActiveTab] = useState<"progress" | "favorites" | "completed">(() => {
+    const tab = new URLSearchParams(search).get("tab");
+    return tab === "favorites" || tab === "completed" ? tab : "progress";
+  });
   const [shelfItems, setShelfItems] = useState<ReadingProgress[]>([]);
   const [favoriteItems, setFavoriteItems] = useState<FavoriteItem[]>([]);
   const [completedItems, setCompletedItems] = useState<CompletedReadingItem[]>([]);
