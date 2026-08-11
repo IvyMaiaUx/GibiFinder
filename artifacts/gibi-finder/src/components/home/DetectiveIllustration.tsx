@@ -27,7 +27,7 @@ export function DetectiveIllustration() {
       <img
         key={isNsfw ? "nsfw" : "normal"}
         src={isNsfw ? NSFW_SRC : NORMAL_SRC}
-        alt="Detetive Gibi Finder"
+        alt={isNsfw ? "Detetive Gibi Finder — modo +18" : "Detetive Gibi Finder"}
         className="w-full h-full object-contain animate-in fade-in duration-300"
       />
     </motion.div>
