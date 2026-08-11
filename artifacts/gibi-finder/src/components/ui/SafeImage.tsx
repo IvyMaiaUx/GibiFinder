@@ -50,12 +50,19 @@ export function SafeImage({ src, alt, className, onLoad, onBroken, ...props }: S
     // state. Icon size is relative (%) so it scales with the card; the
     // label stays a small fixed size since it needs to stay legible rather
     // than shrink toward unreadable on the smallest catalog thumbnails.
+    //
+    // retryStage reaches 2 two different ways — no `src` was ever given, or
+    // a real `src` was given and every attempt to load it failed — and
+    // collapsing both into "Sem capa" quietly hid the second, actually
+    // broken case. `src` (the prop, not `currentSrc`) still holds which one
+    // this is, so the label can say which it actually is.
+    const isBroken = retryStage === 2 && !!src;
     return (
       <div className={`${className || "w-full h-full"} relative flex flex-col items-center justify-center gap-[6%] overflow-hidden bg-gradient-to-br from-zinc-900 to-zinc-950 border border-dashed border-white/10 select-none p-[8%]`}>
         <div className="absolute inset-0 opacity-[0.06] bg-[radial-gradient(white_1px,transparent_1px)] [background-size:10px_10px]" />
-        <ImageOff className="relative w-[26%] h-[26%] min-w-4 min-h-4 text-white/25 shrink-0" strokeWidth={1.5} />
-        <span className="relative font-display text-[9px] text-white/30 uppercase tracking-wide text-center line-clamp-2 leading-tight">
-          {alt || "Sem capa"}
+        <ImageOff className="relative w-[26%] h-[26%] min-w-4 min-h-4 text-white/30 shrink-0" strokeWidth={1.5} />
+        <span className="relative font-display text-[9px] text-white/55 uppercase tracking-wide text-center line-clamp-2 leading-tight">
+          {isBroken ? "Capa indisponível" : (alt || "Sem capa")}
         </span>
       </div>
     );
