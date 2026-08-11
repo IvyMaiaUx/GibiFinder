@@ -73,6 +73,31 @@ export class BlockedHostError extends Error {
 // was validated, instead of letting the request perform its own, separate
 // DNS resolution afterwards — which is the gap that makes DNS rebinding
 // possible in the first place.
+// Node's http/https `lookup` option must match dns.lookup()'s own contract,
+// which is NOT just `(err, address, family)` — since Happy Eyeballs support
+// landed (Node 18+), the client internally calls lookup with `{ all: true }`
+// to gather every resolved address for parallel dual-stack attempts, and
+// expects `callback(err, addresses[])` in that case instead. Every caller
+// here previously always called the 3-arg form regardless of `options.all`,
+// which silently broke EVERY external fetch through the image/PDF proxies —
+// Node's internals received a bare string where they expected an array and
+// threw ERR_INVALID_IP_ADDRESS trying to read `.address` off it, so every
+// covered image quietly fell back to the "sem capa" placeholder in
+// production. Route both proxies' pinned `lookup` option through this one
+// helper so the fix (and any future Node dual-stack contract change) only
+// has to happen in one place.
+export function pinnedLookup(pinned: { address: string; family: number }) {
+  return (_hostname: string, options: { all?: boolean } | ((...args: unknown[]) => void), callback?: (...args: unknown[]) => void) => {
+    // Node calls lookup as either (hostname, options, callback) or, when no
+    // options were passed, (hostname, callback) — mirror dns.lookup's own
+    // overload instead of assuming the 3-arg form always applies.
+    const cb = typeof options === "function" ? options : callback!;
+    const opts = typeof options === "function" ? {} : options;
+    if (opts?.all) cb(null, [{ address: pinned.address, family: pinned.family }]);
+    else cb(null, pinned.address, pinned.family);
+  };
+}
+
 export async function resolveAndPinPublicHost(hostname: string): Promise<{ address: string; family: number }> {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (host === "localhost" || host.endsWith(".localhost")) {

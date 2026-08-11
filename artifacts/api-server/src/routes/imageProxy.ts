@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import { logger } from "../lib/logger";
 import https from "https";
 import http from "http";
-import { isPrivateOrInternalHost, resolveAndPinPublicHost } from "../lib/urlSafety";
+import { isPrivateOrInternalHost, resolveAndPinPublicHost, pinnedLookup } from "../lib/urlSafety";
 
 const router = Router();
 
@@ -54,7 +54,7 @@ function fetchImage(url: string, headers: any, redirects = 0): Promise<{ status:
       const client = parsed.protocol === "https:" ? https : http;
       const req = client.get(url, {
         headers,
-        lookup: (_hostname, _options, callback) => callback(null, pinned.address, pinned.family),
+        lookup: pinnedLookup(pinned),
       }, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           const nextUrl = new URL(res.headers.location, url).toString();
