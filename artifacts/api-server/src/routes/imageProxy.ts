@@ -33,7 +33,10 @@ async function resizeIfRequested(buffer: Buffer, contentType: string, widthParam
     return { buffer: resized, contentType: "image/webp" };
   } catch (err) {
     logger.error({ err }, "Image proxy resize failed, serving original");
-    return { buffer, contentType };
+    // TEMP DIAGNOSTIC round 2 — remove before merging. First round (removed)
+    // found "Cannot find package 'sharp'"; vercel.json's includeFiles was
+    // added since, this checks whether that actually changed the error.
+    return { buffer, contentType, debugErr: err instanceof Error ? `${err.name}: ${err.message}` : String(err) } as any;
   }
 }
 
@@ -148,7 +151,10 @@ router.get("/image-proxy", async (req: Request, res: Response) => {
     }
 
     const upstreamContentType = result.headers["content-type"] || "image/jpeg";
-    const { buffer, contentType } = await resizeIfRequested(result.buffer, upstreamContentType, req.query.w);
+    const resizeResult = await resizeIfRequested(result.buffer, upstreamContentType, req.query.w);
+    const { buffer, contentType } = resizeResult;
+    // TEMP DIAGNOSTIC round 2 — remove before merging.
+    if ((resizeResult as any).debugErr) res.set("X-Debug-Resize-Error", (resizeResult as any).debugErr);
 
     res.set({
       "Content-Type": contentType,
