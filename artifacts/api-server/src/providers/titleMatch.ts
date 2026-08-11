@@ -10,6 +10,13 @@
 // "x" on the other, and the two never compare equal.
 const MULTIPLICATION_SIGNS = /[×✕✗]/g;
 const COMBINING_DIACRITICS = /[̀-ͯ]/g;
+// `\w` is ASCII-only, so a Japanese/Chinese/Korean/Cyrillic/... title with no
+// Latin characters at all used to strip down to "" entirely — harmless on
+// its own, but findBestMatch() below treats an exact normalized-string match
+// as a confident match, so two unrelated titles that both happen to
+// normalize to "" would incorrectly "match" each other. \p{L}/\p{N} (with
+// the `u` flag) keep letters/digits from any script instead of only ASCII.
+const NON_WORD_CHARACTERS = /[^\p{L}\p{N}\s]/gu;
 
 export function normalizeTitleForMatch(title: string): string {
   return title
@@ -17,7 +24,7 @@ export function normalizeTitleForMatch(title: string): string {
     .replace(MULTIPLICATION_SIGNS, "x")
     .normalize("NFD")
     .replace(COMBINING_DIACRITICS, "") // remove accents
-    .replace(/[^\w\s]/g, "") // remove special characters
+    .replace(NON_WORD_CHARACTERS, "") // remove special characters, keeping letters/digits from any script
     .replace(/\s+/g, "") // remove spaces
     .trim();
 }

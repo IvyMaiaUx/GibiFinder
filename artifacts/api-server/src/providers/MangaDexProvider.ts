@@ -104,17 +104,25 @@ export class MangaDexProvider implements Provider {
   // `altTitles` list (dozens of translations per manga) is what actually
   // has the localized name as one of its entries, so this checks every
   // candidate's main title AND all of its altTitles, not just the former.
-  async findBestMatch(query: string, nsfw?: boolean): Promise<SearchResult | null> {
+  async findBestMatch(query: string, nsfw?: boolean, signal?: AbortSignal): Promise<SearchResult | null> {
+    // A query that's punctuation/symbols-only (or, before the Unicode fix
+    // above, any non-Latin-script title) normalizes to "" — without this
+    // guard that would then "exact match" the first MangaDex result whose
+    // title/altTitles ALSO happen to normalize to "", enriching the item
+    // with a completely unrelated cover/description instead of just finding
+    // nothing.
+    const normQuery = normalizeTitleForMatch(query);
+    if (!normQuery) return null;
+
     try {
       const ratingQuery = nsfw
         ? "contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic"
         : "contentRating[]=safe&contentRating[]=suggestive";
       const url = `https://api.mangadex.org/manga?title=${encodeURIComponent(query)}&limit=20&includes[]=cover_art&${ratingQuery}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { signal });
       if (!res.ok) throw new Error(`MangaDex search error: ${res.status}`);
       const data = await res.json() as any;
 
-      const normQuery = normalizeTitleForMatch(query);
       for (const item of (data.data || [])) {
         const titleMap = item.attributes?.title || {};
         const mainTitle = titleMap.en || titleMap.ja || (Object.values(titleMap).length > 0 ? String(Object.values(titleMap)[0]) : "");
@@ -135,7 +143,12 @@ export class MangaDexProvider implements Provider {
       }
       return null;
     } catch (err) {
-      logger.error({ err: err }, "MangaDex findBestMatch failed:");
+      // An aborted lookup (enrichment's own timeout) isn't a real failure —
+      // it's the expected outcome of giving up on a slow request, so it
+      // shouldn't be logged alongside genuine errors.
+      if (!(err instanceof Error) || err.name !== "AbortError") {
+        logger.error({ err: err }, "MangaDex findBestMatch failed:");
+      }
       return null;
     }
   }

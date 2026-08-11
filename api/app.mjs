@@ -96168,8 +96168,9 @@ init_logger();
 // src/providers/titleMatch.ts
 var MULTIPLICATION_SIGNS = /[×✕✗]/g;
 var COMBINING_DIACRITICS = /[̀-ͯ]/g;
+var NON_WORD_CHARACTERS = /[^\p{L}\p{N}\s]/gu;
 function normalizeTitleForMatch(title) {
-  return title.toLowerCase().replace(MULTIPLICATION_SIGNS, "x").normalize("NFD").replace(COMBINING_DIACRITICS, "").replace(/[^\w\s]/g, "").replace(/\s+/g, "").trim();
+  return title.toLowerCase().replace(MULTIPLICATION_SIGNS, "x").normalize("NFD").replace(COMBINING_DIACRITICS, "").replace(NON_WORD_CHARACTERS, "").replace(/\s+/g, "").trim();
 }
 
 // src/providers/MangaDexProvider.ts
@@ -96285,14 +96286,15 @@ var MangaDexProvider = class _MangaDexProvider {
   // `altTitles` list (dozens of translations per manga) is what actually
   // has the localized name as one of its entries, so this checks every
   // candidate's main title AND all of its altTitles, not just the former.
-  async findBestMatch(query, nsfw) {
+  async findBestMatch(query, nsfw, signal) {
+    const normQuery = normalizeTitleForMatch(query);
+    if (!normQuery) return null;
     try {
       const ratingQuery = nsfw ? "contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic" : "contentRating[]=safe&contentRating[]=suggestive";
       const url = `https://api.mangadex.org/manga?title=${encodeURIComponent(query)}&limit=20&includes[]=cover_art&${ratingQuery}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { signal });
       if (!res.ok) throw new Error(`MangaDex search error: ${res.status}`);
       const data = await res.json();
-      const normQuery = normalizeTitleForMatch(query);
       for (const item of data.data || []) {
         const titleMap = item.attributes?.title || {};
         const mainTitle = titleMap.en || titleMap.ja || (Object.values(titleMap).length > 0 ? String(Object.values(titleMap)[0]) : "");
@@ -96310,7 +96312,9 @@ var MangaDexProvider = class _MangaDexProvider {
       }
       return null;
     } catch (err) {
-      logger.error({ err }, "MangaDex findBestMatch failed:");
+      if (!(err instanceof Error) || err.name !== "AbortError") {
+        logger.error({ err }, "MangaDex findBestMatch failed:");
+      }
       return null;
     }
   }
@@ -99901,17 +99905,17 @@ var ProviderManager = class {
     const worker = async () => {
       while (cursor < candidates.length) {
         const item = candidates[cursor++];
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.ENRICH_TIMEOUT_MS);
         try {
-          const match = await this.withTimeout(
-            mangadex.findBestMatch(item.title, item.isAdult === true),
-            this.ENRICH_TIMEOUT_MS,
-            null
-          );
+          const match = await mangadex.findBestMatch(item.title, item.isAdult === true, controller.signal);
           if (!match) continue;
           if (!item.coverUrl && match.coverUrl) item.coverUrl = match.coverUrl;
           if (!this.hasUsableDescription(item.description) && match.description) item.description = match.description;
         } catch (err) {
           logger.error({ err }, `MangaDex enrichment failed for "${item.title}"`);
+        } finally {
+          clearTimeout(timer);
         }
       }
     };

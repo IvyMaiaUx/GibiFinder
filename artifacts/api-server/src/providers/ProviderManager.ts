@@ -898,17 +898,22 @@ export class ProviderManager {
     const worker = async () => {
       while (cursor < candidates.length) {
         const item = candidates[cursor++];
+        // withTimeout() alone races a fallback against the real promise but
+        // never cancels it — the underlying fetch would keep running past
+        // its own "timeout" and past this worker moving on to its next
+        // candidate, letting far more than ENRICH_CONCURRENCY lookups be
+        // in flight at once. An AbortController actually stops the request.
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.ENRICH_TIMEOUT_MS);
         try {
-          const match = await this.withTimeout(
-            mangadex.findBestMatch(item.title, item.isAdult === true),
-            this.ENRICH_TIMEOUT_MS,
-            null as SearchResult | null
-          );
+          const match = await mangadex.findBestMatch(item.title, item.isAdult === true, controller.signal);
           if (!match) continue;
           if (!item.coverUrl && match.coverUrl) item.coverUrl = match.coverUrl;
           if (!this.hasUsableDescription(item.description) && match.description) item.description = match.description;
         } catch (err) {
           logger.error({ err }, `MangaDex enrichment failed for "${item.title}"`);
+        } finally {
+          clearTimeout(timer);
         }
       }
     };
