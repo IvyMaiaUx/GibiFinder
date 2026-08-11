@@ -174,86 +174,92 @@ function SearchResultCard({
     (item.genres?.some((g: string) => g.toLowerCase().includes("uncensored") || g.toLowerCase().includes("sem censura")) ?? false);
 
   return (
-    <button
-      onClick={() => onOpen(item)}
-      disabled={openingId === item.id}
-      aria-busy={openingId === item.id}
-      className="group bg-white border-4 border-black rounded-xl overflow-hidden text-left flex flex-col justify-between hover:translate-y-[-6px] transition-all duration-200 comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:bg-yellow-50 disabled:cursor-wait"
-    >
-      <div className="relative aspect-[3/4] border-b-4 border-black bg-zinc-950 overflow-hidden shrink-0">
-        <SafeImage
-          src={item.coverUrl}
-          alt={item.title}
-          width={320}
-          className="w-full h-full object-cover transition-transform group-hover:scale-105"
-          loading="lazy"
-        />
-        {openingId === item.id && (
-          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-            <Loader2 className="w-6 h-6 text-white animate-spin" strokeWidth={3} />
-          </div>
-        )}
-        {src && (
-          <button
-            type="button"
-            onClick={(e) => onToggleFavorite(item, e)}
-            className={cn(
-              "absolute top-2 right-2 p-1.5 border-2 border-black rounded-full transition-colors shadow-[2px_2px_0_rgba(0,0,0,1)]",
-              favorited ? "bg-secondary text-black" : "bg-white/90 text-gray-500 hover:bg-secondary hover:text-black"
-            )}
-            title={favorited ? "Remover dos favoritos" : "Adicionar aos favoritos"}
-          >
-            <Star className={cn("w-4 h-4", favorited && "fill-black")} strokeWidth={3} />
-          </button>
-        )}
-      </div>
-
-      <div className="p-4 flex-1 flex flex-col justify-between min-w-0">
-        <div>
-          <h4 className="font-display text-lg text-black leading-tight group-hover:text-primary transition-colors line-clamp-2">
-            {item.title}
-          </h4>
-          <p className="font-sans text-2xs text-gray-500 font-extrabold uppercase mt-1">
-            Fontes: {Array.from(new Set(item.sources.map(s => s.providerId.toUpperCase()))).join(", ")}
-          </p>
-          {item.releaseDate && (
-            <p className="font-sans text-2xs text-gray-500 font-extrabold uppercase mt-1">
-              Lançamento: {formatReleaseDate(item.releaseDate)}
-            </p>
-          )}
-          {item.genres && item.genres.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2">
-              {item.genres.slice(0, 2).map((g: string) => (
-                <span key={g} className="bg-yellow-200 genre-tag-text text-3xs font-extrabold uppercase px-1.5 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]">
-                  {g}
-                </span>
-              ))}
-              {isAdult && (
-                <span className={cn(
-                  "inline-flex items-center gap-0.5 text-white text-3xs font-extrabold uppercase px-1.5 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]",
-                  isUncensored ? "bg-cyan-500" : "bg-rose-500"
-                )}>
-                  {isUncensored ? <Unlock className="w-2.5 h-2.5" strokeWidth={3} /> : <Lock className="w-2.5 h-2.5" strokeWidth={3} />}
-                  {isUncensored ? "SEM CENSURA" : "CENSURADO"}
-                </span>
-              )}
+    <div className="group relative bg-white border-4 border-black rounded-xl overflow-hidden hover:translate-y-[-6px] transition-all duration-200 comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:bg-yellow-50">
+      <button
+        type="button"
+        onClick={() => onOpen(item)}
+        disabled={openingId === item.id}
+        aria-busy={openingId === item.id}
+        className="w-full text-left flex flex-col justify-between disabled:cursor-wait"
+      >
+        <div className="relative aspect-[3/4] border-b-4 border-black bg-zinc-950 overflow-hidden shrink-0">
+          <SafeImage
+            src={item.coverUrl}
+            alt={item.title}
+            width={320}
+            className="w-full h-full object-cover transition-transform group-hover:scale-105"
+            loading="lazy"
+          />
+          {openingId === item.id && (
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+              <Loader2 className="w-6 h-6 text-white animate-spin" strokeWidth={3} />
             </div>
           )}
         </div>
 
-        <div className="mt-4 pt-3 border-t border-dashed border-black/20 flex items-center justify-between">
-          {item.rating !== undefined && (
-            <span className="flex items-center gap-1 bg-[#FFD166] text-black px-2 py-0.5 border-2 border-black rounded-lg font-display text-xs font-black shadow-[2px_2px_0_rgba(0,0,0,1)]">
-              <Star className="w-3 h-3 fill-black text-black" strokeWidth={2.5} />
-              {(item.rating / 2).toFixed(1)}
+        <div className="p-4 flex-1 flex flex-col justify-between min-w-0">
+          <div>
+            <h4 className="font-display text-lg text-black leading-tight group-hover:text-primary transition-colors line-clamp-2">
+              {item.title}
+            </h4>
+            <p className="font-sans text-2xs text-gray-500 font-extrabold uppercase mt-1">
+              Fontes: {Array.from(new Set(item.sources.map(s => s.providerId.toUpperCase()))).join(", ")}
+            </p>
+            {item.releaseDate && (
+              <p className="font-sans text-2xs text-gray-500 font-extrabold uppercase mt-1">
+                Lançamento: {formatReleaseDate(item.releaseDate)}
+              </p>
+            )}
+            {item.genres && item.genres.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {item.genres.slice(0, 2).map((g: string) => (
+                  <span key={g} className="bg-yellow-200 genre-tag-text text-3xs font-extrabold uppercase px-1.5 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]">
+                    {g}
+                  </span>
+                ))}
+                {isAdult && (
+                  <span className={cn(
+                    "inline-flex items-center gap-0.5 text-white text-3xs font-extrabold uppercase px-1.5 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]",
+                    isUncensored ? "bg-cyan-500" : "bg-rose-500"
+                  )}>
+                    {isUncensored ? <Unlock className="w-2.5 h-2.5" strokeWidth={3} /> : <Lock className="w-2.5 h-2.5" strokeWidth={3} />}
+                    {isUncensored ? "SEM CENSURA" : "CENSURADO"}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-dashed border-black/20 flex items-center justify-between">
+            {item.rating !== undefined && (
+              <span className="flex items-center gap-1 bg-[#FFD166] text-black px-2 py-0.5 border-2 border-black rounded-lg font-display text-xs font-black shadow-[2px_2px_0_rgba(0,0,0,1)]">
+                <Star className="w-3 h-3 fill-black text-black" strokeWidth={2.5} />
+                {(item.rating / 2).toFixed(1)}
+              </span>
+            )}
+            <span className="font-display text-xs text-primary group-hover:translate-x-1 transition-transform">
+              LER AGORA →
             </span>
-          )}
-          <span className="font-display text-xs text-primary group-hover:translate-x-1 transition-transform">
-            LER AGORA →
-          </span>
+          </div>
         </div>
-      </div>
-    </button>
+      </button>
+
+      {/* Sibling, not nested inside the card's own <button> above — a <button>
+          inside a <button> is invalid interactive-content nesting. */}
+      {src && (
+        <button
+          type="button"
+          onClick={(e) => onToggleFavorite(item, e)}
+          className={cn(
+            "absolute top-2 right-2 p-1.5 border-2 border-black rounded-full transition-colors shadow-[2px_2px_0_rgba(0,0,0,1)]",
+            favorited ? "bg-secondary text-black" : "bg-white/90 text-gray-500 hover:bg-secondary hover:text-black"
+          )}
+          title={favorited ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+        >
+          <Star className={cn("w-4 h-4", favorited && "fill-black")} strokeWidth={3} />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -308,19 +314,21 @@ export default function Home() {
     const controller = new AbortController();
     fetch(`${BASE}/api/providers/catalog?listType=popular&nsfw=${isNsfw}`, { signal: controller.signal })
       .then(res => res.ok ? res.json() : [])
-      .then((pool: UnifiedSearchResult[]) => {
-        // Belt-and-suspenders like the rest of this page: the endpoint already
-        // filters by `nsfw`, but adult content never renders off a single
-        // server-side check alone here.
-        setSuggestionPool(isNsfw ? pool : pool.filter(item => !isAdultItem(item)));
-      })
+      .then((pool: UnifiedSearchResult[]) => setSuggestionPool(pool))
       .catch(err => { if (err.name !== "AbortError") console.error("Failed to load genre suggestions:", err); });
     return () => controller.abort();
   }, [isNsfw]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- favoriteVersion is read for its
-  // change, not its value: getGenreBasedSuggestions reads favorites straight from
-  // localStorage, so this only needs to re-run, not receive a new argument.
-  const genreSuggestions = useMemo(() => getGenreBasedSuggestions(suggestionPool, 10), [suggestionPool, favoriteVersion]);
+  // Filtered against the CURRENT isNsfw at read time, not baked in when the
+  // pool was fetched — flipping the toggle off shouldn't keep rendering an
+  // already-fetched adult-inclusive pool for the moment before the next
+  // fetch resolves. favoriteVersion is read for its change, not its value:
+  // getGenreBasedSuggestions reads favorites straight from localStorage, so
+  // this only needs to re-run, not receive a new argument.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const genreSuggestions = useMemo(() => {
+    const safePool = isNsfw ? suggestionPool : suggestionPool.filter(item => !isAdultItem(item));
+    return getGenreBasedSuggestions(safePool, 10);
+  }, [suggestionPool, isNsfw, favoriteVersion]);
 
   // On mount: re-run a search coming from history (?q=...), or restore the last
   // online search ONLY when returning via "Voltar aos resultados" (?restore=1).
@@ -494,7 +502,7 @@ export default function Home() {
             4 items rather than showing a half-empty row: a new user with no
             favorites/history yet has no genre signal, and getGenreBasedSuggestions
             returns [] for them by design. */}
-        {!results && !onlineResults && !onlineSearching && !onlineSearchError && genreSuggestions.length >= 4 && (
+        {!aiPending && !results && !onlineResults && !onlineSearching && !onlineSearchError && genreSuggestions.length >= 4 && (
           <div className="mt-12">
             <h2 className="font-display text-2xl text-black uppercase mb-4">✨ Sugestões pra você</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
