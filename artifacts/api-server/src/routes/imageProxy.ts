@@ -10,14 +10,21 @@ const router = Router();
 // coverUrl is routinely full-resolution (MangaDex's .512.jpg, etc.) — a page
 // with ~25 cards was downloading several MB of pixels never shown past
 // thumbnail size. `?w=` resizes server-side before the bytes ever reach the
-// client. Best-effort: if sharp fails for any reason (corrupt/unsupported
-// input, native binding missing on some runtime, ...) this falls back to the
-// untouched original buffer rather than breaking the image entirely.
+// client. Best-effort: if the resize fails for any reason (corrupt/
+// unsupported input, ...) this falls back to the untouched original buffer
+// rather than breaking the image entirely.
+//
+// Uses Jimp (pure JavaScript, zero native binaries) rather than sharp: sharp
+// is a libvips native binding that esbuild can only `external`-ize, not
+// bundle, which left it up to Vercel's dependency tracing to find and ship
+// the platform binary alongside the function — it never did, so the resize
+// silently no-op'd in production. Jimp has no binary to trace or miss; it
+// bundles straight into api/app.mjs like any other dependency.
 const MAX_PROXY_WIDTH = 800; // guards against a caller requesting an absurd/abusive size
-// Defense in depth beyond sharp's own default (268M px, ~16000x16000) — this
-// route is public/unauthenticated, so a cover URL pointing at a deliberately
-// oversized/decompression-bomb image shouldn't get to spend real CPU/memory
-// decoding it just because it's nominally under sharp's built-in ceiling.
+// Defense in depth beyond Jimp's own decoding — this route is public/
+// unauthenticated, so a cover URL pointing at a deliberately oversized/
+// decompression-bomb image shouldn't get to spend real CPU/memory decoding
+// it just because it was requested with a small `?w=`.
 const MAX_INPUT_PIXELS = 40_000_000; // ~40MP, generous for any real cover art
 async function resizeIfRequested(buffer: Buffer, contentType: string, widthParam: unknown): Promise<{ buffer: Buffer; contentType: string }> {
   const width = Math.min(Math.max(Number(widthParam) || 0, 0), MAX_PROXY_WIDTH);
@@ -25,18 +32,22 @@ async function resizeIfRequested(buffer: Buffer, contentType: string, widthParam
     return { buffer, contentType };
   }
   try {
-    const sharp = (await import("sharp")).default;
-    const resized = await sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS })
-      .resize({ width, withoutEnlargement: true })
-      .webp({ quality: 82 })
-      .toBuffer();
-    return { buffer: resized, contentType: "image/webp" };
+    const { Jimp } = await import("jimp");
+    const image = await Jimp.fromBuffer(buffer);
+    if (image.width * image.height > MAX_INPUT_PIXELS) {
+      return { buffer, contentType };
+    }
+    // Jimp has no `withoutEnlargement` option, so this is checked by hand —
+    // upscaling would waste CPU and produce a larger, blurrier file than the
+    // original for no benefit.
+    if (image.width > width) {
+      image.resize({ w: width });
+    }
+    const resized = await image.getBuffer("image/jpeg", { quality: 82 });
+    return { buffer: resized, contentType: "image/jpeg" };
   } catch (err) {
     logger.error({ err }, "Image proxy resize failed, serving original");
-    // TEMP DIAGNOSTIC round 2 — remove before merging. First round (removed)
-    // found "Cannot find package 'sharp'"; vercel.json's includeFiles was
-    // added since, this checks whether that actually changed the error.
-    return { buffer, contentType, debugErr: err instanceof Error ? `${err.name}: ${err.message}` : String(err) } as any;
+    return { buffer, contentType };
   }
 }
 
@@ -59,22 +70,45 @@ async function resizeIfRequested(buffer: Buffer, contentType: string, widthParam
 const MAX_UPSTREAM_BYTES = 15 * 1024 * 1024; // 15MB — generous for any real cover, well under abuse scale
 const UPSTREAM_TIMEOUT_MS = 15_000;
 
-function fetchImage(url: string, headers: any, redirects = 0): Promise<{ status: number; headers: any; buffer: Buffer }> {
+// `deadline` is one absolute wall-clock budget shared across the whole
+// redirect chain (and DNS resolution, which has no timeout of its own) —
+// passed through on recursive calls so a redirect hop can't reset the clock
+// and stretch the real worst case past UPSTREAM_TIMEOUT_MS.
+function fetchImage(url: string, headers: any, redirects = 0, deadline?: number): Promise<{ status: number; headers: any; buffer: Buffer }> {
+  const overallDeadline = deadline ?? Date.now() + UPSTREAM_TIMEOUT_MS;
   return new Promise((resolve, reject) => {
     if (redirects > 5) {
       reject(new Error("too_many_redirects"));
       return;
     }
-    const parsed = new URL(url);
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      reject(new Error("invalid_redirect_url"));
+      return;
+    }
     resolveAndPinPublicHost(parsed.hostname).then(pinned => {
+      const remaining = overallDeadline - Date.now();
+      if (remaining <= 0) {
+        reject(new Error("upstream_timeout"));
+        return;
+      }
       const client = parsed.protocol === "https:" ? https : http;
       const req = client.get(url, {
         headers,
         lookup: pinnedLookup(pinned),
       }, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          const nextUrl = new URL(res.headers.location, url).toString();
-          fetchImage(nextUrl, headers, redirects + 1).then(resolve).catch(reject);
+          res.resume(); // drain/release this response's socket before following the next hop
+          let nextUrl: string;
+          try {
+            nextUrl = new URL(res.headers.location, url).toString();
+          } catch {
+            reject(new Error("invalid_redirect_location"));
+            return;
+          }
+          fetchImage(nextUrl, headers, redirects + 1, overallDeadline).then(resolve).catch(reject);
           return;
         }
         const chunks: any[] = [];
@@ -97,7 +131,7 @@ function fetchImage(url: string, headers: any, redirects = 0): Promise<{ status:
           });
         });
       });
-      req.setTimeout(UPSTREAM_TIMEOUT_MS, () => req.destroy(new Error("upstream_timeout")));
+      req.setTimeout(remaining, () => req.destroy(new Error("upstream_timeout")));
       req.on("error", (err) => reject(err));
     }).catch(reject);
   });
@@ -151,10 +185,7 @@ router.get("/image-proxy", async (req: Request, res: Response) => {
     }
 
     const upstreamContentType = result.headers["content-type"] || "image/jpeg";
-    const resizeResult = await resizeIfRequested(result.buffer, upstreamContentType, req.query.w);
-    const { buffer, contentType } = resizeResult;
-    // TEMP DIAGNOSTIC round 2 — remove before merging.
-    if ((resizeResult as any).debugErr) res.set("X-Debug-Resize-Error", (resizeResult as any).debugErr);
+    const { buffer, contentType } = await resizeIfRequested(result.buffer, upstreamContentType, req.query.w);
 
     res.set({
       "Content-Type": contentType,

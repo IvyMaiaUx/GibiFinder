@@ -6,8 +6,7 @@
   "framework": null,
   "functions": {
     "api/index.mjs": {
-      "maxDuration": 30,
-      "includeFiles": "node_modules/{sharp,@img}/**"
+      "maxDuration": 30
     }
   },
   "crons": [

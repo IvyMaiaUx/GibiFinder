@@ -305,13 +305,26 @@ export function proxyCoverUrl(url: string | undefined | null, width?: number): s
     }
   }
 
-  if (url.includes("/api/image-proxy")) {
-    // Already proxied — e.g. a persisted admin-override cover URL, which
-    // SafeImage/CatalogCard still pass through here with a width. Returning
-    // it untouched (the old behavior) meant those covers silently never got
-    // resized; update/clear the `w` param instead of just passing it along.
-    const [base, query = ""] = url.split("?");
-    const params = new URLSearchParams(query);
+  // Already proxied — e.g. a persisted admin-override cover URL, which
+  // SafeImage/CatalogCard still pass through here with a width. Returning it
+  // untouched (the old behavior) meant those covers silently never got
+  // resized; update/clear the `w` param instead of just passing it along.
+  // Parsed instead of a substring check: `url` here is provider-supplied
+  // (or admin-entered) and a loose `.includes("/api/image-proxy")` would
+  // false-positive on any URL that merely contains that text somewhere in
+  // its query string, not just our own proxy endpoint.
+  let existingProxyUrl: URL | undefined;
+  try {
+    existingProxyUrl = new URL(url, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+  } catch {
+    existingProxyUrl = undefined;
+  }
+  if (existingProxyUrl?.pathname === "/api/image-proxy") {
+    // Rebuild on the original string's own base (relative or absolute,
+    // whichever `url` was) rather than the resolved URL, so an absolute
+    // admin-entered proxy URL doesn't get silently rewritten to relative.
+    const [base] = url.split("?");
+    const params = existingProxyUrl.searchParams;
     if (width) params.set("w", String(width));
     else params.delete("w");
     const qs = params.toString();
