@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BookOpen, Trash2, Clock, BookOpenCheck, Star, CheckCircle2 } from "lucide-react";
+import { BookOpen, Trash2, Clock, BookOpenCheck, Star, CheckCircle2, Flame, Trophy, BookMarked, LogIn } from "lucide-react";
 import { useLocation, useSearch } from "wouter";
 import { cn, isAdultProviderId } from "@/lib/utils";
 import { authHeaders } from "@/lib/authToken";
@@ -7,6 +7,7 @@ import { SafeImage } from "@/components/ui/SafeImage";
 import { useAuth } from "@/hooks/use-auth";
 import { getLocalCompleted, saveLocalCompleted, getSyncedReadingHistory, getSyncedCompleted, removeCompletedRemote, removeReadingByManga, type CompletedReadingItem } from "@/lib/user-history";
 import { getSyncedFavorites } from "@/lib/favorites";
+import { getReadingStats, type ReadingStats } from "@/lib/stats";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
 
 interface ReadingProgress {
@@ -38,13 +39,14 @@ export default function Colecao() {
   // tab instead of always landing on "Lendo" and making the user click
   // again — e.g. /colecao?tab=favorites. Falls back to "progress" for any
   // missing/unrecognized value, same as before this existed.
-  const [activeTab, setActiveTab] = useState<"progress" | "favorites" | "completed">(() => {
+  const [activeTab, setActiveTab] = useState<"progress" | "favorites" | "completed" | "stats">(() => {
     const tab = new URLSearchParams(search).get("tab");
-    return tab === "favorites" || tab === "completed" ? tab : "progress";
+    return tab === "favorites" || tab === "completed" || tab === "stats" ? tab : "progress";
   });
   const [shelfItems, setShelfItems] = useState<ReadingProgress[]>([]);
   const [favoriteItems, setFavoriteItems] = useState<FavoriteItem[]>([]);
   const [completedItems, setCompletedItems] = useState<CompletedReadingItem[]>([]);
+  const [readingStats, setReadingStats] = useState<ReadingStats | null>(null);
   const [isNsfw, setIsNsfw] = useState(() => document.documentElement.classList.contains("nsfw"));
 
   useEffect(() => {
@@ -118,11 +120,16 @@ export default function Colecao() {
       // When logged in, pull progress + favorites from the account first so the
       // shelf reflects the account (cross-device), not just this browser.
       if (user?.id) {
-        await Promise.all([
+        const [, , , stats] = await Promise.all([
           getSyncedReadingHistory(user.id).catch(() => {}),
           getSyncedFavorites(user.id).catch(() => {}),
           getSyncedCompleted(user.id).catch(() => {}),
+          // Server-only aggregate — no local mirror to fall back to like the
+          // other three, so it's just skipped (readingStats stays null) if
+          // this fails rather than showing stale/wrong numbers.
+          getReadingStats(user.id).catch(() => null),
         ]);
+        if (!cancelled && stats) setReadingStats(stats);
       }
       if (cancelled) return;
       loadShelf();
@@ -209,6 +216,14 @@ export default function Colecao() {
     }
   };
 
+  const formatDuration = (ms: number) => {
+    const totalMinutes = Math.round(ms / 60_000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours === 0) return `${minutes}min`;
+    return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}min`;
+  };
+
   const formatDate = (timestamp: number) => {
     if (!timestamp) return "";
     const date = new Date(timestamp);
@@ -281,7 +296,7 @@ export default function Colecao() {
           <button
             onClick={() => setActiveTab("favorites")}
             className={cn(
-              "flex-1 py-4 font-display text-lg sm:text-xl transition-all flex items-center justify-center gap-2",
+              "flex-1 py-4 font-display text-lg sm:text-xl transition-all flex items-center justify-center gap-2 border-r-4 border-black",
               activeTab === "favorites"
                 ? "bg-secondary text-black"
                 : "bg-white text-gray-500 hover:bg-muted/30 hover:text-black"
@@ -289,6 +304,18 @@ export default function Colecao() {
           >
             <Star className="w-5 h-5 sm:w-6 sm:h-6 fill-current" strokeWidth={3} />
             FAVORITOS ({visibleFavorites.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("stats")}
+            className={cn(
+              "flex-1 py-4 font-display text-lg sm:text-xl transition-all flex items-center justify-center gap-2",
+              activeTab === "stats"
+                ? "bg-indigo-600 text-white"
+                : "bg-white text-gray-500 hover:bg-muted/30 hover:text-black"
+            )}
+          >
+            <Flame className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={3} />
+            MEU PROGRESSO
           </button>
         </div>
 
@@ -437,7 +464,7 @@ export default function Colecao() {
               })}
             </div>
           )
-        ) : (
+        ) : activeTab === "favorites" ? (
           /* Favorites list tab content */
           visibleFavorites.length === 0 ? (
             <div className="py-20 text-center border-4 border-dashed border-black bg-white rounded-xl max-w-lg mx-auto p-8 comic-shadow">
@@ -502,6 +529,71 @@ export default function Colecao() {
                   </div>
                 );
               })}
+            </div>
+          )
+        ) : (
+          /* Personal reading stats tab content — server-only aggregate, so
+             it needs an account (unlike the other three tabs, which have a
+             local-storage fallback for logged-out use). */
+          !user ? (
+            <div className="py-20 text-center border-4 border-dashed border-black bg-white rounded-xl max-w-lg mx-auto p-8 comic-shadow">
+              <LogIn className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="font-display text-2xl mb-2 uppercase">Entre Para Ver Seu Progresso</h3>
+              <p className="font-sans font-bold text-gray-500 mb-6">
+                Estatísticas de leitura ficam salvas na sua conta — crie uma ou entre para acompanhar.
+              </p>
+              <button onClick={() => setLocation("/login")} className="bg-primary text-white font-display text-sm px-6 py-3 border-4 border-black rounded-lg hover:bg-yellow-500 hover:text-black transition-colors">
+                ENTRAR / CRIAR CONTA
+              </button>
+            </div>
+          ) : !readingStats || readingStats.totalSessions === 0 ? (
+            <div className="py-20 text-center border-4 border-dashed border-black bg-white rounded-xl max-w-lg mx-auto p-8 comic-shadow">
+              <Flame className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="font-display text-2xl mb-2 uppercase">Ainda Sem Dados</h3>
+              <p className="font-sans font-bold text-gray-500 mb-6">
+                Leia um capítulo até o fim para começar a registrar seu progresso e sua sequência de leitura.
+              </p>
+              <button onClick={() => setLocation("/")} className="bg-primary text-white font-display text-sm px-6 py-3 border-4 border-black rounded-lg hover:bg-yellow-500 hover:text-black transition-colors">
+                IR PARA BUSCA
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Streak call-out — the headline number, styled distinctly from the tile grid below it. */}
+              <div className="bg-indigo-600 text-white border-4 border-black p-6 rounded-xl comic-shadow relative overflow-hidden transform rotate-1 flex items-center gap-4">
+                <Flame className="w-12 h-12 text-orange-300 shrink-0 drop-shadow-[1px_1px_0_black]" strokeWidth={2.5} />
+                <div>
+                  <p className="font-display text-4xl leading-none drop-shadow-[2px_2px_0_black]">
+                    {readingStats.currentStreakDays} {readingStats.currentStreakDays === 1 ? "dia" : "dias"}
+                  </p>
+                  <p className="font-sans font-extrabold text-sm uppercase mt-1 text-white/90">
+                    de sequência de leitura {readingStats.currentStreakDays === 0 && "— leia hoje pra começar uma nova!"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-6">
+                {[
+                  { icon: Trophy, label: "Recorde de sequência", value: `${readingStats.longestStreakDays} ${readingStats.longestStreakDays === 1 ? "dia" : "dias"}` },
+                  { icon: Clock, label: "Tempo total lendo", value: formatDuration(readingStats.totalDurationMs) },
+                  { icon: BookOpen, label: "Páginas lidas", value: readingStats.totalPagesRead.toLocaleString("pt-BR") },
+                  { icon: BookMarked, label: "Títulos diferentes", value: readingStats.titlesRead.toLocaleString("pt-BR") },
+                  { icon: CheckCircle2, label: "Capítulos concluídos", value: readingStats.completedCount.toLocaleString("pt-BR") },
+                  { icon: Star, label: "Favoritos", value: readingStats.favoritesCount.toLocaleString("pt-BR") },
+                ].map(({ icon: Icon, label, value }) => (
+                  <div key={label} className="bg-white border-4 border-black rounded-xl p-4 sm:p-5 comic-shadow-sm flex flex-col items-start gap-2">
+                    <Icon className="w-6 h-6 text-primary" strokeWidth={3} />
+                    <p className="font-display text-2xl sm:text-3xl text-black leading-none">{value}</p>
+                    <p className="font-sans font-bold text-2xs sm:text-xs text-gray-500 uppercase">{label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {readingStats.lastReadAt && (
+                <p className="font-sans font-bold text-xs text-gray-400 text-center">
+                  Última leitura registrada em {formatDate(new Date(readingStats.lastReadAt).getTime())}
+                </p>
+              )}
             </div>
           )
         )}

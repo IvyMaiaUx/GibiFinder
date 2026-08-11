@@ -2092,6 +2092,74 @@ router.post("/auth/stats/session", async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/auth/stats/me — the logged-in user's own aggregated reading
+// stats, for the "Meu Progresso" tab. Same shape of query as
+// /api/admin/stats/manga below (fetch rows, reduce in JS — this codebase
+// never does SQL-side aggregation), just scoped by user_id instead of
+// manga_id, plus a streak derived from reading_sessions.created_at since
+// there's no dedicated activity-calendar table.
+router.get("/auth/stats/me", async (req: Request, res: Response) => {
+  const userId = sessionUserId(req);
+  if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  try {
+    const [{ data: sessions }, { data: completed }, { data: favorites }] = await Promise.all([
+      supabase.from("reading_sessions").select("manga_id, duration_ms, pages_read, created_at").eq("user_id", userId),
+      supabase.from("user_completed").select("id").eq("user_id", userId),
+      supabase.from("user_favorites").select("id").eq("user_id", userId),
+    ]);
+
+    const sessionRows: any[] = sessions || [];
+    const totalDurationMs = sessionRows.reduce((s, r) => s + (r.duration_ms || 0), 0);
+    const totalPagesRead = sessionRows.reduce((s, r) => s + (r.pages_read || 0), 0);
+    const titlesRead = new Set(sessionRows.map(r => r.manga_id)).size;
+    const lastReadAt = sessionRows.reduce((latest: string | null, r) =>
+      !latest || r.created_at > latest ? r.created_at : latest, null as string | null);
+
+    // Distinct UTC calendar days with at least one session — the only
+    // activity-day signal available (reading_sessions has no other
+    // per-day marker), then walked for a current streak (backward from
+    // today) and a longest streak (longest run of consecutive days ever).
+    const activeDays = new Set(sessionRows.map(r => String(r.created_at).slice(0, 10)));
+    const toDateStr = (d: Date) => d.toISOString().slice(0, 10);
+    let currentStreakDays = 0;
+    const cursor = new Date();
+    while (activeDays.has(toDateStr(cursor))) {
+      currentStreakDays++;
+      cursor.setUTCDate(cursor.getUTCDate() - 1);
+    }
+    let longestStreakDays = 0;
+    let run = 0;
+    let prevDay: string | null = null;
+    for (const day of [...activeDays].sort()) {
+      if (prevDay) {
+        const diffDays = Math.round((Date.parse(`${day}T00:00:00Z`) - Date.parse(`${prevDay}T00:00:00Z`)) / 86_400_000);
+        run = diffDays === 1 ? run + 1 : 1;
+      } else {
+        run = 1;
+      }
+      longestStreakDays = Math.max(longestStreakDays, run);
+      prevDay = day;
+    }
+
+    res.json({
+      totalSessions: sessionRows.length,
+      totalDurationMs,
+      totalPagesRead,
+      avgSessionMs: sessionRows.length > 0 ? Math.round(totalDurationMs / sessionRows.length) : null,
+      titlesRead,
+      completedCount: (completed || []).length,
+      favoritesCount: (favorites || []).length,
+      currentStreakDays,
+      longestStreakDays,
+      lastReadAt,
+    });
+  } catch (err) {
+    req.log.error({ err }, "stats/me failed");
+    res.status(500).json({ error: "stats_failed" });
+  }
+});
+
 // GET /api/admin/stats/manga?mangaId=X&providerId=Y
 router.get("/admin/stats/manga", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;

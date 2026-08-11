@@ -96047,6 +96047,65 @@ router2.post("/auth/stats/session", async (req, res) => {
     res.json({ ok: false });
   }
 });
+router2.get("/auth/stats/me", async (req, res) => {
+  const userId = sessionUserId(req);
+  if (!userId) {
+    res.status(400).json({ error: "missing_userId" });
+    return;
+  }
+  if (!supabase) {
+    res.status(503).json({ error: "db_unavailable" });
+    return;
+  }
+  try {
+    const [{ data: sessions }, { data: completed }, { data: favorites }] = await Promise.all([
+      supabase.from("reading_sessions").select("manga_id, duration_ms, pages_read, created_at").eq("user_id", userId),
+      supabase.from("user_completed").select("id").eq("user_id", userId),
+      supabase.from("user_favorites").select("id").eq("user_id", userId)
+    ]);
+    const sessionRows = sessions || [];
+    const totalDurationMs = sessionRows.reduce((s2, r2) => s2 + (r2.duration_ms || 0), 0);
+    const totalPagesRead = sessionRows.reduce((s2, r2) => s2 + (r2.pages_read || 0), 0);
+    const titlesRead = new Set(sessionRows.map((r2) => r2.manga_id)).size;
+    const lastReadAt = sessionRows.reduce((latest, r2) => !latest || r2.created_at > latest ? r2.created_at : latest, null);
+    const activeDays = new Set(sessionRows.map((r2) => String(r2.created_at).slice(0, 10)));
+    const toDateStr = (d) => d.toISOString().slice(0, 10);
+    let currentStreakDays = 0;
+    const cursor = /* @__PURE__ */ new Date();
+    while (activeDays.has(toDateStr(cursor))) {
+      currentStreakDays++;
+      cursor.setUTCDate(cursor.getUTCDate() - 1);
+    }
+    let longestStreakDays = 0;
+    let run = 0;
+    let prevDay = null;
+    for (const day of [...activeDays].sort()) {
+      if (prevDay) {
+        const diffDays = Math.round((Date.parse(`${day}T00:00:00Z`) - Date.parse(`${prevDay}T00:00:00Z`)) / 864e5);
+        run = diffDays === 1 ? run + 1 : 1;
+      } else {
+        run = 1;
+      }
+      longestStreakDays = Math.max(longestStreakDays, run);
+      prevDay = day;
+    }
+    res.json({
+      totalSessions: sessionRows.length,
+      totalDurationMs,
+      totalPagesRead,
+      avgSessionMs: sessionRows.length > 0 ? Math.round(totalDurationMs / sessionRows.length) : null,
+      titlesRead,
+      completedCount: (completed || []).length,
+      favoritesCount: (favorites || []).length,
+      currentStreakDays,
+      longestStreakDays,
+      lastReadAt
+    });
+  } catch (err) {
+    req.log.error({ err }, "stats/me failed");
+    res.status(500).json({ error: "stats_failed" });
+  }
+});
 router2.get("/admin/stats/manga", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const { mangaId, providerId } = req.query;
