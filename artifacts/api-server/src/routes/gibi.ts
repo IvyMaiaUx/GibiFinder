@@ -1298,7 +1298,7 @@ router.post("/auth/register", async (req: Request, res: Response) => {
     const { data, error } = await supabase
       .from("user_profiles")
       .insert({ username, password_hash, email: email || null })
-      .select("id, username, email, created_at")
+      .select("id, username, email, created_at, avatar_url")
       .single();
 
     if (error) {
@@ -1309,7 +1309,8 @@ router.post("/auth/register", async (req: Request, res: Response) => {
       }
       return;
     }
-    res.json({ success: true, user: data, token: signToken(data.id) });
+    const { avatar_url, ...rest } = data;
+    res.json({ success: true, user: { ...rest, avatarUrl: avatar_url }, token: signToken(data.id) });
   } catch (err) {
     res.status(500).json({ error: "server_error", message: err instanceof Error ? err.message : "Erro desconhecido" });
   }
