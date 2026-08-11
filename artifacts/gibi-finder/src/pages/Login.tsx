@@ -28,6 +28,16 @@ export default function Login() {
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
+  // Esc-to-close, same as a native <dialog> — this modal (like the
+  // age/login ones in Header.tsx) is a plain fixed-overlay div, not built
+  // on a shared dialog primitive, so none of that comes for free.
+  useEffect(() => {
+    if (!showEditAccount) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === "Escape") setShowEditAccount(false); };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showEditAccount]);
+
   const openEditAccount = () => {
     setEditUsername(user?.username || "");
     setEditNewPassword("");
@@ -297,8 +307,17 @@ export default function Login() {
             require the current password re-entered here, verified
             server-side, same as login (no client-trusted userId/identity). */}
         {showEditAccount && user && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white border-4 border-black p-6 rounded-xl comic-shadow max-w-sm w-full relative">
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
+            onClick={() => setShowEditAccount(false)}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="edit-account-title"
+              className="bg-white border-4 border-black p-6 rounded-xl comic-shadow max-w-sm w-full relative"
+              onClick={e => e.stopPropagation()}
+            >
               <button
                 onClick={() => setShowEditAccount(false)}
                 className="absolute top-3 right-3 text-gray-400 hover:text-black transition-colors"
@@ -307,7 +326,7 @@ export default function Login() {
                 <X className="w-5 h-5" strokeWidth={3} />
               </button>
 
-              <h3 className="font-display text-2xl text-black uppercase text-center mb-6">
+              <h3 id="edit-account-title" className="font-display text-2xl text-black uppercase text-center mb-6">
                 Editar Conta
               </h3>
 
@@ -369,7 +388,7 @@ export default function Login() {
                 </div>
 
                 {editError && (
-                  <p className="font-sans font-bold text-xs text-red-600 text-center">{editError}</p>
+                  <p role="alert" className="font-sans font-bold text-xs text-red-600 text-center">{editError}</p>
                 )}
 
                 <button
