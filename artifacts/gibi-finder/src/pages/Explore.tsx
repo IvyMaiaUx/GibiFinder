@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, AlertCircle, Compass, Play, Star, BookOpen, ChevronLeft, Filter, X } from "lucide-react";
+import { Loader2, AlertCircle, Compass, Play, Star, BookOpen, ChevronLeft, Filter, X, Search } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
@@ -30,6 +30,32 @@ const FEATURED_GENRES = ["Ação", "Aventura", "Comédia", "Romance", "Drama", "
 // Source/type markers — not real genres, kept out of the genre rows (they have
 // their own type tabs: Mangás / HQs / Gibis).
 const EXCLUDED_GENRES = new Set(["biblioteca", "nacional", "gibi nacional", "drive", "hq", "catalogo", "sharepoint", "infantil"]);
+// Genre tag data comes straight from provider scrapes with zero curation — a
+// handful of WordPress HQ sources tag every chapter with the publisher name,
+// a creator byline, or SEO download-page boilerplate instead of (or
+// alongside) an actual genre, and those were leaking into the genre chips/
+// rows as if they were real categories. Filtered out via isRealGenre() below:
+//  - anything with a digit (years, issue numbers, "the boys #31", "baixar hq
+//    lanterna verde 2025" — no real genre tag carries one)
+//  - known SEO/download-page substrings
+//  - a denylist of publisher/imprint names and recurring creator bylines
+//  - franchise/character names (cross-checked against FRANCHISES below, so a
+//    title never doubles as its own "genre")
+const GENRE_SEO_SUBSTRINGS = ["download", "baixar", "ler online", "webp", "hqs ", "cbr", " pdf"];
+const NON_GENRE_DENYLIST = new Set([
+  "marvel", "marvel comics", "dc", "dc comics", "dc all in", "image comics",
+  "dynamite entertainment", "idw publishing", "internet archive", "quadrinhos",
+  "matt fraction", "karla pacheco", "pere perez", "jorge jimenez", "cory walker",
+  "robert kirkman", "garth ennis", "garth ennis br", "darick robertson", "alex ross",
+  "brian michael bendis", "gabrielle dell'otto", "laura martin", "leinil francis yu",
+  "mark morales", "troy peteri", "kurt busiek", "ryan sook", "mattia de iulis",
+  "paulo siqueira", "steve darnall", "arif prianto", "giuseppe cafaro", "marguerite bennett",
+  "the boys", "billy butcher", "hughie campbell", "vought", "witchblade",
+  "mark grayson", "spider-woman", "mulher-aranha", "frank castle br",
+  "caverna do dragao", "dungeons & dragons", "mestre dos magos",
+  "diana", "bobby", "eric", "hank", "presto", "sheila", "uni",
+  "justiceiro", "vingador", "invasao skrull", "universo absoluto", "universo compartilhado",
+]);
 // Franchise/character rows (mostly for HQs, where genre tags are sparse).
 const FRANCHISES = [
   "Batman", "Superman", "Homem-Aranha", "Spider-Man", "X-Men", "Vingadores", "Avengers",
@@ -91,6 +117,16 @@ const isAdultItem = (item: UnifiedCatalogItem) => {
 
 const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 
+const isRealGenre = (g: string) => {
+  const n = norm(g);
+  if (!n || /\d/.test(g)) return false;
+  if (n.endsWith(" br")) return false;
+  if (GENRE_SEO_SUBSTRINGS.some(s => n.includes(s))) return false;
+  if (NON_GENRE_DENYLIST.has(n)) return false;
+  if (FRANCHISES.some(f => norm(f) === n)) return false;
+  return true;
+};
+
 function ContinueCard({ item, onClick }: { item: { title: string; coverUrl?: string; chapterNum?: string }; onClick: () => void }) {
   return (
     <button
@@ -140,6 +176,7 @@ export default function Explore() {
   // sense where genre tags actually exist (HQ/Gibi tabs use curated
   // franchise rows instead, so the panel is hidden/cleared there).
   const [showFilters, setShowFilters] = useState(false);
+  const [genreSearch, setGenreSearch] = useState("");
   const [selectedGenreKeys, setSelectedGenreKeys] = useState<Set<string>>(new Set());
   const [genreFilterItems, setGenreFilterItems] = useState<UnifiedCatalogItem[]>([]);
   const [genreFilterLoading, setGenreFilterLoading] = useState(false);
@@ -234,6 +271,7 @@ export default function Explore() {
     if (typeFilter === "hq" || typeFilter === "gibi") {
       setSelectedGenreKeys(new Set());
       setShowFilters(false);
+      setGenreSearch("");
     }
   }, [typeFilter]);
 
@@ -389,6 +427,7 @@ export default function Explore() {
   const genreCounts = new Map<string, { display: string; count: number }>();
   for (const it of uniqueItems) {
     for (const g of it.genres || []) {
+      if (!isRealGenre(g)) continue;
       const k = norm(g);
       if (!k) continue;
       const e = genreCounts.get(k) || { display: g, count: 0 };
@@ -552,7 +591,7 @@ export default function Explore() {
               ))}
               {typeFilter !== "hq" && typeFilter !== "gibi" && (
                 <button
-                  onClick={() => setShowFilters(v => !v)}
+                  onClick={() => setShowFilters(v => { if (v) setGenreSearch(""); return !v; })}
                   className={cn(
                     "inline-flex items-center gap-1.5 font-display text-sm uppercase px-4 py-2 border-4 border-black rounded-lg transition-all sm:ml-auto",
                     showFilters || selectedGenres.length > 0 ? "bg-secondary text-black comic-shadow-sm" : "bg-white text-black hover:bg-secondary"
@@ -574,22 +613,48 @@ export default function Explore() {
                     </button>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {allGenres.map(g => {
-                    const active = selectedGenreKeys.has(norm(g));
-                    return (
+                {allGenres.length > 8 && (
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" strokeWidth={2.5} />
+                    <input
+                      type="text"
+                      value={genreSearch}
+                      onChange={(e) => setGenreSearch(e.target.value)}
+                      placeholder="Buscar gênero..."
+                      className="w-full font-sans text-sm pl-9 pr-8 py-2 border-2 border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    {genreSearch && (
                       <button
-                        key={g}
-                        onClick={() => toggleGenre(g)}
-                        className={cn(
-                          "font-display text-xs uppercase px-3 py-1.5 border-2 border-black rounded-full transition-all",
-                          active ? "bg-primary text-white" : "bg-white text-black hover:bg-secondary"
-                        )}
+                        onClick={() => setGenreSearch("")}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black"
+                        title="Limpar busca"
                       >
-                        {g}
+                        <X className="w-4 h-4" />
                       </button>
-                    );
-                  })}
+                    )}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  {allGenres
+                    .filter(g => !genreSearch.trim() || norm(g).includes(norm(genreSearch)))
+                    .map(g => {
+                      const active = selectedGenreKeys.has(norm(g));
+                      return (
+                        <button
+                          key={g}
+                          onClick={() => toggleGenre(g)}
+                          className={cn(
+                            "font-display text-xs uppercase px-3 py-1.5 border-2 border-black rounded-full transition-all",
+                            active ? "bg-primary text-white" : "bg-white text-black hover:bg-secondary"
+                          )}
+                        >
+                          {g}
+                        </button>
+                      );
+                    })}
+                  {genreSearch.trim() && !allGenres.some(g => norm(g).includes(norm(genreSearch))) && (
+                    <p className="font-sans text-xs text-gray-400 py-1">Nenhum gênero encontrado.</p>
+                  )}
                 </div>
               </div>
             )}
