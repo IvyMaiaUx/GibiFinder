@@ -12,6 +12,7 @@ import { isFavorite as isFavoriteLib, toggleFavorite as toggleFavoriteLib } from
 import { useDocumentMeta } from "@/hooks/use-document-meta";
 import { getSimilarByGenre } from "@/lib/recommendations";
 import { CatalogCard, CatalogRow, type CatalogItem } from "@/components/results/CatalogCard";
+import { pickBestSource } from "@/lib/pick-best-source";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -114,8 +115,14 @@ export default function ResultDetail() {
     return () => controller.abort();
   }, [isOnlineResult, providerId, mangaId, onlineDetails?.genres, isNsfw]);
 
-  const openCatalogItem = (item: CatalogItem) => {
-    const src = item.sources?.[0];
+  const [openingSimilarId, setOpeningSimilarId] = useState<string | null>(null);
+
+  const openCatalogItem = async (item: CatalogItem) => {
+    // A single source skips straight to it; with several, compare chapter
+    // counts and open whichever has the most (lib/pick-best-source.ts).
+    if ((item.sources?.length ?? 0) > 1) setOpeningSimilarId(item.id);
+    const src = await pickBestSource(item.sources);
+    setOpeningSimilarId(null);
     if (!src) return;
     setLocation(`/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}`);
   };
@@ -379,7 +386,7 @@ export default function ResultDetail() {
                   {similarItems.length > 0 && (
                     <CatalogRow title="Se você gostou disso, veja também">
                       {similarItems.map(item => (
-                        <CatalogCard key={item.id} item={item} onOpen={() => openCatalogItem(item)} />
+                        <CatalogCard key={item.id} item={item} onOpen={() => openCatalogItem(item)} loading={openingSimilarId === item.id} />
                       ))}
                     </CatalogRow>
                   )}

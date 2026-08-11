@@ -11,7 +11,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { isFavorite, toggleFavorite } from "@/lib/favorites";
 import { addSearchHistoryItem } from "@/lib/user-history";
-import { getEmptySources, hasReadableSource, isSourceEmpty } from "@/lib/empty-sources";
+import { getEmptySources, hasReadableSource } from "@/lib/empty-sources";
+import { pickBestSource } from "@/lib/pick-best-source";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
 
 interface UnifiedSearchResult {
@@ -303,12 +304,16 @@ export default function Home() {
     }
   }, [results, onlineResults]);
 
-  const handleOpenOnlineResult = (item: UnifiedSearchResult) => {
+  const [openingId, setOpeningId] = useState<string | null>(null);
+
+  const handleOpenOnlineResult = async (item: UnifiedSearchResult) => {
     if (item.sources.length === 0) return;
-    // Prefer a source we don't already know is dead — avoids landing straight
-    // on a provider with no readable chapters when a working one is right
-    // there in the same list.
-    const src = item.sources.find(s => !isSourceEmpty(s.providerId, s.id)) || item.sources[0];
+    // A single source skips straight to it; with several, compare chapter
+    // counts and open whichever has the most (lib/pick-best-source.ts).
+    if (item.sources.length > 1) setOpeningId(item.id);
+    const src = await pickBestSource(item.sources);
+    setOpeningId(null);
+    if (!src) return;
     const url = `/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}&resume=true`;
     setLocation(url);
   };
@@ -513,15 +518,22 @@ export default function Home() {
                     <button
                       key={item.id}
                       onClick={() => handleOpenOnlineResult(item)}
-                      className="group bg-white border-4 border-black rounded-xl overflow-hidden text-left flex flex-col justify-between hover:translate-y-[-6px] transition-all duration-200 comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:bg-yellow-50"
+                      disabled={openingId === item.id}
+                      aria-busy={openingId === item.id}
+                      className="group bg-white border-4 border-black rounded-xl overflow-hidden text-left flex flex-col justify-between hover:translate-y-[-6px] transition-all duration-200 comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:bg-yellow-50 disabled:cursor-wait"
                     >
                       <div className="relative aspect-[3/4] border-b-4 border-black bg-zinc-950 overflow-hidden shrink-0">
-                        <SafeImage 
-                          src={item.coverUrl} 
-                          alt={item.title} 
+                        <SafeImage
+                          src={item.coverUrl}
+                          alt={item.title}
                           className="w-full h-full object-cover transition-transform group-hover:scale-105"
                           loading="lazy"
                         />
+                        {openingId === item.id && (
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                            <Loader2 className="w-6 h-6 text-white animate-spin" strokeWidth={3} />
+                          </div>
+                        )}
                         {src && (
                           <button
                             type="button"
