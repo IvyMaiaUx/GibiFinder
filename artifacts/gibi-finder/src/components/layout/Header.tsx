@@ -239,7 +239,7 @@ export function Header({ minimal = false }: { minimal?: boolean } = {}) {
       {/* Modal: Confirmação de Idade (+18) */}
       {showAgeModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-zinc-950 border-4 border-[#f43f5e] p-6 rounded-xl shadow-[0_0_30px_rgba(244,63,94,0.3)] max-w-md w-full text-center space-y-4">
+          <div className="bg-zinc-950 border-4 border-[#E04478] p-6 rounded-xl shadow-[0_0_30px_rgba(224,68,120,0.3)] max-w-md w-full text-center space-y-4">
             <div className="text-4xl">🔞</div>
             <h3 className="font-display text-2xl text-white uppercase tracking-wide">
               ÁREA RESTRITA (+18)
@@ -250,7 +250,7 @@ export function Header({ minimal = false }: { minimal?: boolean } = {}) {
             <div className="flex gap-3 pt-2">
               <button
                 onClick={handleConfirmAge}
-                className="flex-1 bg-[#f43f5e] text-white hover:bg-[#e11d48] font-display py-2 border-4 border-white rounded-lg shadow-[0_0_10px_rgba(244,63,94,0.5)] transition-all uppercase"
+                className="flex-1 bg-[#E04478] text-white hover:bg-[#8B1E3F] font-display py-2 border-4 border-white rounded-lg shadow-[0_0_10px_rgba(224,68,120,0.5)] transition-all uppercase"
               >
                 Sim, tenho 18+
               </button>

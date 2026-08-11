@@ -197,46 +197,57 @@
   }
 }
 
-/* NSFW / Adult Theme Override */
+/* NSFW / Adult Theme Override
+   Palette (from the +18 badge design): fundo #0E0B0F, vinho #8B1E3F,
+   magenta destaque/glow #E04478, rosa claro #F7C4D5, texto #F5EDF1,
+   texto secundário #B9A8B1, bordas #24151D. This block used to run on
+   its own crimson hsl(350 89% 60%) ("#f43f5e") — the same hue as the
+   header's +18 badge used before it got this palette — so recoloring
+   just the badge left every card border/shadow/speech-bubble sitewide
+   still on the old crimson. Magenta (#E04478) takes over that role
+   here since it played the same "visible pop accent" part the old
+   crimson did; the near-black "bordas" tone reads as a real border
+   only against the badge's own dark fill, not as a sitewide comic-panel
+   border, so it isn't reused for that. */
 html.nsfw {
-  --background: 240 10% 6%; /* #0f0f11 - very dark charcoal */
-  --foreground: 240 5% 96%; /* #f4f4f5 - soft white text */
-  --border: 350 89% 60%; /* #f43f5e - crimson red */
-  --input: 350 89% 60%;
-  --ring: 350 89% 60%;
-  --card: 240 6% 10%; /* #18181b - clean dark gray card background */
-  --card-foreground: 240 5% 96%;
-  --primary: 350 89% 60%; /* crimson red */
-  --primary-foreground: 0 0% 100%; /* white text on red background */
-  --secondary: 240 5% 65%; /* #a1a1aa - muted gray */
-  --secondary-foreground: 240 10% 6%;
-  --muted: 240 5% 15%;
-  --muted-foreground: 240 5% 65%;
+  --background: 285 15% 5%; /* #0E0B0F */
+  --foreground: 330 29% 95%; /* #F5EDF1 */
+  --border: 340 72% 57%; /* #E04478 magenta */
+  --input: 340 72% 57%;
+  --ring: 340 72% 57%;
+  --card: 328 22% 11%; /* elevated surface between background and the badge's #24151D border tone */
+  --card-foreground: 330 29% 95%;
+  --primary: 340 72% 57%; /* #E04478 magenta */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 328 11% 69%; /* #B9A8B1 */
+  --secondary-foreground: 285 15% 5%;
+  --muted: 328 20% 15%;
+  --muted-foreground: 328 11% 69%;
 }
 
 html.nsfw body {
-  background-image: radial-gradient(hsl(350 89% 60% / 0.05) 15%, transparent 15%) !important;
-  background-color: hsl(240 10% 6%) !important;
-  color: hsl(240 5% 96%) !important;
+  background-image: radial-gradient(hsl(340 72% 57% / 0.06) 15%, transparent 15%) !important;
+  background-color: hsl(285 15% 5%) !important;
+  color: hsl(330 29% 95%) !important;
 }
 
 html.nsfw .speech-bubble {
-  background-color: hsl(240 6% 10%) !important;
-  border-color: hsl(350 89% 60%) !important;
+  background-color: hsl(328 22% 11%) !important;
+  border-color: hsl(340 72% 57%) !important;
 }
 
 html.nsfw .speech-bubble:before {
-  border-right-color: hsl(240 6% 10%) !important;
+  border-right-color: hsl(328 22% 11%) !important;
 }
 
 html.nsfw .speech-bubble:after {
-  border-right-color: hsl(350 89% 60%) !important;
+  border-right-color: hsl(340 72% 57%) !important;
 }
 
 /* NSFW overrides for comic cards and layout components */
 html.nsfw .bg-white {
-  background-color: hsl(240 6% 10%) !important;
-  color: hsl(240 5% 96%) !important;
+  background-color: hsl(328 22% 11%) !important;
+  color: hsl(330 29% 95%) !important;
 }
 
 html.nsfw .text-black,
@@ -248,38 +259,38 @@ html.nsfw .text-gray-900,
 html.nsfw .text-gray-800,
 html.nsfw .text-gray-700,
 html.nsfw .text-gray-600 {
-  color: hsl(240 5% 96%) !important;
+  color: hsl(330 29% 95%) !important;
 }
 
 html.nsfw .text-zinc-500,
 html.nsfw .text-zinc-400,
 html.nsfw .text-gray-500,
 html.nsfw .text-gray-400 {
-  color: hsl(240 5% 65%) !important;
+  color: hsl(328 11% 69%) !important;
 }
 
 html.nsfw .border-black {
-  border-color: hsl(350 89% 60%) !important;
+  border-color: hsl(340 72% 57%) !important;
 }
 
 html.nsfw .border-black\/20 {
-  border-color: hsl(350 89% 60% / 0.2) !important;
+  border-color: hsl(340 72% 57% / 0.2) !important;
 }
 
 html.nsfw .border-black\/10 {
-  border-color: hsl(240 5% 65% / 0.15) !important;
+  border-color: hsl(328 11% 69% / 0.15) !important;
 }
 
 html.nsfw .comic-shadow,
 html.nsfw .comic-shadow-sm {
-  box-shadow: 4px 4px 0px hsl(350 89% 60%) !important;
+  box-shadow: 4px 4px 0px hsl(340 72% 57%) !important;
 }
 
 html.nsfw .hover\:shadow-\[8px_8px_0_rgba\(0\,0\,0\,1\)\]:hover {
-  box-shadow: 8px 8px 0px hsl(350 89% 60%) !important;
+  box-shadow: 8px 8px 0px hsl(340 72% 57%) !important;
 }
 
 html.nsfw .hover\:bg-yellow-50:hover {
-  background-color: hsl(240 5% 15%) !important;
+  background-color: hsl(328 20% 15%) !important;
 }
 
