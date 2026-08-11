@@ -30,7 +30,7 @@ import { ReaderSettingsPanel } from "@/components/reader/ReaderSettingsPanel";
 import { ReaderDiagnostics, type DiagInfo } from "@/components/reader/ReaderDiagnostics";
 import { logRequest } from "@/components/reader/readerStats";
 import { useAuth } from "@/hooks/use-auth";
-import { getLocalProgress, saveReadingState, markChapterCompleted } from "@/lib/user-history";
+import { getLocalProgress, getSyncedReadingHistory, saveReadingState, markChapterCompleted } from "@/lib/user-history";
 import { markSourceEmpty, markSourceHasChapters, isSourceEmpty } from "@/lib/empty-sources";
 import { createSession } from "@/lib/reading-session";
 
@@ -707,41 +707,57 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     }
   }, [mangaTitle, initialProviderId, initialMangaId]);
 
-  // Load progress on mount/change
+  // Load progress on mount/change. Opening a title straight from a link/search
+  // result (not via Coleção/Histórico, which already await the synced fetch
+  // before reading localStorage) used to read only whatever "gibi-finder:progress"
+  // this one browser already had cached — so a title read on another device
+  // showed no resume position at all here, the reported "history isn't
+  // syncing" symptom. getSyncedReadingHistory has the side effect of
+  // rewriting that same local cache from the account's synced history before
+  // we read it (same pattern Colecao.tsx/History.tsx already use).
   useEffect(() => {
-    try {
-      const allProgress = getLocalProgress();
-      const searchParams = new URLSearchParams(window.location.search);
-      const isResume = searchParams.get("resume") === "true";
-      const pId = searchParams.get("providerId") || "";
-      const mId = searchParams.get("id") || "";
-      
-      let prog = Object.values(allProgress).find(
-        (p: any) => p && p.mangaId === mId && p.providerId === pId
-      ) as any;
+    let cancelled = false;
+    (async () => {
+      if (user?.id) {
+        await getSyncedReadingHistory(user.id).catch(() => {});
+        if (cancelled) return;
+      }
+      try {
+        const allProgress = getLocalProgress();
+        const searchParams = new URLSearchParams(window.location.search);
+        const isResume = searchParams.get("resume") === "true";
+        const pId = searchParams.get("providerId") || "";
+        const mId = searchParams.get("id") || "";
 
-      if (!prog) {
-        const lookupKey = selectedResult?.id || mId || mangaTitle;
-        prog = allProgress[lookupKey];
-      }
-      
-      if (prog) {
-        setLastReadProgress(prog);
-        
-        // Auto resume reading if URL flag is set
-        if (isResume && !showReader) {
-          const activeSource = {
-            providerId: prog.providerId || pId || "mangadex",
-            id: prog.mangaId || mId,
-            title: prog.title || mangaTitle
-          };
-          autoResumeReader(activeSource, prog);
+        let prog = Object.values(allProgress).find(
+          (p: any) => p && p.mangaId === mId && p.providerId === pId
+        ) as any;
+
+        if (!prog) {
+          const lookupKey = selectedResult?.id || mId || mangaTitle;
+          prog = allProgress[lookupKey];
         }
-      } else {
-        setLastReadProgress(null);
-      }
-    } catch {}
-  }, [selectedResult, mangaTitle]);
+
+        if (prog) {
+          setLastReadProgress(prog);
+
+          // Auto resume reading if URL flag is set
+          if (isResume && !showReader) {
+            const activeSource = {
+              providerId: prog.providerId || pId || "mangadex",
+              id: prog.mangaId || mId,
+              title: prog.title || mangaTitle
+            };
+            autoResumeReader(activeSource, prog);
+          }
+        } else {
+          setLastReadProgress(null);
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedResult, mangaTitle, user?.id]);
 
   useEffect(() => {
     // PDF chapters persist their own progress inside <PdfReader>.
