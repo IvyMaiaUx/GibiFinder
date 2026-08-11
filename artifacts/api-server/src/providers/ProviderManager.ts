@@ -327,6 +327,12 @@ export class ProviderManager {
       const anyP = p as any;
       if (typeof anyP.clearCache === "function") anyP.clearCache();
     }
+    // The aggregate 5-min cache in getCatalog() below is separate from each
+    // provider's own cache cleared above — without this it'd keep serving a
+    // stale unified catalog for up to 5 min after an admin override/toggle,
+    // exactly the "why isn't INVALIDAR CACHE doing anything" bug this method
+    // exists to prevent.
+    this.catalogCache.clear();
   }
 
   static listProviders() {
@@ -803,7 +809,20 @@ export class ProviderManager {
     return this.withRetry(() => provider.getPages(chapterId));
   }
 
+  // Backup for the HTTP-level Cache-Control on /providers/catalog (routes/
+  // providers.ts) — the edge cache covers real traffic, but a cold dev
+  // server, a request the edge can't cache, or several concurrent requests
+  // hitting the same still-cold instance would otherwise each pay the full
+  // 13-provider fan-out (up to 12s) on their own. Keyed by listType+nsfw,
+  // same 5-minute TTL pattern already used by search() and CuratedComicsProvider.
+  private static catalogCache = new Map<string, { items: UnifiedSearchResult[]; ts: number }>();
+  private static readonly CATALOG_CACHE_TTL = 5 * 60 * 1000;
+
   static async getCatalog(listType: "popular" | "latest", nsfw?: boolean): Promise<UnifiedSearchResult[]> {
+    const cacheKey = `${listType}:${!!nsfw}`;
+    const cached = this.catalogCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < this.CATALOG_CACHE_TTL) return cached.items;
+
     await this.ensureOverridesLoaded();
     const activeProviders = Array.from(this.providers.values()).filter(
       p => this.activeStates.get(p.id) === true
@@ -822,7 +841,9 @@ export class ProviderManager {
 
     const resultsArray = await Promise.all(catalogPromises);
     const flatResults = resultsArray.flat();
-    return this.unifyCatalog(flatResults, nsfw);
+    const unified = this.unifyCatalog(flatResults, nsfw);
+    this.catalogCache.set(cacheKey, { items: unified, ts: Date.now() });
+    return unified;
   }
 
   // Groups a flat list of provider results into unified titles (merging sources,

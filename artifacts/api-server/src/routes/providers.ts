@@ -179,10 +179,17 @@ router.get("/providers/catalog", async (req: Request, res: Response) => {
   try {
     const items = applyOverrides(await ProviderManager.getCatalog(listType, nsfw), await getOverrides());
     await injectRatings(items);
+    // The underlying fan-out (13 providers, up to 12s worst case) only ever
+    // changes when the 4am cron re-crawls or an admin override lands — every
+    // visitor between then paid that full cost again. s-maxage lets Vercel's
+    // edge answer everyone after the first request from cache; the short
+    // client max-age keeps a same-tab reload cheap without serving anyone a
+    // truly stale catalog past the cron's own cadence.
+    res.setHeader("Cache-Control", `public, max-age=60, s-maxage=${listType === "popular" ? 600 : 120}, stale-while-revalidate=600`);
     res.json(items);
   } catch (err) {
-    res.status(500).json({ 
-      error: "catalog_failed", 
+    res.status(500).json({
+      error: "catalog_failed",
       message: err instanceof Error ? err.message : String(err),
       stack: err instanceof Error ? err.stack : undefined
     });
@@ -200,6 +207,7 @@ router.get("/providers/by-genre", async (req: Request, res: Response) => {
   try {
     const items = applyOverrides(await ProviderManager.getByGenre(genre, nsfw), await getOverrides());
     await injectRatings(items);
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
     res.json(items);
   } catch (err) {
     logger.error({ err }, "by-genre failed");
