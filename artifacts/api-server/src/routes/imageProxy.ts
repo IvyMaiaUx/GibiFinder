@@ -26,15 +26,73 @@ const MAX_PROXY_WIDTH = 800; // guards against a caller requesting an absurd/abu
 // decompression-bomb image shouldn't get to spend real CPU/memory decoding
 // it just because it was requested with a small `?w=`.
 const MAX_INPUT_PIXELS = 40_000_000; // ~40MP, generous for any real cover art
+
+// Reads just the dimensions out of a file's own header, without decoding the
+// pixels — needed so MAX_INPUT_PIXELS can reject an oversized image *before*
+// paying for a full decode, not after. A decompression-bomb PNG in
+// particular can be a tiny download that unpacks to gigabytes of pixels, so
+// checking post-decode (as Jimp's own dimensions would require) defeats the
+// point of the guard. Covers the formats Jimp decodes by default (bmp, gif,
+// jpeg, png, tiff); an unrecognized signature returns undefined and falls
+// through to the post-decode check below as a fallback.
+function peekDimensions(buffer: Buffer): { width: number; height: number } | undefined {
+  // PNG: 8-byte signature, then the IHDR chunk's length+type (8 bytes) and
+  // width/height (4 bytes each, big-endian).
+  if (buffer.length >= 24 && buffer.readUInt32BE(0) === 0x89504e47 && buffer.readUInt32BE(4) === 0x0d0a1a0a) {
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+  }
+  // GIF: "GIF87a"/"GIF89a" signature, then width/height as little-endian uint16.
+  if (buffer.length >= 10 && (buffer.toString("ascii", 0, 6) === "GIF87a" || buffer.toString("ascii", 0, 6) === "GIF89a")) {
+    return { width: buffer.readUInt16LE(6), height: buffer.readUInt16LE(8) };
+  }
+  // BMP: "BM" signature, width/height as little-endian int32 at offset 18/22.
+  if (buffer.length >= 26 && buffer.toString("ascii", 0, 2) === "BM") {
+    return { width: buffer.readInt32LE(18), height: Math.abs(buffer.readInt32LE(22)) };
+  }
+  // JPEG: walk the marker segments for a SOFn (start of frame) marker, which
+  // carries the decoded dimensions — everything before it (APPn, COM, etc.)
+  // is metadata we can skip over via each segment's own declared length.
+  if (buffer.length >= 4 && buffer.readUInt16BE(0) === 0xffd8) {
+    let offset = 2;
+    while (offset + 9 < buffer.length) {
+      if (buffer[offset] !== 0xff) {
+        offset++;
+        continue;
+      }
+      const marker = buffer[offset + 1];
+      // SOF0-SOF15, excluding DHT/JPG/DAC (0xc4/0xc8/0xcc), which aren't frame markers.
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return { height: buffer.readUInt16BE(offset + 5), width: buffer.readUInt16BE(offset + 7) };
+      }
+      offset += 2 + buffer.readUInt16BE(offset + 2);
+    }
+  }
+  return undefined;
+}
+
+// Note: Jimp only decodes bmp/gif/jpeg/png/tiff by default — no WebP/AVIF
+// (those need extra WASM format plugins this route deliberately doesn't
+// pull in, to avoid trading one deploy-packaging risk for another right
+// after escaping sharp's). A WebP/AVIF-sourced cover throws inside the try
+// below and falls back to serving the original untouched, same as any other
+// decode failure — correctness is preserved, only the optimization is
+// skipped for that request.
 async function resizeIfRequested(buffer: Buffer, contentType: string, widthParam: unknown): Promise<{ buffer: Buffer; contentType: string }> {
   const width = Math.min(Math.max(Number(widthParam) || 0, 0), MAX_PROXY_WIDTH);
   if (!width || !contentType.startsWith("image/") || contentType.includes("svg")) {
     return { buffer, contentType };
   }
   try {
+    const knownDimensions = peekDimensions(buffer);
+    if (knownDimensions && knownDimensions.width * knownDimensions.height > MAX_INPUT_PIXELS) {
+      return { buffer, contentType };
+    }
     const { Jimp } = await import("jimp");
     const image = await Jimp.fromBuffer(buffer);
-    if (image.width * image.height > MAX_INPUT_PIXELS) {
+    // Fallback for signatures peekDimensions doesn't recognize — decode
+    // already happened by this point, but this still stops an oversized
+    // image from being resized/re-encoded (the more expensive operation).
+    if (!knownDimensions && image.width * image.height > MAX_INPUT_PIXELS) {
       return { buffer, contentType };
     }
     // Jimp has no `withoutEnlargement` option, so this is checked by hand —

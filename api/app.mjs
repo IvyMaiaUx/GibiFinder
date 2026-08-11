@@ -100749,15 +100749,45 @@ import http from "http";
 var router4 = (0, import_express4.Router)();
 var MAX_PROXY_WIDTH = 800;
 var MAX_INPUT_PIXELS = 4e7;
+function peekDimensions(buffer) {
+  if (buffer.length >= 24 && buffer.readUInt32BE(0) === 2303741511 && buffer.readUInt32BE(4) === 218765834) {
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+  }
+  if (buffer.length >= 10 && (buffer.toString("ascii", 0, 6) === "GIF87a" || buffer.toString("ascii", 0, 6) === "GIF89a")) {
+    return { width: buffer.readUInt16LE(6), height: buffer.readUInt16LE(8) };
+  }
+  if (buffer.length >= 26 && buffer.toString("ascii", 0, 2) === "BM") {
+    return { width: buffer.readInt32LE(18), height: Math.abs(buffer.readInt32LE(22)) };
+  }
+  if (buffer.length >= 4 && buffer.readUInt16BE(0) === 65496) {
+    let offset = 2;
+    while (offset + 9 < buffer.length) {
+      if (buffer[offset] !== 255) {
+        offset++;
+        continue;
+      }
+      const marker = buffer[offset + 1];
+      if (marker >= 192 && marker <= 207 && marker !== 196 && marker !== 200 && marker !== 204) {
+        return { height: buffer.readUInt16BE(offset + 5), width: buffer.readUInt16BE(offset + 7) };
+      }
+      offset += 2 + buffer.readUInt16BE(offset + 2);
+    }
+  }
+  return void 0;
+}
 async function resizeIfRequested(buffer, contentType, widthParam) {
   const width = Math.min(Math.max(Number(widthParam) || 0, 0), MAX_PROXY_WIDTH);
   if (!width || !contentType.startsWith("image/") || contentType.includes("svg")) {
     return { buffer, contentType };
   }
   try {
+    const knownDimensions = peekDimensions(buffer);
+    if (knownDimensions && knownDimensions.width * knownDimensions.height > MAX_INPUT_PIXELS) {
+      return { buffer, contentType };
+    }
     const { Jimp: Jimp2 } = await Promise.resolve().then(() => (init_esm30(), esm_exports2));
     const image2 = await Jimp2.fromBuffer(buffer);
-    if (image2.width * image2.height > MAX_INPUT_PIXELS) {
+    if (!knownDimensions && image2.width * image2.height > MAX_INPUT_PIXELS) {
       return { buffer, contentType };
     }
     if (image2.width > width) {
