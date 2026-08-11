@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Bangers&family=Nunito:ital,wght@0,400;0,600;0,700;0,800;1,400&display=swap');
+/* Bangers + Nunito are loaded via <link> in index.html now, not @import here
+   — a blocking @import can't be discovered by the browser's preloader until
+   this whole stylesheet has already started downloading. */
 @import "tailwindcss";
 
 @theme inline {

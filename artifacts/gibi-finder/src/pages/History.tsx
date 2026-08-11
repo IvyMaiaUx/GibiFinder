@@ -229,7 +229,7 @@ export default function History() {
                   >
                     <div className="h-48 bg-muted relative border-b-4 border-black">
                       <SafeImage
-                        src={item.images?.[0] || `${import.meta.env.BASE_URL}images/comic-placeholder.png`}
+                        src={item.images?.[0] || `${import.meta.env.BASE_URL}images/comic-placeholder.webp`}
                         alt={item.titulo || "Gibi"}
                         className="w-full h-full object-cover"
                       />
