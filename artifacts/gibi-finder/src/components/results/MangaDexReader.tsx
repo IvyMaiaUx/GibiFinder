@@ -2144,18 +2144,35 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
             </button>
           )}
 
-          {/* Cinema/Immersion escape hatch. Used to unmount entirely unless
-              `uiActive` (a 2-3s window after a tap/mouse-move) was true — real
-              user report: stuck in fullscreen/cinema mode with no way out,
-              because the ONLY exit was this button, and it only existed for a
-              few seconds after a tap that (on a touch device) usually also
-              lands on a prev/next-page tap zone, doing something else at the
-              same time. Missing that 2-3s window meant no visible way out at
-              all short of killing the tab. Now always mounted — dimmed
-              during inactivity in cinema/immersion, full opacity during the
-              brief activity window — so there's always something on screen
-              to tap toward, not a control that can vanish entirely. */}
-          {immersion !== "clean" && (
+          {/* Chrome escape hatch. Used to only render when immersion !== "clean"
+              (cinema/immersion), unmounted entirely unless `uiActive` (a 2-3s
+              window after a tap/mouse-move) was true — real user report:
+              stuck in fullscreen/cinema mode with no way out, because the
+              ONLY exit was this button, and it only existed for a few
+              seconds after a tap that (on a touch device) usually also lands
+              on a prev/next-page tap zone, doing something else at the same
+              time. Missing that 2-3s window meant no visible way out at all
+              short of killing the tab. Now always mounted whenever chrome is
+              hidden for ANY reason — dimmed during inactivity in
+              cinema/immersion, full opacity during the brief activity window
+              (or always, in the case below) — so there's always something on
+              screen to tap toward, not a control that can vanish entirely.
+
+              That "any reason" matters: chromeVisible also goes false in
+              plain "clean" mode after `autoHideMs` of inactivity
+              (isFullscreen — an internal chrome-hidden flag reused from the
+              old fullscreen toggle, unrelated to the browser's real
+              Fullscreen API), auto-hiding the toolbar the same way a video
+              player hides its controls. Page mode has a tap zone that calls
+              toggleChrome() to bring it back; scroll mode (the default
+              reading mode) has no equivalent tap handler at all — a second,
+              distinct way to end up with the toolbar gone and nothing on
+              screen to bring it back, this time in the perfectly ordinary
+              "clean" immersion level, not just cinema/immersion. Gating this
+              on `immersion !== "clean"` never covered that case; gating on
+              `!chromeVisible` (why the toolbar is actually hidden, not which
+              level caused it) does. */}
+          {!chromeVisible && (
             <div className={cn(
               "fixed top-4 right-4 z-[113] flex gap-2 transition-opacity duration-300",
               uiActive ? "opacity-100" : "opacity-40"
@@ -2169,10 +2186,13 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                 <Settings className="w-4 h-4" strokeWidth={2.5} />
               </button>
               <button
-                onClick={() => updateSettings({ immersion: "clean" }, workId ? "work" : "global")}
+                onClick={() => {
+                  if (immersion !== "clean") updateSettings({ immersion: "clean" }, workId ? "work" : "global");
+                  else toggleChrome(); // clean level, chrome just auto-hid — bring it back instead
+                }}
                 className="p-2 rounded-full border backdrop-blur-sm"
                 style={{ background: "var(--rd-surface)", color: "var(--rd-text)", borderColor: "var(--rd-border)" }}
-                title="Sair da imersão"
+                title={immersion !== "clean" ? "Sair da imersão" : "Mostrar controles"}
               >
                 <Minimize2 className="w-4 h-4" strokeWidth={2.5} />
               </button>
