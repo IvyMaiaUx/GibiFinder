@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Hero } from "@/components/home/Hero";
 import { SearchPanel } from "@/components/home/SearchPanel";
 import { ResultView } from "@/components/results/ResultView";
@@ -14,6 +14,7 @@ import { addSearchHistoryItem } from "@/lib/user-history";
 import { getEmptySources, hasReadableSource } from "@/lib/empty-sources";
 import { pickBestSource } from "@/lib/pick-best-source";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
+import { getGenreBasedSuggestions } from "@/lib/recommendations";
 
 interface UnifiedSearchResult {
   id: string;
@@ -142,6 +143,120 @@ const sortByReleaseDate = (items: UnifiedSearchResult[], direction: ReleaseSort)
 const SEARCH_CACHE = new Map<string, { data: UnifiedSearchResult[]; ts: number }>();
 const SEARCH_CACHE_TTL = 5 * 60 * 1000; // 5 min
 
+const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
+const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai"];
+
+const isAdultItem = (item: UnifiedSearchResult) =>
+  item.isAdult ||
+  item.sources?.some(s => ADULT_PROVIDERS.includes(s.providerId)) ||
+  item.genres?.some((g: string) => ADULT_GENRES.includes(g.toLowerCase())) ||
+  false;
+
+// Shared by the online-search result grid and the genre-suggestions row below
+// it — both render the exact same UnifiedSearchResult shape the exact same
+// way, so this used to be duplicated inline per grid before the suggestions
+// row needed a second copy.
+function SearchResultCard({
+  item,
+  openingId,
+  onOpen,
+  onToggleFavorite
+}: {
+  item: UnifiedSearchResult;
+  openingId: string | null;
+  onOpen: (item: UnifiedSearchResult) => void;
+  onToggleFavorite: (item: UnifiedSearchResult, e: React.MouseEvent) => void;
+}) {
+  const src = item.sources[0];
+  const favorited = src ? isFavorite(src.providerId, src.id) : false;
+  const isAdult = isAdultItem(item);
+  const isUncensored = item.sources.some(s => ADULT_PROVIDERS.includes(s.providerId)) ||
+    (item.genres?.some((g: string) => g.toLowerCase().includes("uncensored") || g.toLowerCase().includes("sem censura")) ?? false);
+
+  return (
+    <button
+      onClick={() => onOpen(item)}
+      disabled={openingId === item.id}
+      aria-busy={openingId === item.id}
+      className="group bg-white border-4 border-black rounded-xl overflow-hidden text-left flex flex-col justify-between hover:translate-y-[-6px] transition-all duration-200 comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:bg-yellow-50 disabled:cursor-wait"
+    >
+      <div className="relative aspect-[3/4] border-b-4 border-black bg-zinc-950 overflow-hidden shrink-0">
+        <SafeImage
+          src={item.coverUrl}
+          alt={item.title}
+          width={320}
+          className="w-full h-full object-cover transition-transform group-hover:scale-105"
+          loading="lazy"
+        />
+        {openingId === item.id && (
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+            <Loader2 className="w-6 h-6 text-white animate-spin" strokeWidth={3} />
+          </div>
+        )}
+        {src && (
+          <button
+            type="button"
+            onClick={(e) => onToggleFavorite(item, e)}
+            className={cn(
+              "absolute top-2 right-2 p-1.5 border-2 border-black rounded-full transition-colors shadow-[2px_2px_0_rgba(0,0,0,1)]",
+              favorited ? "bg-secondary text-black" : "bg-white/90 text-gray-500 hover:bg-secondary hover:text-black"
+            )}
+            title={favorited ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+          >
+            <Star className={cn("w-4 h-4", favorited && "fill-black")} strokeWidth={3} />
+          </button>
+        )}
+      </div>
+
+      <div className="p-4 flex-1 flex flex-col justify-between min-w-0">
+        <div>
+          <h4 className="font-display text-lg text-black leading-tight group-hover:text-primary transition-colors line-clamp-2">
+            {item.title}
+          </h4>
+          <p className="font-sans text-2xs text-gray-500 font-extrabold uppercase mt-1">
+            Fontes: {Array.from(new Set(item.sources.map(s => s.providerId.toUpperCase()))).join(", ")}
+          </p>
+          {item.releaseDate && (
+            <p className="font-sans text-2xs text-gray-500 font-extrabold uppercase mt-1">
+              Lançamento: {formatReleaseDate(item.releaseDate)}
+            </p>
+          )}
+          {item.genres && item.genres.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2">
+              {item.genres.slice(0, 2).map((g: string) => (
+                <span key={g} className="bg-yellow-200 genre-tag-text text-3xs font-extrabold uppercase px-1.5 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]">
+                  {g}
+                </span>
+              ))}
+              {isAdult && (
+                <span className={cn(
+                  "inline-flex items-center gap-0.5 text-white text-3xs font-extrabold uppercase px-1.5 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]",
+                  isUncensored ? "bg-cyan-500" : "bg-rose-500"
+                )}>
+                  {isUncensored ? <Unlock className="w-2.5 h-2.5" strokeWidth={3} /> : <Lock className="w-2.5 h-2.5" strokeWidth={3} />}
+                  {isUncensored ? "SEM CENSURA" : "CENSURADO"}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4 pt-3 border-t border-dashed border-black/20 flex items-center justify-between">
+          {item.rating !== undefined && (
+            <span className="flex items-center gap-1 bg-[#FFD166] text-black px-2 py-0.5 border-2 border-black rounded-lg font-display text-xs font-black shadow-[2px_2px_0_rgba(0,0,0,1)]">
+              <Star className="w-3 h-3 fill-black text-black" strokeWidth={2.5} />
+              {(item.rating / 2).toFixed(1)}
+            </span>
+          )}
+          <span className="font-display text-xs text-primary group-hover:translate-x-1 transition-transform">
+            LER AGORA →
+          </span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
 export default function Home() {
   useDocumentMeta({ path: "/" });
   const [, setLocation] = useLocation();
@@ -180,6 +295,32 @@ export default function Home() {
     window.addEventListener("nsfw-change", handleNsfwChange);
     return () => window.removeEventListener("nsfw-change", handleNsfwChange);
   }, []);
+
+  // "Sugestões pra você" — same getGenreBasedSuggestions() logic Explore.tsx
+  // and the title-detail page already use, ranking the popular catalog by
+  // overlap with the user's own favorites/history genres. Home has no
+  // catalog fetch of its own (it's search-first), so this fetches its own
+  // pool once per NSFW state; the ranking itself is recomputed locally
+  // (no re-fetch) whenever a favorite changes, since that's what shifts the
+  // user's genre signal.
+  const [suggestionPool, setSuggestionPool] = useState<UnifiedSearchResult[]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`${BASE}/api/providers/catalog?listType=popular&nsfw=${isNsfw}`, { signal: controller.signal })
+      .then(res => res.ok ? res.json() : [])
+      .then((pool: UnifiedSearchResult[]) => {
+        // Belt-and-suspenders like the rest of this page: the endpoint already
+        // filters by `nsfw`, but adult content never renders off a single
+        // server-side check alone here.
+        setSuggestionPool(isNsfw ? pool : pool.filter(item => !isAdultItem(item)));
+      })
+      .catch(err => { if (err.name !== "AbortError") console.error("Failed to load genre suggestions:", err); });
+    return () => controller.abort();
+  }, [isNsfw]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- favoriteVersion is read for its
+  // change, not its value: getGenreBasedSuggestions reads favorites straight from
+  // localStorage, so this only needs to re-run, not receive a new argument.
+  const genreSuggestions = useMemo(() => getGenreBasedSuggestions(suggestionPool, 10), [suggestionPool, favoriteVersion]);
 
   // On mount: re-run a search coming from history (?q=...), or restore the last
   // online search ONLY when returning via "Voltar aos resultados" (?restore=1).
@@ -347,7 +488,29 @@ export default function Home() {
           onSearchOnline={searchByOnline}
           isPending={aiPending || onlineSearching}
         />
-        
+
+        {/* Genre-based suggestions — hidden once a search is active/showing
+            results, and (like Explore's identical row) hidden entirely below
+            4 items rather than showing a half-empty row: a new user with no
+            favorites/history yet has no genre signal, and getGenreBasedSuggestions
+            returns [] for them by design. */}
+        {!results && !onlineResults && !onlineSearching && !onlineSearchError && genreSuggestions.length >= 4 && (
+          <div className="mt-12">
+            <h2 className="font-display text-2xl text-black uppercase mb-4">✨ Sugestões pra você</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+              {genreSuggestions.map((item) => (
+                <SearchResultCard
+                  key={item.id}
+                  item={item}
+                  openingId={openingId}
+                  onOpen={handleOpenOnlineResult}
+                  onToggleFavorite={handleToggleFavorite}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Loading Spinner for Online Search */}
         {onlineSearching && (
           <div className="py-24 text-center">
@@ -382,16 +545,11 @@ export default function Home() {
 
         {/* Online Aggregated Search Results */}
         {onlineResults && !onlineSearching && !onlineSearchError && (() => {
-          const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
-          const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai"];
           const empties = getEmptySources();
           const filtered = onlineResults.filter(item => {
             // Hide titles whose every source is known to have no readable chapters.
             if (!hasReadableSource(item.sources, empties)) return false;
-            const isAdult = item.isAdult ||
-                            item.sources?.some(s => ADULT_PROVIDERS.includes(s.providerId)) ||
-                            item.genres?.some((g: string) => ADULT_GENRES.includes(g.toLowerCase()));
-            if (!isNsfw && isAdult) return false;
+            if (!isNsfw && isAdultItem(item)) return false;
             return true;
           });
           const publisherCounts = getPublisherCounts(filtered);
@@ -511,100 +669,15 @@ export default function Home() {
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
                   {visibleResults.map((item) => {
-                    const src = item.sources[0];
-                    const favorited = src ? isFavorite(src.providerId, src.id) : false;
-                    void favoriteVersion;
+                    void favoriteVersion; // isFavorite() reads localStorage directly, so this re-triggers the map on toggle
                     return (
-                    <button
-                      key={item.id}
-                      onClick={() => handleOpenOnlineResult(item)}
-                      disabled={openingId === item.id}
-                      aria-busy={openingId === item.id}
-                      className="group bg-white border-4 border-black rounded-xl overflow-hidden text-left flex flex-col justify-between hover:translate-y-[-6px] transition-all duration-200 comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:bg-yellow-50 disabled:cursor-wait"
-                    >
-                      <div className="relative aspect-[3/4] border-b-4 border-black bg-zinc-950 overflow-hidden shrink-0">
-                        <SafeImage
-                          src={item.coverUrl}
-                          alt={item.title}
-                          width={320}
-                          className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                          loading="lazy"
-                        />
-                        {openingId === item.id && (
-                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                            <Loader2 className="w-6 h-6 text-white animate-spin" strokeWidth={3} />
-                          </div>
-                        )}
-                        {src && (
-                          <button
-                            type="button"
-                            onClick={(e) => handleToggleFavorite(item, e)}
-                            className={cn(
-                              "absolute top-2 right-2 p-1.5 border-2 border-black rounded-full transition-colors shadow-[2px_2px_0_rgba(0,0,0,1)]",
-                              favorited ? "bg-secondary text-black" : "bg-white/90 text-gray-500 hover:bg-secondary hover:text-black"
-                            )}
-                            title={favorited ? "Remover dos favoritos" : "Adicionar aos favoritos"}
-                          >
-                            <Star className={cn("w-4 h-4", favorited && "fill-black")} strokeWidth={3} />
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="p-4 flex-1 flex flex-col justify-between min-w-0">
-                        <div>
-                          <h4 className="font-display text-lg text-black leading-tight group-hover:text-primary transition-colors line-clamp-2">
-                            {item.title}
-                          </h4>
-                          <p className="font-sans text-2xs text-gray-500 font-extrabold uppercase mt-1">
-                            Fontes: {Array.from(new Set(item.sources.map(s => s.providerId.toUpperCase()))).join(", ")}
-                          </p>
-                          {item.releaseDate && (
-                            <p className="font-sans text-2xs text-gray-500 font-extrabold uppercase mt-1">
-                              Lançamento: {formatReleaseDate(item.releaseDate)}
-                            </p>
-                          )}
-                          {item.genres && item.genres.length > 0 && (() => {
-                            const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
-                            const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai"];
-                            const isAdult = item.isAdult ||
-                                            item.sources.some(s => ADULT_PROVIDERS.includes(s.providerId)) ||
-                                            item.genres.some((g: string) => ADULT_GENRES.includes(g.toLowerCase()));
-                            const isUncensored = item.sources.some(s => ADULT_PROVIDERS.includes(s.providerId)) || 
-                                                 item.genres.some((g: string) => g.toLowerCase().includes("uncensored") || g.toLowerCase().includes("sem censura"));
-                            return (
-                              <div className="flex flex-wrap gap-1 mt-2">
-                                {item.genres.slice(0, 2).map((g: string) => (
-                                  <span key={g} className="bg-yellow-200 genre-tag-text text-3xs font-extrabold uppercase px-1.5 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]">
-                                    {g}
-                                  </span>
-                                ))}
-                                {isAdult && (
-                                  <span className={cn(
-                                    "inline-flex items-center gap-0.5 text-white text-3xs font-extrabold uppercase px-1.5 py-0.5 border border-black rounded-sm shadow-[1px_1px_0_rgba(0,0,0,1)]",
-                                    isUncensored ? "bg-cyan-500" : "bg-rose-500"
-                                  )}>
-                                    {isUncensored ? <Unlock className="w-2.5 h-2.5" strokeWidth={3} /> : <Lock className="w-2.5 h-2.5" strokeWidth={3} />}
-                                    {isUncensored ? "SEM CENSURA" : "CENSURADO"}
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })()}
-                        </div>
-                        
-                        <div className="mt-4 pt-3 border-t border-dashed border-black/20 flex items-center justify-between">
-                          {item.rating !== undefined && (
-                            <span className="flex items-center gap-1 bg-[#FFD166] text-black px-2 py-0.5 border-2 border-black rounded-lg font-display text-xs font-black shadow-[2px_2px_0_rgba(0,0,0,1)]">
-                              <Star className="w-3 h-3 fill-black text-black" strokeWidth={2.5} />
-                              {(item.rating / 2).toFixed(1)}
-                            </span>
-                          )}
-                          <span className="font-display text-xs text-primary group-hover:translate-x-1 transition-transform">
-                            LER AGORA →
-                          </span>
-                        </div>
-                      </div>
-                    </button>
+                      <SearchResultCard
+                        key={item.id}
+                        item={item}
+                        openingId={openingId}
+                        onOpen={handleOpenOnlineResult}
+                        onToggleFavorite={handleToggleFavorite}
+                      />
                     );
                   })}
                 </div>
