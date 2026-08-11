@@ -124,6 +124,48 @@ export function useAuth() {
     }
   };
 
+  // Change the current account's username and/or password. Requires the
+  // current password (re-verified server-side) — same shape as login, not
+  // trusted from anywhere client-side. Updates the stored session in place
+  // (same storage — local vs session — the account was already using) and
+  // broadcasts AUTH_CHANGE_EVENT so every useAuth() instance (Header, etc.)
+  // picks up a changed username immediately.
+  const updateAccount = async (
+    currentPassword: string,
+    opts: { newUsername?: string; newPassword?: string }
+  ): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const res = await fetch(`${BASE}/api/auth/account`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          currentPassword,
+          newUsername: opts.newUsername,
+          newPassword: opts.newPassword,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.user) {
+        const updated = data.user as UserSession;
+        if (localStorage.getItem(AUTH_KEY)) {
+          localStorage.setItem(AUTH_KEY, JSON.stringify(updated));
+        } else {
+          sessionStorage.setItem(AUTH_KEY, JSON.stringify(updated));
+        }
+        setUser(updated);
+        window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
+        toast({ title: "Conta atualizada!", description: "Suas informações foram salvas." });
+        return { success: true };
+      }
+      const message = data.message || "Não foi possível atualizar sua conta";
+      toast({ title: "Erro ao atualizar", description: message, variant: "destructive" });
+      return { success: false, message };
+    } catch {
+      toast({ title: "Erro na conexão", description: "Verifique sua internet", variant: "destructive" });
+      return { success: false, message: "network" };
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem(AUTH_KEY);
     sessionStorage.removeItem(AUTH_KEY);
@@ -166,5 +208,5 @@ export function useAuth() {
     ]);
   };
 
-  return { user, loading, login, register, logout, syncFavorites, syncUserData };
+  return { user, loading, login, register, logout, updateAccount, syncFavorites, syncUserData };
 }

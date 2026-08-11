@@ -1347,6 +1347,68 @@ router.post("/auth/login", async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/auth/account - change the current session's username and/or
+// password. There was previously no way to do either from the UI at all —
+// forgetting your password meant the account was simply unrecoverable.
+// The acting user comes from the session token (sessionUserId), never from
+// a client-supplied id, and the current password is always re-verified
+// server-side before anything is changed, same as login.
+router.post("/auth/account", async (req: Request, res: Response) => {
+  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  const userId = sessionUserId(req);
+  if (!userId) { res.status(401).json({ error: "unauthorized", message: "Sessão inválida, faça login novamente" }); return; }
+
+  const { currentPassword, newUsername, newPassword } = req.body as {
+    currentPassword?: string; newUsername?: string; newPassword?: string;
+  };
+  if (!currentPassword) {
+    res.status(400).json({ error: "bad_request", message: "Informe sua senha atual" }); return;
+  }
+  const trimmedUsername = newUsername?.trim();
+  const trimmedPassword = newPassword?.trim();
+  if (!trimmedUsername && !trimmedPassword) {
+    res.status(400).json({ error: "bad_request", message: "Nada para atualizar" }); return;
+  }
+  if (trimmedPassword && trimmedPassword.length < 6) {
+    res.status(400).json({ error: "weak_password", message: "A nova senha precisa ter pelo menos 6 caracteres" }); return;
+  }
+
+  try {
+    const { data: current, error: fetchErr } = await supabase
+      .from("user_profiles")
+      .select("id, password_hash")
+      .eq("id", userId)
+      .single();
+    if (fetchErr || !current || !verifyPassword(currentPassword, current.password_hash)) {
+      res.status(401).json({ error: "invalid_credentials", message: "Senha atual incorreta" }); return;
+    }
+
+    const update: Record<string, unknown> = {};
+    if (trimmedUsername) update["username"] = trimmedUsername;
+    if (trimmedPassword) update["password_hash"] = hashPassword(trimmedPassword);
+
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .update(update)
+      .eq("id", userId)
+      .select("id, username, email, created_at")
+      .single();
+
+    if (error) {
+      if (error.code === "23505") {
+        res.status(409).json({ error: "username_taken", message: "Este nome de usuário já está em uso" });
+      } else {
+        req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" });
+      }
+      return;
+    }
+    res.json({ success: true, user: data });
+  } catch (err) {
+    req.log.error({ err }, "handler failed");
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
 // GET /api/auth/favorites - get synced user favorites
 router.get("/auth/favorites", async (req: Request, res: Response) => {
   if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Lock, User, Check, Loader2, LogOut, ArrowRight, UserPlus, BookOpenCheck, BookOpen, Star } from "lucide-react";
+import { Lock, User, Check, Loader2, LogOut, ArrowRight, UserPlus, BookOpenCheck, BookOpen, Star, Settings, X } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
 import { isAdultProviderId } from "@/lib/utils";
@@ -9,7 +9,7 @@ import { getSyncedFavorites } from "@/lib/favorites";
 
 export default function Login() {
   const [, setLocation] = useLocation();
-  const { user, login, register, logout, loading } = useAuth();
+  const { user, login, register, logout, updateAccount, loading } = useAuth();
   useDocumentMeta({ title: "Entrar", noindex: true });
 
   const [isRegister, setIsRegister] = useState(false);
@@ -17,6 +17,57 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // "Editar conta" — there was previously no way to change your username or
+  // recover/change your password from the UI at all.
+  const [showEditAccount, setShowEditAccount] = useState(false);
+  const [editUsername, setEditUsername] = useState("");
+  const [editNewPassword, setEditNewPassword] = useState("");
+  const [editConfirmPassword, setEditConfirmPassword] = useState("");
+  const [editCurrentPassword, setEditCurrentPassword] = useState("");
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const openEditAccount = () => {
+    setEditUsername(user?.username || "");
+    setEditNewPassword("");
+    setEditConfirmPassword("");
+    setEditCurrentPassword("");
+    setEditError(null);
+    setShowEditAccount(true);
+  };
+
+  const handleEditAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setEditError(null);
+
+    const trimmedUsername = editUsername.trim();
+    const newUsername = trimmedUsername && trimmedUsername !== user.username ? trimmedUsername : undefined;
+    const newPassword = editNewPassword.trim() || undefined;
+
+    if (!newUsername && !newPassword) {
+      setEditError("Mude o nome de usuário ou defina uma senha nova antes de salvar.");
+      return;
+    }
+    if (newPassword && newPassword !== editConfirmPassword.trim()) {
+      setEditError("As senhas novas não coincidem.");
+      return;
+    }
+    if (!editCurrentPassword.trim()) {
+      setEditError("Informe sua senha atual para confirmar.");
+      return;
+    }
+
+    setEditLoading(true);
+    const result = await updateAccount(editCurrentPassword.trim(), { newUsername, newPassword });
+    setEditLoading(false);
+    if (result.success) {
+      setShowEditAccount(false);
+    } else {
+      setEditError(result.message || "Não foi possível atualizar sua conta.");
+    }
+  };
 
   // Reading stats — this data already existed (completed chapters, in-
   // progress shelf, favorites all get synced for Coleção already), it just
@@ -135,11 +186,18 @@ export default function Login() {
                 Ir para Minha Estante <ArrowRight className="w-5 h-5" strokeWidth={3} />
               </button>
               
-              <button 
+              <button
                 onClick={logout}
                 className="w-full bg-white hover:bg-red-50 text-red-600 border-4 border-black py-3.5 font-display text-lg flex items-center justify-center gap-2 transition-colors uppercase tracking-wider"
               >
                 <LogOut className="w-5 h-5" strokeWidth={3} /> Desconectar Conta
+              </button>
+
+              <button
+                onClick={openEditAccount}
+                className="w-full text-gray-500 hover:text-black font-sans font-bold text-xs flex items-center justify-center gap-1.5 py-2 transition-colors uppercase tracking-wide"
+              >
+                <Settings className="w-3.5 h-3.5" strokeWidth={2.5} /> Editar conta
               </button>
             </div>
           </div>
@@ -231,6 +289,98 @@ export default function Login() {
               >
                 {isRegister ? "Já possui conta? Faça login aqui!" : "Não tem conta? Cadastre-se grátis!"}
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Editar conta — change username and/or password. Both
+            require the current password re-entered here, verified
+            server-side, same as login (no client-trusted userId/identity). */}
+        {showEditAccount && user && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white border-4 border-black p-6 rounded-xl comic-shadow max-w-sm w-full relative">
+              <button
+                onClick={() => setShowEditAccount(false)}
+                className="absolute top-3 right-3 text-gray-400 hover:text-black transition-colors"
+                aria-label="Fechar"
+              >
+                <X className="w-5 h-5" strokeWidth={3} />
+              </button>
+
+              <h3 className="font-display text-2xl text-black uppercase text-center mb-6">
+                Editar Conta
+              </h3>
+
+              <form onSubmit={handleEditAccount} className="flex flex-col gap-4 text-left">
+                <div className="space-y-1.5">
+                  <span className="font-display text-xs text-gray-500 uppercase">Nome de usuário</span>
+                  <div className="relative">
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" strokeWidth={3} />
+                    <input
+                      type="text"
+                      value={editUsername}
+                      onChange={e => setEditUsername(e.target.value)}
+                      className="w-full border-4 border-black pl-11 pr-4 py-2.5 font-sans font-bold text-black focus:outline-none focus:ring-4 focus:ring-secondary"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="font-display text-xs text-gray-500 uppercase">Nova senha (opcional)</span>
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" strokeWidth={3} />
+                    <input
+                      type="password"
+                      value={editNewPassword}
+                      onChange={e => setEditNewPassword(e.target.value)}
+                      placeholder="Deixe em branco pra manter"
+                      className="w-full border-4 border-black pl-11 pr-4 py-2.5 font-sans font-bold text-black focus:outline-none focus:ring-4 focus:ring-secondary"
+                    />
+                  </div>
+                </div>
+
+                {editNewPassword && (
+                  <div className="space-y-1.5">
+                    <span className="font-display text-xs text-gray-500 uppercase">Confirmar nova senha</span>
+                    <div className="relative">
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" strokeWidth={3} />
+                      <input
+                        type="password"
+                        value={editConfirmPassword}
+                        onChange={e => setEditConfirmPassword(e.target.value)}
+                        className="w-full border-4 border-black pl-11 pr-4 py-2.5 font-sans font-bold text-black focus:outline-none focus:ring-4 focus:ring-secondary"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1.5 pt-2 border-t-2 border-dashed border-gray-200">
+                  <span className="font-display text-xs text-gray-500 uppercase">Senha atual (obrigatório p/ confirmar)</span>
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" strokeWidth={3} />
+                    <input
+                      type="password"
+                      required
+                      value={editCurrentPassword}
+                      onChange={e => setEditCurrentPassword(e.target.value)}
+                      className="w-full border-4 border-black pl-11 pr-4 py-2.5 font-sans font-bold text-black focus:outline-none focus:ring-4 focus:ring-secondary"
+                    />
+                  </div>
+                </div>
+
+                {editError && (
+                  <p className="font-sans font-bold text-xs text-red-600 text-center">{editError}</p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={editLoading}
+                  className="w-full bg-primary text-white border-4 border-black py-3 font-display text-lg comic-shadow-sm flex items-center justify-center gap-2 hover:bg-yellow-400 hover:text-black transition-colors disabled:opacity-50 mt-2 uppercase tracking-wider"
+                >
+                  {editLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Check className="w-5 h-5" strokeWidth={3} />}
+                  Salvar
+                </button>
+              </form>
             </div>
           </div>
         )}
