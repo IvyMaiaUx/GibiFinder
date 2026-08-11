@@ -5,6 +5,33 @@ import { setToken, clearToken, authHeaders } from "@/lib/authToken";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const AUTH_KEY = "gibi-finder:auth_user";
+// Favorites/progress/history/completed are all cached under browser-wide
+// (not per-account) localStorage keys — fine while only one account ever
+// logs into a given browser, but a real leak the moment a second account
+// does: getSyncedReadingHistory/getSyncedFavorites/etc. merge synced rows
+// INTO that shared cache without ever clearing what a previous account left
+// behind, so account B can inherit account A's "Lendo"/progress/favorites
+// until every stale key happens to get overwritten. LAST_USER_KEY tracks
+// whose data the shared cache currently holds; ensureLocalDataScopedToUser()
+// wipes it on a mismatch before any sync pulls the new account's data in.
+const LAST_USER_KEY = "gibi-finder:last-synced-user";
+const SHARED_LOCAL_DATA_KEYS = [
+  "gibi-finder:progress",
+  "gibi-finder:favorites",
+  "gibi-finder:reading-history",
+  "gibi-finder:completed",
+  "gibi_local_history",
+];
+function clearSharedLocalUserData() {
+  try { SHARED_LOCAL_DATA_KEYS.forEach(k => localStorage.removeItem(k)); } catch { /* ignore */ }
+}
+function ensureLocalDataScopedToUser(userId: string) {
+  try {
+    const lastUserId = localStorage.getItem(LAST_USER_KEY);
+    if (lastUserId && lastUserId !== userId) clearSharedLocalUserData();
+    localStorage.setItem(LAST_USER_KEY, userId);
+  } catch { /* ignore */ }
+}
 // useAuth() is a plain hook, not a shared context — every call site (Header,
 // every page, MangaDexReader, ...) gets its own independent `user` state,
 // each restored from storage on ITS OWN mount only. That was harmless while
@@ -202,6 +229,12 @@ export function useAuth() {
     localStorage.removeItem(AUTH_KEY);
     sessionStorage.removeItem(AUTH_KEY);
     clearToken();
+    // Wipe the shared local cache too — otherwise it sits there readable by
+    // whoever uses this browser next (a guest session, or a different
+    // account logging in) until ensureLocalDataScopedToUser() happens to
+    // catch the mismatch on their first sync.
+    clearSharedLocalUserData();
+    localStorage.removeItem(LAST_USER_KEY);
     setUser(null);
     window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
     toast({ title: "Sessão encerrada", description: "Você desconectou da sua estante." });
@@ -232,6 +265,7 @@ export function useAuth() {
   };
 
   const syncUserData = async (userId: string) => {
+    ensureLocalDataScopedToUser(userId);
     await Promise.all([
       syncFavorites(userId),
       syncSearchHistory(userId),

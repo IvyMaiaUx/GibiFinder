@@ -4,7 +4,7 @@ import { Lock, User, Check, Loader2, LogOut, ArrowRight, UserPlus, BookOpenCheck
 import { useAuth } from "@/hooks/use-auth";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
 import { isAdultProviderId, fileToBase64 } from "@/lib/utils";
-import { getSyncedCompleted, getLocalProgress } from "@/lib/user-history";
+import { getSyncedCompleted, getSyncedReadingHistory, getLocalProgress } from "@/lib/user-history";
 import { getSyncedFavorites } from "@/lib/favorites";
 
 export default function Login() {
@@ -117,9 +117,15 @@ export default function Login() {
     if (!user) return;
     let cancelled = false;
     (async () => {
+      // getSyncedReadingHistory has the side effect of rewriting the local
+      // "gibi-finder:progress" cache from the account's synced history
+      // (see lib/user-history.ts) — awaited here (not just favorites/completed,
+      // which were already synced) so the "Lendo" tile stops reading whatever
+      // this one browser happened to have cached and reflects the account.
       const [completed, favorites] = await Promise.all([
         getSyncedCompleted(user.id),
         getSyncedFavorites(user.id),
+        getSyncedReadingHistory(user.id).catch(() => {}),
       ]);
       if (cancelled) return;
       const visibleCompleted = completed.filter(c => isAdultProviderId(c.providerId) === isNsfw);
