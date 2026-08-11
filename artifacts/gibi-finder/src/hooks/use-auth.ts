@@ -5,6 +5,19 @@ import { setToken, clearToken, authHeaders } from "@/lib/authToken";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const AUTH_KEY = "gibi-finder:auth_user";
+// useAuth() is a plain hook, not a shared context — every call site (Header,
+// every page, MangaDexReader, ...) gets its own independent `user` state,
+// each restored from storage on ITS OWN mount only. That was harmless while
+// every page wrapped itself in its own <Layout> (so Header remounted, and
+// re-read storage, on every navigation) — but since Layout was hoisted to
+// mount once for the whole session (fixing the nav flicker), Header's `user`
+// now never updates again after that first mount. Logging in on /login
+// (its own useAuth() instance) never told Header's instance anything
+// changed, so Header kept treating the user as logged out — clicking +18
+// showed "faça login", but /login itself showed them already logged in.
+// Fix: broadcast an event on login/register/logout so every instance
+// re-syncs from storage, same pattern as "nsfw-change" elsewhere.
+const AUTH_CHANGE_EVENT = "gibi-finder:auth-change";
 
 export interface UserSession {
   id: string;
@@ -13,27 +26,39 @@ export interface UserSession {
   created_at: string;
 }
 
+function readStoredUser(): UserSession | null {
+  try {
+    const saved = localStorage.getItem(AUTH_KEY) || sessionStorage.getItem(AUTH_KEY);
+    return saved ? (JSON.parse(saved) as UserSession) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function useAuth() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(AUTH_KEY) || sessionStorage.getItem(AUTH_KEY);
-      if (saved) {
-        const restored = JSON.parse(saved) as UserSession;
-        setUser(restored);
-        // Restoring an already-logged-in session (the common case — every
-        // normal page load, not just a fresh login) previously never pulled
-        // the account's current favorites/history/progress: the page just
-        // trusted whatever this browser last cached, so changes made on
-        // another device only showed up after manually visiting Coleção or
-        // Histórico. Sync in the background so every page load is current.
-        syncUserData(restored.id);
-      }
-    } catch {}
+    const restored = readStoredUser();
+    if (restored) {
+      setUser(restored);
+      // Restoring an already-logged-in session (the common case — every
+      // normal page load, not just a fresh login) previously never pulled
+      // the account's current favorites/history/progress: the page just
+      // trusted whatever this browser last cached, so changes made on
+      // another device only showed up after manually visiting Coleção or
+      // Histórico. Sync in the background so every page load is current.
+      syncUserData(restored.id);
+    }
     setLoading(false);
+
+    // Re-sync when login/register/logout happens in ANY useAuth() instance
+    // (e.g. the Login page), not just this one.
+    const onAuthChange = () => setUser(readStoredUser());
+    window.addEventListener(AUTH_CHANGE_EVENT, onAuthChange);
+    return () => window.removeEventListener(AUTH_CHANGE_EVENT, onAuthChange);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -53,6 +78,7 @@ export function useAuth() {
         }
         if (data.token) setToken(data.token, rememberMe);
         setUser(data.user);
+        window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
         toast({ title: `Bem-vindo de volta, ${data.user.username}!`, description: "Seu progresso e favoritos foram sincronizados." });
 
         syncUserData(data.user.id);
@@ -83,6 +109,7 @@ export function useAuth() {
         }
         if (data.token) setToken(data.token, rememberMe);
         setUser(data.user);
+        window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
         toast({ title: "Cadastro realizado!", description: `Sua conta '${data.user.username}' foi criada com sucesso.` });
 
         syncUserData(data.user.id);
@@ -102,6 +129,7 @@ export function useAuth() {
     sessionStorage.removeItem(AUTH_KEY);
     clearToken();
     setUser(null);
+    window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
     toast({ title: "Sessão encerrada", description: "Você desconectou da sua estante." });
   };
 
