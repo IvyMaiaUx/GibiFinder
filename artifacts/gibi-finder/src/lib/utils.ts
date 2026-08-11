@@ -305,7 +305,18 @@ export function proxyCoverUrl(url: string | undefined | null, width?: number): s
     }
   }
 
-  if (url.includes("/api/image-proxy")) return url;
+  if (url.includes("/api/image-proxy")) {
+    // Already proxied — e.g. a persisted admin-override cover URL, which
+    // SafeImage/CatalogCard still pass through here with a width. Returning
+    // it untouched (the old behavior) meant those covers silently never got
+    // resized; update/clear the `w` param instead of just passing it along.
+    const [base, query = ""] = url.split("?");
+    const params = new URLSearchParams(query);
+    if (width) params.set("w", String(width));
+    else params.delete("w");
+    const qs = params.toString();
+    return qs ? `${base}?${qs}` : base;
+  }
   try {
     const parsed = new URL(url);
     if (parsed.protocol === "http:" || parsed.protocol === "https:") {

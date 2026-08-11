@@ -14,6 +14,11 @@ const router = Router();
 // input, native binding missing on some runtime, ...) this falls back to the
 // untouched original buffer rather than breaking the image entirely.
 const MAX_PROXY_WIDTH = 800; // guards against a caller requesting an absurd/abusive size
+// Defense in depth beyond sharp's own default (268M px, ~16000x16000) — this
+// route is public/unauthenticated, so a cover URL pointing at a deliberately
+// oversized/decompression-bomb image shouldn't get to spend real CPU/memory
+// decoding it just because it's nominally under sharp's built-in ceiling.
+const MAX_INPUT_PIXELS = 40_000_000; // ~40MP, generous for any real cover art
 async function resizeIfRequested(buffer: Buffer, contentType: string, widthParam: unknown): Promise<{ buffer: Buffer; contentType: string }> {
   const width = Math.min(Math.max(Number(widthParam) || 0, 0), MAX_PROXY_WIDTH);
   if (!width || !contentType.startsWith("image/") || contentType.includes("svg")) {
@@ -21,7 +26,7 @@ async function resizeIfRequested(buffer: Buffer, contentType: string, widthParam
   }
   try {
     const sharp = (await import("sharp")).default;
-    const resized = await sharp(buffer)
+    const resized = await sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS })
       .resize({ width, withoutEnlargement: true })
       .webp({ quality: 82 })
       .toBuffer();
@@ -43,6 +48,14 @@ async function resizeIfRequested(buffer: Buffer, contentType: string, widthParam
 // rebinding"), so this pins the request's connection to the exact address
 // resolveAndPinPublicHost validated via a custom `lookup`, instead of
 // letting Node re-resolve DNS independently at connect time.
+// Public/unauthenticated, so an upstream host that streams forever or a
+// response body that keeps growing (either maliciously or a genuinely huge
+// file at a hotlinked URL) shouldn't be able to tie up a function instance
+// or balloon its memory indefinitely — bounded the same way redirects
+// already are above.
+const MAX_UPSTREAM_BYTES = 15 * 1024 * 1024; // 15MB — generous for any real cover, well under abuse scale
+const UPSTREAM_TIMEOUT_MS = 15_000;
+
 function fetchImage(url: string, headers: any, redirects = 0): Promise<{ status: number; headers: any; buffer: Buffer }> {
   return new Promise((resolve, reject) => {
     if (redirects > 5) {
@@ -62,8 +75,17 @@ function fetchImage(url: string, headers: any, redirects = 0): Promise<{ status:
           return;
         }
         const chunks: any[] = [];
+        let total = 0;
         res.on("error", reject);
-        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("data", (chunk) => {
+          total += chunk.length;
+          if (total > MAX_UPSTREAM_BYTES) {
+            res.destroy();
+            reject(new Error("upstream_too_large"));
+            return;
+          }
+          chunks.push(chunk);
+        });
         res.on("end", () => {
           resolve({
             status: res.statusCode || 200,
@@ -72,6 +94,7 @@ function fetchImage(url: string, headers: any, redirects = 0): Promise<{ status:
           });
         });
       });
+      req.setTimeout(UPSTREAM_TIMEOUT_MS, () => req.destroy(new Error("upstream_timeout")));
       req.on("error", (err) => reject(err));
     }).catch(reject);
   });
