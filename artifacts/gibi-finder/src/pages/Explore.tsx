@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, AlertCircle, Compass, Play, Star, BookOpen, ChevronLeft } from "lucide-react";
+import { Loader2, AlertCircle, Compass, Play, Star, BookOpen, ChevronLeft, Filter, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
@@ -129,10 +129,30 @@ export default function Explore() {
   const [viewAllGenre, setViewAllGenre] = useState<string | null>(null);
   const [viewAllKind, setViewAllKind] = useState<"genre" | "franchise">("genre");
   const openViewAll = (value: string, kind: "genre" | "franchise") => {
+    setSelectedGenreKeys(new Set());
     setViewAllKind(kind);
     setViewAllGenre(value);
     window.scrollTo({ top: 0 });
   };
+  // Genre facet filter (à la Pluma Comics' "Filtros" panel) — multi-select,
+  // combined with the type tab (manga/hq/gibi) already active. Only makes
+  // sense where genre tags actually exist (HQ/Gibi tabs use curated
+  // franchise rows instead, so the panel is hidden/cleared there).
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedGenreKeys, setSelectedGenreKeys] = useState<Set<string>>(new Set());
+  const [genreFilterItems, setGenreFilterItems] = useState<UnifiedCatalogItem[]>([]);
+  const [genreFilterLoading, setGenreFilterLoading] = useState(false);
+  const [genreFilterPage, setGenreFilterPage] = useState(1);
+  const toggleGenre = (g: string) => {
+    setViewAllGenre(null);
+    const k = norm(g);
+    setSelectedGenreKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k); else next.add(k);
+      return next;
+    });
+  };
+  const clearGenreFilters = () => setSelectedGenreKeys(new Set());
   const [viewAllItems, setViewAllItems] = useState<UnifiedCatalogItem[]>([]);
   const [viewAllLoading, setViewAllLoading] = useState(false);
   const [viewAllPage, setViewAllPage] = useState(1);
@@ -206,6 +226,15 @@ export default function Explore() {
   }, []);
 
   useEffect(() => { loadCatalog(isNsfw); }, [isNsfw, loadCatalog]);
+
+  // HQ/Gibi tabs use curated franchise rows (sparse genre tags there) — the
+  // genre filter panel doesn't apply, so drop any active selection.
+  useEffect(() => {
+    if (typeFilter === "hq" || typeFilter === "gibi") {
+      setSelectedGenreKeys(new Set());
+      setShowFilters(false);
+    }
+  }, [typeFilter]);
 
   // HQ / Gibi tabs: fetch curated series/character rows on demand (their catalog
   // is sparse, so we search each one to build real rows).
@@ -369,6 +398,30 @@ export default function Explore() {
     .sort((a, b) => b[1].count - a[1].count)
     .map(([, v]) => v.display);
   const allGenres = [...activeFeatured, ...extraGenres];
+  const selectedGenres = allGenres.filter(g => selectedGenreKeys.has(norm(g)));
+
+  // Multi-select genre filter: union of full results per selected genre
+  // (each genre already has its own "Ver tudo" endpoint) — matches how
+  // Pluma Comics' chip panel combines several genres at once, rather than
+  // narrowing to titles that carry every selected tag.
+  useEffect(() => {
+    if (selectedGenres.length === 0) { setGenreFilterItems([]); return; }
+    let cancelled = false;
+    setGenreFilterPage(1);
+    setGenreFilterLoading(true);
+    Promise.all(selectedGenres.map(g =>
+      fetch(`${BASE}/api/providers/by-genre?genre=${encodeURIComponent(g)}&nsfw=${isNsfw}`)
+        .then(r => (r.ok ? r.json() : []))
+        .catch(() => [] as UnifiedCatalogItem[])
+    )).then(results => {
+      if (cancelled) return;
+      const byId = new Map<string, UnifiedCatalogItem>();
+      for (const list of results) for (const it of (Array.isArray(list) ? list : [])) if (!byId.has(it.id)) byId.set(it.id, it);
+      setGenreFilterItems(Array.from(byId.values()));
+    }).finally(() => { if (!cancelled) setGenreFilterLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedGenres.join("|"), isNsfw]);
 
   const itemsInGenre = (genre: string) => uniqueItems.filter(i => (i.genres || []).some(g => norm(g) === norm(genre)));
   const itemsInFranchise = (f: string) => uniqueItems.filter(i => norm(i.title).includes(norm(f)));
@@ -407,6 +460,16 @@ export default function Explore() {
       return true;
     });
     return [...base, ...extra];
+  })();
+
+  // Instant local matches (already-loaded popular+latest) unioned with the
+  // fetched full genre results, same pattern as viewAllList above.
+  const genreFilterList = (() => {
+    if (selectedGenres.length === 0) return [] as UnifiedCatalogItem[];
+    const byId = new Map<string, UnifiedCatalogItem>();
+    for (const g of selectedGenres) for (const it of itemsInGenre(g)) if (!byId.has(it.id)) byId.set(it.id, it);
+    for (const it of genreFilterItems) if (!byId.has(it.id)) byId.set(it.id, it);
+    return Array.from(byId.values()).filter(i => matchesNsfw(i));
   })();
 
   void favVersion; // re-render favorites on toggle
@@ -457,26 +520,70 @@ export default function Explore() {
           </div>
         )}
 
-        {/* Type tabs */}
+        {/* Type tabs + genre filter panel */}
         {!viewAllGenre && (
-          <div className="flex flex-wrap gap-2">
-            {([
-              { id: "all", label: "Todos" },
-              { id: "manga", label: "Mangás" },
-              { id: "hq", label: "HQs" },
-              { id: "gibi", label: "Gibis" },
-            ] as const).map(t => (
-              <button
-                key={t.id}
-                onClick={() => setTypeFilter(t.id)}
-                className={cn(
-                  "font-display text-sm uppercase px-4 py-2 border-4 border-black rounded-lg transition-all",
-                  typeFilter === t.id ? "bg-primary text-white comic-shadow-sm translate-y-[-1px]" : "bg-white text-black hover:bg-secondary"
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {([
+                { id: "all", label: "Todos" },
+                { id: "manga", label: "Mangás" },
+                { id: "hq", label: "HQs" },
+                { id: "gibi", label: "Gibis" },
+              ] as const).map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setTypeFilter(t.id)}
+                  className={cn(
+                    "font-display text-sm uppercase px-4 py-2 border-4 border-black rounded-lg transition-all",
+                    typeFilter === t.id ? "bg-primary text-white comic-shadow-sm translate-y-[-1px]" : "bg-white text-black hover:bg-secondary"
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
+              {typeFilter !== "hq" && typeFilter !== "gibi" && (
+                <button
+                  onClick={() => setShowFilters(v => !v)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 font-display text-sm uppercase px-4 py-2 border-4 border-black rounded-lg transition-all sm:ml-auto",
+                    showFilters || selectedGenres.length > 0 ? "bg-secondary text-black comic-shadow-sm" : "bg-white text-black hover:bg-secondary"
+                  )}
+                >
+                  <Filter className="w-4 h-4" strokeWidth={3} />
+                  Filtros{selectedGenres.length > 0 ? ` (${selectedGenres.length})` : ""}
+                </button>
+              )}
+            </div>
+
+            {showFilters && typeFilter !== "hq" && typeFilter !== "gibi" && (
+              <div className="bg-white border-4 border-black rounded-xl p-4 comic-shadow-sm space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-display text-sm uppercase text-black tracking-wide">Gêneros</h3>
+                  {selectedGenres.length > 0 && (
+                    <button onClick={clearGenreFilters} className="inline-flex items-center gap-1 font-sans text-xs font-bold text-gray-500 hover:text-primary transition-colors">
+                      <X className="w-3.5 h-3.5" /> Limpar
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {allGenres.map(g => {
+                    const active = selectedGenreKeys.has(norm(g));
+                    return (
+                      <button
+                        key={g}
+                        onClick={() => toggleGenre(g)}
+                        className={cn(
+                          "font-display text-xs uppercase px-3 py-1.5 border-2 border-black rounded-full transition-all",
+                          active ? "bg-primary text-white" : "bg-white text-black hover:bg-secondary"
+                        )}
+                      >
+                        {g}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -526,6 +633,58 @@ export default function Explore() {
                 </div>
               );
             })()}
+          </div>
+        ) : selectedGenres.length > 0 ? (
+          <div className="space-y-5">
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                onClick={clearGenreFilters}
+                className="inline-flex items-center gap-1 bg-white text-black font-display text-sm uppercase px-3 py-2 border-4 border-black rounded-lg comic-shadow-sm hover:bg-secondary transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" strokeWidth={3} /> Voltar
+              </button>
+              <h2 className="font-display text-2xl sm:text-3xl text-black uppercase line-clamp-1">{selectedGenres.join(" + ")}</h2>
+              <span className="font-sans text-xs font-bold text-gray-500">{genreFilterList.length} títulos</span>
+              {genreFilterLoading && <Loader2 className="w-5 h-5 animate-spin text-primary" />}
+            </div>
+
+            {genreFilterList.length === 0 && !genreFilterLoading ? (
+              <div className="py-20 text-center border-4 border-dashed border-black bg-white rounded-xl">
+                <p className="font-display text-2xl text-gray-400">NENHUM QUADRINHO ENCONTRADO</p>
+                <p className="font-sans font-bold text-gray-500 mt-1">Tente combinar com outro gênero.</p>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 min-[480px]:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 sm:gap-4">
+                  {genreFilterList
+                    .slice((genreFilterPage - 1) * VIEW_ALL_PAGE_SIZE, genreFilterPage * VIEW_ALL_PAGE_SIZE)
+                    .map(item => {
+                      const src = item.sources?.[0];
+                      return (
+                        <CatalogCard key={`gf-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} full />
+                      );
+                    })}
+                </div>
+
+                {(() => {
+                  const totalPages = Math.ceil(genreFilterList.length / VIEW_ALL_PAGE_SIZE);
+                  if (totalPages <= 1) return null;
+                  const go = (p: number) => { setGenreFilterPage(p); window.scrollTo({ top: 0, behavior: "smooth" }); };
+                  return (
+                    <div className="flex flex-wrap justify-center items-center gap-2 pt-4 font-sans">
+                      <button disabled={genreFilterPage === 1} onClick={() => go(genreFilterPage - 1)} className="px-3 py-1.5 border-2 border-black rounded font-bold bg-white text-black hover:bg-secondary disabled:opacity-40 disabled:hover:bg-white">&lt;</button>
+                      {Array.from({ length: totalPages }).map((_, idx) => {
+                        const p = idx + 1;
+                        return (
+                          <button key={p} onClick={() => go(p)} className={cn("w-9 h-9 border-2 border-black rounded font-bold transition-all", genreFilterPage === p ? "bg-secondary text-black scale-110 font-black" : "bg-white text-gray-700 hover:bg-muted")}>{p}</button>
+                        );
+                      })}
+                      <button disabled={genreFilterPage === totalPages} onClick={() => go(genreFilterPage + 1)} className="px-3 py-1.5 border-2 border-black rounded font-bold bg-white text-black hover:bg-secondary disabled:opacity-40 disabled:hover:bg-white">&gt;</button>
+                    </div>
+                  );
+                })()}
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-8">
