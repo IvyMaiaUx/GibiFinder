@@ -6,7 +6,8 @@ import { SafeImage } from "@/components/ui/SafeImage";
 import { isFavorite, toggleFavorite, getFavorites } from "@/lib/favorites";
 import { getLocalProgress, getLocalCompleted } from "@/lib/user-history";
 import { getGenreBasedSuggestions } from "@/lib/recommendations";
-import { getEmptySources, hasReadableSource, isSourceEmpty } from "@/lib/empty-sources";
+import { getEmptySources, hasReadableSource } from "@/lib/empty-sources";
+import { pickBestSource } from "@/lib/pick-best-source";
 import { useAuth } from "@/hooks/use-auth";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
 import { CatalogCard, CatalogRow as Row, type CatalogItem as UnifiedCatalogItem } from "@/components/results/CatalogCard";
@@ -314,12 +315,16 @@ export default function Explore() {
     return () => { cancelled = true; };
   }, [viewAllGenre, viewAllKind, isNsfw]);
 
-  const openItem = (item: UnifiedCatalogItem) => {
-    // Prefer a source we don't already know is dead — avoids landing straight
-    // on a provider with no readable chapters when a working one is right
-    // there in the same list. Falls back to the first source when every one
-    // is either untracked or already known-empty.
-    const src = item.sources?.find(s => !isSourceEmpty(s.providerId, s.id)) || item.sources?.[0];
+  const [openingId, setOpeningId] = useState<string | null>(null);
+
+  const openItem = async (item: UnifiedCatalogItem) => {
+    // A single source skips straight to it (no network round-trip). With
+    // several, compare their chapter counts (pickBestSource) and open
+    // whichever has the most — previously just took the first non-known-dead
+    // source, which could land on a thin scrape when a fuller one existed.
+    if ((item.sources?.length ?? 0) > 1) setOpeningId(item.id);
+    const src = await pickBestSource(item.sources);
+    setOpeningId(null);
     if (!src) return;
     setLocation(`/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}&from=explore&tab=${typeFilter}`);
   };
@@ -492,8 +497,12 @@ export default function Explore() {
                 <h2 className="font-display text-3xl sm:text-5xl tracking-wide uppercase drop-shadow-[2px_2px_0_black] leading-tight line-clamp-2">{hero.title}</h2>
                 <p className="font-sans font-bold text-sm text-white/90 mt-2 line-clamp-3 max-w-xl">{hero.description || "Um dos títulos mais buscados do momento."}</p>
                 <div className="flex gap-3 mt-4">
-                  <button onClick={() => openItem(hero)} className="inline-flex items-center gap-2 bg-white text-black font-display text-sm uppercase px-5 py-2.5 border-4 border-black rounded-lg comic-shadow-sm hover:bg-secondary transition-colors">
-                    <Play className="w-4 h-4 fill-current" strokeWidth={3} /> Ler agora
+                  <button
+                    onClick={() => openItem(hero)}
+                    disabled={openingId === hero.id}
+                    className="inline-flex items-center gap-2 bg-white text-black font-display text-sm uppercase px-5 py-2.5 border-4 border-black rounded-lg comic-shadow-sm hover:bg-secondary transition-colors disabled:opacity-70 disabled:cursor-wait"
+                  >
+                    {openingId === hero.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" strokeWidth={3} />} Ler agora
                   </button>
                   <button onClick={(e) => handleToggleFav(hero, e)} className={cn(
                     "inline-flex items-center gap-2 font-display text-sm uppercase px-4 py-2.5 border-4 border-black rounded-lg comic-shadow-sm transition-colors",
@@ -611,7 +620,7 @@ export default function Explore() {
                 .map(item => {
                   const src = item.sources?.[0];
                   return (
-                    <CatalogCard key={`all-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} full />
+                    <CatalogCard key={`all-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} loading={openingId === item.id} full />
                   );
                 })}
             </div>
@@ -661,7 +670,7 @@ export default function Explore() {
                     .map(item => {
                       const src = item.sources?.[0];
                       return (
-                        <CatalogCard key={`gf-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} full />
+                        <CatalogCard key={`gf-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} loading={openingId === item.id} full />
                       );
                     })}
                 </div>
@@ -713,7 +722,7 @@ export default function Explore() {
                 {suggestions.filter(matchesType).map(item => {
                   const src = item.sources?.[0];
                   return (
-                    <CatalogCard key={`sug-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} />
+                    <CatalogCard key={`sug-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} loading={openingId === item.id} />
                   );
                 })}
               </Row>
@@ -730,7 +739,7 @@ export default function Explore() {
                 {row.items.map(item => {
                   const src = item.sources?.[0];
                   return (
-                    <CatalogCard key={`${row.key}-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} />
+                    <CatalogCard key={`${row.key}-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} loading={openingId === item.id} />
                   );
                 })}
               </Row>
@@ -741,7 +750,7 @@ export default function Explore() {
                 {row.items.map(item => {
                   const src = item.sources?.[0];
                   return (
-                    <CatalogCard key={`${row.key}-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} />
+                    <CatalogCard key={`${row.key}-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} loading={openingId === item.id} />
                   );
                 })}
               </Row>
@@ -752,7 +761,7 @@ export default function Explore() {
                 {row.items.map(item => {
                   const src = item.sources?.[0];
                   return (
-                    <CatalogCard key={`${row.key}-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} />
+                    <CatalogCard key={`${row.key}-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} loading={openingId === item.id} />
                   );
                 })}
               </Row>

@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
+import { pickBestSource } from "@/lib/pick-best-source";
 
 interface UnifiedCatalogItem {
   id: string;
@@ -73,9 +74,16 @@ export default function Ranking() {
     loadRanking(isNsfw);
   }, [isNsfw]);
 
-  const handleOpenItem = (item: UnifiedCatalogItem) => {
+  const [openingId, setOpeningId] = useState<string | null>(null);
+
+  const handleOpenItem = async (item: UnifiedCatalogItem) => {
     if (!item.sources || item.sources.length === 0) return;
-    const src = item.sources[0];
+    // A single source skips straight to it; with several, compare chapter
+    // counts and open whichever has the most (lib/pick-best-source.ts).
+    if (item.sources.length > 1) setOpeningId(item.id);
+    const src = await pickBestSource(item.sources);
+    setOpeningId(null);
+    if (!src) return;
     const url = `/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}`;
     setLocation(url);
   };
@@ -127,10 +135,14 @@ export default function Ranking() {
               const rankColor = rank === 1 ? '#F4D03F' : rank === 2 ? '#C0C0C0' : rank === 3 ? '#CD7F32' : '#F25C54';
               
               return (
-                <div 
+                <div
                   key={item.id}
                   onClick={() => handleOpenItem(item)}
-                  className="cursor-pointer bg-white border-4 border-black rounded-xl overflow-hidden comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:translate-y-[-4px] transition-all duration-200 flex items-center p-4 gap-3 sm:gap-6"
+                  aria-busy={openingId === item.id}
+                  className={cn(
+                    "bg-white border-4 border-black rounded-xl overflow-hidden comic-shadow hover:shadow-[8px_8px_0_rgba(0,0,0,1)] hover:translate-y-[-4px] transition-all duration-200 flex items-center p-4 gap-3 sm:gap-6",
+                    openingId === item.id ? "cursor-wait" : "cursor-pointer"
+                  )}
                 >
                   {/* Rank Badge */}
                   <div className="w-12 sm:w-16 md:w-20 shrink-0 flex justify-center">
@@ -150,6 +162,11 @@ export default function Ranking() {
                       alt={item.title}
                       className="w-full h-full object-cover"
                     />
+                    {openingId === item.id && (
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                        <Loader2 className="w-5 h-5 text-white animate-spin" strokeWidth={3} />
+                      </div>
+                    )}
                   </div>
 
                   {/* Info Details */}

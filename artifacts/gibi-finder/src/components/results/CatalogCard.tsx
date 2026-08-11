@@ -3,7 +3,7 @@
 // ResultDetail.tsx can render the same "genre-based suggestions" /
 // "similar titles" rows without duplicating the markup.
 import { useRef } from "react";
-import { ChevronLeft, ChevronRight, Star, BookOpen, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Star, BookOpen, CheckCircle2, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 
@@ -24,13 +24,17 @@ export interface CatalogItem {
   sources: CatalogSource[];
 }
 
-export function CatalogCard({ item, onOpen, onToggleFav, favorited, status, full }: {
+export function CatalogCard({ item, onOpen, onToggleFav, favorited, status, full, loading }: {
   item: CatalogItem;
   onOpen: () => void;
   onToggleFav?: (e: React.MouseEvent) => void;
   favorited?: boolean;
   status?: "reading" | "read";
   full?: boolean;
+  /** True while comparing this item's sources to pick the one with the most
+      chapters (see lib/pick-best-source.ts) — most titles have a single
+      source and never hit this, so it's a rare, brief overlay. */
+  loading?: boolean;
 }) {
   return (
     // A native <button> drives onOpen (was a clickable <div> — unreachable and
@@ -48,10 +52,17 @@ export function CatalogCard({ item, onOpen, onToggleFav, favorited, status, full
       <button
         type="button"
         onClick={onOpen}
-        className="block w-full text-left cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-secondary"
+        disabled={loading}
+        aria-busy={loading}
+        className="block w-full text-left cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-secondary disabled:cursor-wait"
       >
         <div className="relative aspect-[3/4] bg-zinc-950 border-b-4 border-black overflow-hidden">
-          <SafeImage src={item.coverUrl} alt={item.title} className={cn("w-full h-full object-cover group-hover:scale-105 transition-transform", status && "opacity-90")} loading="lazy" />
+          <SafeImage src={item.coverUrl} alt={item.title} className={cn("w-full h-full object-cover group-hover:scale-105 transition-transform", (status || loading) && "opacity-90")} loading="lazy" />
+          {loading && (
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+              <Loader2 className="w-6 h-6 text-white animate-spin" strokeWidth={3} />
+            </div>
+          )}
           {status && (
             <span className={cn(
               "absolute top-1.5 left-1.5 flex items-center gap-0.5 text-white text-3xs font-display px-1.5 py-0.5 border border-black rounded",
