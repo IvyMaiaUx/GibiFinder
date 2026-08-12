@@ -99615,6 +99615,26 @@ var ProviderManager = class {
     if (currentIsAdult && !incomingIsAdult) return { value: incoming, isAdult: incomingIsAdult };
     return { value: current, isAdult: currentIsAdult };
   }
+  // Provider descriptions arrive in wildly inconsistent shapes: MangaDex's
+  // often end in a "---\n**Links:**" block of markdown links to official
+  // reading sites (not part of the synopsis at all), Google Books' can
+  // contain raw HTML, and everything else may carry markdown formatting,
+  // stray whitespace, or run far longer than a catalog card needs. This is
+  // pure cleanup of whatever text a provider already returned — no new
+  // source, no translation, nothing invented. Applied once, centrally,
+  // wherever a description enters a unified group (see call sites below)
+  // so every provider benefits without having to duplicate this itself.
+  // Deliberately NOT length-capped: the title-detail page is supposed to
+  // show the full synopsis, and catalog cards already visually clamp via
+  // CSS (line-clamp-3 etc.) — a hard truncation here would apply to both
+  // and cut off the detail page's "full version" too. If a per-context
+  // (card vs. detail) length limit is wanted later, that's a display-layer
+  // concern, not something to bake into the shared source-of-truth text.
+  static normalizeDescription(description) {
+    if (!description) return description;
+    const text = description.split(/\n\s*-{3,}\s*\n/)[0].split(/\*\*links:?\*\*/i)[0].replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n").replace(/<[^>]*>/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[*_~`#]/g, "").replace(/&amp;/g, "&").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    return text || void 0;
+  }
   // Shared by search/unifyCatalog/getByGenre's grouping loops: links a new
   // source into an existing group and merges coverUrl/description/genres the
   // adult-aware way above. Mutates `existing` and `provenance` in place.
@@ -99625,8 +99645,9 @@ var ProviderManager = class {
     }
     const resultIsAdult = this.isAdultProvider(result.providerId);
     const prov = provenance.get(norm) ?? { coverIsAdult: false, descIsAdult: false };
+    const normalizedDescription = this.normalizeDescription(result.description);
     const cover = this.mergeAdultAwareField(existing.coverUrl, prov.coverIsAdult, result.coverUrl, resultIsAdult);
-    const desc = this.mergeAdultAwareField(existing.description, prov.descIsAdult, result.description, resultIsAdult);
+    const desc = this.mergeAdultAwareField(existing.description, prov.descIsAdult, normalizedDescription, resultIsAdult);
     existing.coverUrl = cover.value;
     existing.description = desc.value;
     provenance.set(norm, { coverIsAdult: cover.isAdult, descIsAdult: desc.isAdult });
@@ -99642,7 +99663,7 @@ var ProviderManager = class {
       id: `${norm}_group`,
       title: result.title,
       coverUrl: result.coverUrl,
-      description: result.description,
+      description: this.normalizeDescription(result.description),
       genres: result.genres,
       isAdult: this.isAdultResult(result),
       releaseDate: result.releaseDate,
@@ -99887,7 +99908,8 @@ var ProviderManager = class {
     await this.ensureOverridesLoaded();
     const provider = this.getProvider(providerId);
     if (!provider) throw new Error(`Provider not found: ${providerId}`);
-    return this.withRetry(() => provider.getDetails(id));
+    const details = await this.withRetry(() => provider.getDetails(id));
+    return { ...details, description: this.normalizeDescription(details.description) };
   }
   static async getChapters(providerId, id) {
     await this.ensureOverridesLoaded();
@@ -99986,7 +100008,7 @@ var ProviderManager = class {
           const match = await mangadex.findBestMatch(item.title, item.isAdult === true, controller.signal);
           if (!match) continue;
           if (!item.coverUrl && match.coverUrl) item.coverUrl = match.coverUrl;
-          if (!this.hasUsableDescription(item.description) && match.description) item.description = match.description;
+          if (!this.hasUsableDescription(item.description) && match.description) item.description = this.normalizeDescription(match.description);
         } catch (err) {
           logger.error({ err }, `MangaDex enrichment failed for "${item.title}"`);
         } finally {
