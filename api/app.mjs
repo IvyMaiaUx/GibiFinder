@@ -99298,6 +99298,14 @@ var ProviderManager = class {
     "muitohentai",
     "tankou-hentai"
   ]);
+  // "loli"/"lolicon"/"shota"/"shotacon" were previously absent here despite
+  // being surfaced as a featured browsable genre in the frontend — a title
+  // or genre tag carrying only one of these terms wasn't recognized as
+  // adult content at all, so it could leak into the general (non-NSFW,
+  // no-login-required) catalog instead of being gated. "shota" is a common
+  // Japanese given name and risks false-positiving an unrelated title into
+  // the adult bucket, but over-blocking is the correct tradeoff for this
+  // specific category versus leaving sexualized-minor content unfiltered.
   static adultTerms = [
     "adulto",
     "adult",
@@ -99315,6 +99323,8 @@ var ProviderManager = class {
     "hentai",
     "imageset",
     "incesto",
+    "loli",
+    "lolicon",
     "milf",
     "nsfw",
     "nude",
@@ -99330,6 +99340,8 @@ var ProviderManager = class {
     "pornogr\xE1fico",
     "sacana",
     "sexo",
+    "shota",
+    "shotacon",
     "softcore",
     "uncensored",
     "xxx",
