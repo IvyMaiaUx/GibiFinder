@@ -15,7 +15,11 @@ export class MangaFireProvider implements Provider {
     { id: "vinland-saga", title: "Vinland Saga", author: "Makoto Yukimura", desc: "Thorfinn seeks revenge and dreams of a peaceful land.", cover: "https://uploads.mangadex.org/covers/5d1fc77e-706a-4fc5-bea8-486c9be0145d/7fa60f5d-285a-40c5-8a1d-9cf375eaf897.jpg.256.jpg", genres: ["Acao", "Drama", "Aventura"] },
     { id: "blue-lock", title: "Blue Lock", author: "Muneyuki Kaneshiro / Yusuke Nomura", desc: "Strikers compete to become Japan's ultimate forward.", cover: "https://uploads.mangadex.org/covers/4141c5dc-c525-4df5-afd7-cc7d192a832f/1975ed85-c114-42d9-b0c3-75421ba87e5d.jpg.256.jpg", genres: ["Esportes", "Drama", "Acao"] },
     { id: "frieren", title: "Frieren: Beyond Journey's End", author: "Kanehito Yamada / Tsukasa Abe", desc: "An elf begins a new journey after her old party's victory.", cover: "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=512&fit=crop", genres: ["Fantasia", "Aventura", "Drama"] },
-    { id: "death-note", title: "Death Note", author: "Tsugumi Ohba / Takeshi Obata", desc: "A student finds a supernatural notebook.", cover: "https://uploads.mangadex.org/covers/695e6ed1-9823-486e-87bf-ec1fa536f0c1/1fa9dc00-0202-473c-80f5-d2e1a47eda1d.jpg.256.jpg", genres: ["Misterio", "Thriller", "Sobrenatural"] },
+    // Was 695e6ed1-9823-486e-87bf-ec1fa536f0c1 — a completely unrelated
+    // MangaDex title ("Shuukatsu Yuusha" / "Death Preparation Hero"),
+    // wrong-manga-ID typo. Verified the real Death Note's MangaDex ID
+    // directly against the API (title.en === "Death Note" exactly).
+    { id: "death-note", title: "Death Note", author: "Tsugumi Ohba / Takeshi Obata", desc: "A student finds a supernatural notebook.", cover: "https://uploads.mangadex.org/covers/75ee72ab-c6bf-4b87-badd-de839156934c/d6555598-8202-477d-acde-303202cb3475.jpg.256.jpg", genres: ["Misterio", "Thriller", "Sobrenatural"] },
     { id: "fullmetal-alchemist", title: "Fullmetal Alchemist", author: "Hiromu Arakawa", desc: "Two alchemist brothers seek the Philosopher's Stone.", cover: "https://uploads.mangadex.org/covers/f9c9614d-0657-44c6-9c33-47fd58cd51b3/2ccc4501-f3e8-4608-9789-d8308185f4c1.jpg.256.jpg", genres: ["Acao", "Aventura", "Fantasia", "Drama"] }
   ];
 
