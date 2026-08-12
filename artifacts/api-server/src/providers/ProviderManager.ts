@@ -65,7 +65,14 @@ export class ProviderManager {
     "superhentais",
     "hentaidatia",
     "muitohentai",
-    "tankou-hentai"
+    "tankou-hentai",
+    // Duplicate custom-provider registration of the same site (tankouhentai.com)
+    // under a second id without the hyphen — this exact list was the only
+    // thing gating it as adult, so items sourced only from "tankouhentai"
+    // (no other adult signal in title/genres) leaked into the general
+    // catalog with isAdult: false. Verified live: explicit hentai titles
+    // (e.g. "...BESTIALITY LOVE STORY") were returned with nsfw=false.
+    "tankouhentai"
   ]);
   // "loli"/"lolicon"/"shota"/"shotacon" were previously absent here despite
   // being surfaced as a featured browsable genre in the frontend — a title
