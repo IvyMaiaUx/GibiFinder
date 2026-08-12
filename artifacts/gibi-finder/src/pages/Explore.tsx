@@ -10,7 +10,7 @@ import { getEmptySources, hasReadableSource } from "@/lib/empty-sources";
 import { pickBestSource } from "@/lib/pick-best-source";
 import { useAuth } from "@/hooks/use-auth";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
-import { CatalogCard, CatalogRow as Row, type CatalogItem as UnifiedCatalogItem } from "@/components/results/CatalogCard";
+import { CatalogCard, CatalogRow as Row, CatalogRowSkeleton, type CatalogItem as UnifiedCatalogItem } from "@/components/results/CatalogCard";
 
 interface RowData {
   key: string;
@@ -616,6 +616,22 @@ export default function Explore() {
 
   return (
       <div className="max-w-6xl mx-auto space-y-8 pb-16 select-none">
+        {/* Hero skeleton — same footprint as the real hero below, so the
+            page doesn't collapse to an empty gap while it's loading. */}
+        {loading && !viewAllGenre && (
+          <div className="relative overflow-hidden border-4 border-black rounded-2xl comic-shadow bg-zinc-200 animate-pulse">
+            <div className="relative flex flex-col sm:flex-row items-center gap-5 p-5 sm:p-8">
+              <div className="w-32 h-48 sm:w-40 sm:h-60 bg-zinc-300 border-4 border-black rounded-lg shrink-0" />
+              <div className="min-w-0 w-full space-y-3">
+                <div className="h-5 w-24 bg-zinc-300 rounded" />
+                <div className="h-10 w-3/4 bg-zinc-300 rounded" />
+                <div className="h-4 w-full bg-zinc-300 rounded" />
+                <div className="h-4 w-2/3 bg-zinc-300 rounded" />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Hero */}
         {hero && !loading && !viewAllGenre && (
           <div className={cn(
@@ -758,9 +774,8 @@ export default function Explore() {
         )}
 
         {loading ? (
-          <div className="py-24 text-center">
-            <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
-            <h3 className="font-display text-2xl">CARREGANDO O CATÁLOGO...</h3>
+          <div className="space-y-8">
+            {Array.from({ length: 4 }, (_, i) => <CatalogRowSkeleton key={i} />)}
           </div>
         ) : viewAllGenre ? (
           <div className="space-y-5">
