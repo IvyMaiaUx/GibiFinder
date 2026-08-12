@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Loader2, AlertCircle, Compass, Play, Star, BookOpen, ChevronLeft, Filter, X, Search } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
@@ -240,6 +240,12 @@ export default function Explore() {
     const k = new URLSearchParams(window.location.search).get("kind");
     return k === "franchise" ? "franchise" : "genre";
   });
+  // The view-all fetch effect below resets viewAllPage to 1 whenever
+  // viewAllGenre changes — correct once the user is already viewing a list,
+  // but it would also fire on the very first render (viewAllGenre restored
+  // from the URL above) and stomp the page just restored alongside it. Skip
+  // it exactly once, same guard as GenrePage.tsx's isFirstLoad.
+  const isFirstViewAllLoad = useRef(true);
   // Genre "Ver tudo" now goes to a real route (GenrePage.tsx) — bookmarkable/
   // shareable, and gets a sort control the old client-state toggle never
   // had. Franchise rows (Batman, Homem-Aranha, ...) keep the original
@@ -444,7 +450,7 @@ export default function Explore() {
   useEffect(() => {
     if (!viewAllGenre) { setViewAllItems([]); return; }
     let cancelled = false;
-    setViewAllPage(1);
+    if (isFirstViewAllLoad.current) { isFirstViewAllLoad.current = false; } else { setViewAllPage(1); }
     setViewAllLoading(true);
     const endpoint = viewAllKind === "franchise"
       // "Ver tudo" queries ALL providers for completeness (rows stay scoped/fast).
