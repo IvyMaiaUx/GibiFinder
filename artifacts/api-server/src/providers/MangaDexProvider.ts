@@ -39,6 +39,24 @@ export class MangaDexProvider implements Provider {
     return typeof firstVal === "string" ? firstVal : "";
   }
 
+  // Real, verified example of why this exists: Solo Leveling's MangaDex
+  // entry has a primary title map of just {"ko-ro": "Na Honjaman
+  // Level-Up"} — no "en" key at all, so titleMap.en || titleMap.ja ||
+  // first-available fell through to that Korean romanization nobody
+  // recognizes. altTitles has {"en": "Solo Leveling"} right near the top
+  // of dozens of translations — the actual well-known name, just never
+  // consulted for the display title (only for enrichment matching).
+  private extractDisplayTitle(item: any): string {
+    const titleMap = item.attributes?.title || {};
+    if (titleMap.en) return titleMap.en;
+    const altTitles: any[] = item.attributes?.altTitles || [];
+    const enAlt = altTitles.find((t: any) => t?.en)?.en;
+    if (enAlt) return enAlt;
+    if (titleMap.ja) return titleMap.ja;
+    const firstVal = Object.values(titleMap)[0];
+    return typeof firstVal === "string" && firstVal ? firstVal : "Sem título";
+  }
+
   private getReleaseDate(item: any): string | undefined {
     const year = item.attributes?.year;
     if (typeof year === "number" && year > 0) return String(year);
@@ -68,8 +86,7 @@ export class MangaDexProvider implements Provider {
 
       return data.data.map((item: any) => {
         const id = item.id;
-        const titleMap = item.attributes?.title || {};
-        const title = titleMap.en || titleMap.ja || (Object.values(titleMap).length > 0 ? Object.values(titleMap)[0] : "Sem título");
+        const title = this.extractDisplayTitle(item);
         const descMap = item.attributes?.description || {};
         const description = this.extractPtDescription(descMap);
         
@@ -124,8 +141,7 @@ export class MangaDexProvider implements Provider {
       const data = await res.json() as any;
 
       for (const item of (data.data || [])) {
-        const titleMap = item.attributes?.title || {};
-        const mainTitle = titleMap.en || titleMap.ja || (Object.values(titleMap).length > 0 ? String(Object.values(titleMap)[0]) : "");
+        const mainTitle = this.extractDisplayTitle(item);
         const altTitles: string[] = (item.attributes?.altTitles || []).flatMap((entry: any) => Object.values(entry) as string[]);
         const candidateTitles = [mainTitle, ...altTitles].filter(Boolean);
         if (!candidateTitles.some(t => normalizeTitleForMatch(t) === normQuery)) continue;
@@ -160,11 +176,10 @@ export class MangaDexProvider implements Provider {
     const data = await res.json() as any;
     const item = data.data;
 
-    const titleMap = item.attributes?.title || {};
-    const title = titleMap.en || titleMap.ja || (Object.values(titleMap).length > 0 ? Object.values(titleMap)[0] : "Sem título");
+    const title = this.extractDisplayTitle(item);
     const descMap = item.attributes?.description || {};
     const description = this.extractPtDescription(descMap);
-    
+
     const coverRel = item.relationships?.find((r: any) => r.type === "cover_art");
     const coverFileName = coverRel?.attributes?.fileName;
     const coverUrl = coverFileName
@@ -305,8 +320,7 @@ export class MangaDexProvider implements Provider {
 
       return (data.data || []).map((item: any) => {
         const id = item.id;
-        const titleMap = item.attributes?.title || {};
-        const title = titleMap.en || titleMap.ja || (Object.values(titleMap).length > 0 ? Object.values(titleMap)[0] : "Sem título");
+        const title = this.extractDisplayTitle(item);
         const descMap = item.attributes?.description || {};
         const description = descMap.en || descMap["pt-br"] || (Object.values(descMap).length > 0 ? Object.values(descMap)[0] : "");
         
@@ -333,8 +347,7 @@ export class MangaDexProvider implements Provider {
 
   private toResult(item: any): SearchResult {
     const id = item.id;
-    const titleMap = item.attributes?.title || {};
-    const title = (titleMap.en || titleMap.ja || (Object.values(titleMap)[0] as string) || "Sem título") as string;
+    const title = this.extractDisplayTitle(item);
     const descMap = item.attributes?.description || {};
     const description = (descMap.en || descMap["pt-br"] || (Object.values(descMap)[0] as string) || "") as string;
     const coverRel = item.relationships?.find((r: any) => r.type === "cover_art");

@@ -96235,6 +96235,23 @@ var MangaDexProvider = class _MangaDexProvider {
     const firstVal = Object.values(descMap)[0];
     return typeof firstVal === "string" ? firstVal : "";
   }
+  // Real, verified example of why this exists: Solo Leveling's MangaDex
+  // entry has a primary title map of just {"ko-ro": "Na Honjaman
+  // Level-Up"} — no "en" key at all, so titleMap.en || titleMap.ja ||
+  // first-available fell through to that Korean romanization nobody
+  // recognizes. altTitles has {"en": "Solo Leveling"} right near the top
+  // of dozens of translations — the actual well-known name, just never
+  // consulted for the display title (only for enrichment matching).
+  extractDisplayTitle(item) {
+    const titleMap = item.attributes?.title || {};
+    if (titleMap.en) return titleMap.en;
+    const altTitles = item.attributes?.altTitles || [];
+    const enAlt = altTitles.find((t2) => t2?.en)?.en;
+    if (enAlt) return enAlt;
+    if (titleMap.ja) return titleMap.ja;
+    const firstVal = Object.values(titleMap)[0];
+    return typeof firstVal === "string" && firstVal ? firstVal : "Sem t\xEDtulo";
+  }
   getReleaseDate(item) {
     const year = item.attributes?.year;
     if (typeof year === "number" && year > 0) return String(year);
@@ -96256,8 +96273,7 @@ var MangaDexProvider = class _MangaDexProvider {
       const data = await res.json();
       return data.data.map((item) => {
         const id = item.id;
-        const titleMap = item.attributes?.title || {};
-        const title = titleMap.en || titleMap.ja || (Object.values(titleMap).length > 0 ? Object.values(titleMap)[0] : "Sem t\xEDtulo");
+        const title = this.extractDisplayTitle(item);
         const descMap = item.attributes?.description || {};
         const description = this.extractPtDescription(descMap);
         const coverRel = item.relationships?.find((r2) => r2.type === "cover_art");
@@ -96296,8 +96312,7 @@ var MangaDexProvider = class _MangaDexProvider {
       if (!res.ok) throw new Error(`MangaDex search error: ${res.status}`);
       const data = await res.json();
       for (const item of data.data || []) {
-        const titleMap = item.attributes?.title || {};
-        const mainTitle = titleMap.en || titleMap.ja || (Object.values(titleMap).length > 0 ? String(Object.values(titleMap)[0]) : "");
+        const mainTitle = this.extractDisplayTitle(item);
         const altTitles = (item.attributes?.altTitles || []).flatMap((entry) => Object.values(entry));
         const candidateTitles = [mainTitle, ...altTitles].filter(Boolean);
         if (!candidateTitles.some((t2) => normalizeTitleForMatch(t2) === normQuery)) continue;
@@ -96324,8 +96339,7 @@ var MangaDexProvider = class _MangaDexProvider {
     if (!res.ok) throw new Error(`MangaDex details error: ${res.status}`);
     const data = await res.json();
     const item = data.data;
-    const titleMap = item.attributes?.title || {};
-    const title = titleMap.en || titleMap.ja || (Object.values(titleMap).length > 0 ? Object.values(titleMap)[0] : "Sem t\xEDtulo");
+    const title = this.extractDisplayTitle(item);
     const descMap = item.attributes?.description || {};
     const description = this.extractPtDescription(descMap);
     const coverRel = item.relationships?.find((r2) => r2.type === "cover_art");
@@ -96436,8 +96450,7 @@ var MangaDexProvider = class _MangaDexProvider {
       const data = await res.json();
       return (data.data || []).map((item) => {
         const id = item.id;
-        const titleMap = item.attributes?.title || {};
-        const title = titleMap.en || titleMap.ja || (Object.values(titleMap).length > 0 ? Object.values(titleMap)[0] : "Sem t\xEDtulo");
+        const title = this.extractDisplayTitle(item);
         const descMap = item.attributes?.description || {};
         const description = descMap.en || descMap["pt-br"] || (Object.values(descMap).length > 0 ? Object.values(descMap)[0] : "");
         const coverRel = item.relationships?.find((r2) => r2.type === "cover_art");
@@ -96459,8 +96472,7 @@ var MangaDexProvider = class _MangaDexProvider {
   }
   toResult(item) {
     const id = item.id;
-    const titleMap = item.attributes?.title || {};
-    const title = titleMap.en || titleMap.ja || Object.values(titleMap)[0] || "Sem t\xEDtulo";
+    const title = this.extractDisplayTitle(item);
     const descMap = item.attributes?.description || {};
     const description = descMap.en || descMap["pt-br"] || Object.values(descMap)[0] || "";
     const coverRel = item.relationships?.find((r2) => r2.type === "cover_art");
@@ -99981,8 +99993,14 @@ var ProviderManager = class {
     const cacheKey = `${!!nsfw}`;
     const cached = this.recentUpdatesCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < this.RECENT_UPDATES_CACHE_TTL) return cached.items;
-    const latest = await this.getCatalog("latest", nsfw);
-    const candidates = latest.filter((item) => item.sources.some((s2) => s2.providerId === "mangadex") && item.isAdult === !!nsfw).slice(0, this.RECENT_UPDATES_MAX_TITLES);
+    const [latest, popular] = await Promise.all([
+      this.getCatalog("latest", nsfw),
+      this.getCatalog("popular", nsfw)
+    ]);
+    const popularIds = new Set(popular.map((item) => item.id));
+    const candidates = latest.filter(
+      (item) => item.sources.some((s2) => s2.providerId === "mangadex") && item.isAdult === !!nsfw && popularIds.has(item.id)
+    ).slice(0, this.RECENT_UPDATES_MAX_TITLES);
     if (candidates.length === 0) return [];
     const results = [];
     let failureCount = 0;
