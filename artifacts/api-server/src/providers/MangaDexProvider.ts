@@ -224,6 +224,31 @@ export class MangaDexProvider implements Provider {
     }
   }
 
+  // Used only by ProviderManager's "recent updates" row — not part of the
+  // Provider interface. getChapters() above deliberately fetches a title's
+  // ENTIRE chapter history (paginated up to 2500), which is the right thing
+  // for a reader's chapter list but far too much for "what are the 3 newest
+  // chapters" — this is a single lean request for just that, using
+  // MangaDex's own `readableAt` per chapter (a field getChapters() doesn't
+  // even ask for, since nothing before this needed it).
+  async getRecentChapters(id: string, limit = 3, signal?: AbortSignal): Promise<{ chapterNum: string; date?: string }[]> {
+    try {
+      const url = `https://api.mangadex.org/manga/${id}/feed?translatedLanguage[]=pt-br&translatedLanguage[]=pt&translatedLanguage[]=en&order[readableAt]=desc&limit=${limit}`;
+      const res = await fetch(url, { signal });
+      if (!res.ok) throw new Error(`MangaDex recent chapters error: ${res.status}`);
+      const data = await res.json() as any;
+      return (data.data || []).map((item: any) => ({
+        chapterNum: item.attributes?.chapter || "Especial",
+        date: item.attributes?.readableAt || item.attributes?.publishAt,
+      }));
+    } catch (err) {
+      if (!(err instanceof Error) || err.name !== "AbortError") {
+        logger.error({ err }, "MangaDex getRecentChapters failed:");
+      }
+      return [];
+    }
+  }
+
   async getPages(chapterId: string): Promise<Page[]> {
     try {
       const url = `https://api.mangadex.org/at-home/server/${chapterId}`;

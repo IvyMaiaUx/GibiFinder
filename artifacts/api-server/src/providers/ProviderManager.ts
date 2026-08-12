@@ -1,4 +1,4 @@
-import { Provider, UnifiedSearchResult, SearchResult, MangaDetails, Chapter, Page } from "./types";
+import { Provider, UnifiedSearchResult, SearchResult, MangaDetails, Chapter, Page, RecentUpdateItem } from "./types";
 import { logger } from "../lib/logger";
 import { MangaDexProvider } from "./MangaDexProvider";
 import { ComicExtraProvider } from "./ComicExtraProvider";
@@ -919,6 +919,68 @@ export class ProviderManager {
     };
 
     await Promise.all(Array.from({ length: Math.min(this.ENRICH_CONCURRENCY, candidates.length) }, worker));
+  }
+
+  // "Atualizações recentes" row — deliberately MangaDex-only. Chapter-level
+  // dates aren't available anywhere else in this codebase: MangaDex's feed
+  // API already returns them, but the Madara-based/WordPress providers'
+  // chapter-list scrapers were never built to extract a date at all (most
+  // sites' markup may not even expose one legibly). Scoped to MangaDex-
+  // sourced items only rather than half-covering every provider with
+  // missing dates for the rest.
+  private static recentUpdatesCache = new Map<string, { items: RecentUpdateItem[]; ts: number }>();
+  private static readonly RECENT_UPDATES_CACHE_TTL = 10 * 60 * 1000;
+  private static readonly RECENT_UPDATES_MAX_TITLES = 20;
+  private static readonly RECENT_UPDATES_CONCURRENCY = 6;
+  private static readonly RECENT_UPDATES_TIMEOUT_MS = 4000;
+
+  static async getRecentUpdates(nsfw?: boolean): Promise<RecentUpdateItem[]> {
+    const cacheKey = `${!!nsfw}`;
+    const cached = this.recentUpdatesCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < this.RECENT_UPDATES_CACHE_TTL) return cached.items;
+
+    const mangadex = this.providers.get("mangadex");
+    if (!(mangadex instanceof MangaDexProvider) || this.activeStates.get("mangadex") !== true) return [];
+
+    // "latest" already goes through getCatalog()'s own 5-min cache, so this
+    // doesn't add a second live fan-out to every other provider.
+    const latest = await this.getCatalog("latest", nsfw);
+    const candidates = latest
+      .filter(item => item.sources.some(s => s.providerId === "mangadex"))
+      .slice(0, this.RECENT_UPDATES_MAX_TITLES);
+
+    if (candidates.length === 0) return [];
+
+    const results: RecentUpdateItem[] = [];
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < candidates.length) {
+        const item = candidates[cursor++];
+        const src = item.sources.find(s => s.providerId === "mangadex")!;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.RECENT_UPDATES_TIMEOUT_MS);
+        try {
+          const chapters = await mangadex.getRecentChapters(src.id, 3, controller.signal);
+          if (chapters.length > 0) {
+            results.push({ id: item.id, title: item.title, coverUrl: item.coverUrl, mangaId: src.id, chapters });
+          }
+        } catch (err) {
+          logger.error({ err }, `Recent chapters lookup failed for "${item.title}"`);
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(this.RECENT_UPDATES_CONCURRENCY, candidates.length) }, worker));
+
+    results.sort((a, b) => {
+      const aTime = a.chapters[0]?.date ? new Date(a.chapters[0].date).getTime() : 0;
+      const bTime = b.chapters[0]?.date ? new Date(b.chapters[0].date).getTime() : 0;
+      return bTime - aTime;
+    });
+
+    this.recentUpdatesCache.set(cacheKey, { items: results, ts: Date.now() });
+    return results;
   }
 
   // Groups a flat list of provider results into unified titles (merging sources,

@@ -215,6 +215,21 @@ router.get("/providers/by-genre", async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/providers/recent-updates - Latest MangaDex chapters per title, for
+// the "Atualizações recentes" row. Deliberately MangaDex-only — see
+// ProviderManager.getRecentUpdates for why.
+router.get("/providers/recent-updates", async (req: Request, res: Response) => {
+  const nsfw = req.query.nsfw === "true";
+  try {
+    const items = await ProviderManager.getRecentUpdates(nsfw);
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
+    res.json(items);
+  } catch (err) {
+    logger.error({ err }, "recent-updates failed");
+    res.status(500).json({ error: "recent_updates_failed" });
+  }
+});
+
 // GET /api/providers/statistics - Fetch statistics/ratings for a manga/HQ
 router.get("/providers/statistics", async (req: Request, res: Response) => {
   const providerId = req.query.providerId as string;

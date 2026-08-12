@@ -45,6 +45,15 @@ export interface Provider {
   getByGenre?(genre: string, nsfw?: boolean): Promise<SearchResult[]>;
 }
 
+// "Atualizações recentes" row — MangaDex-only (see ProviderManager.getRecentUpdates).
+export interface RecentUpdateItem {
+  id: string;
+  title: string;
+  coverUrl?: string;
+  mangaId: string; // the MangaDex-side id specifically, to open the title directly
+  chapters: { chapterNum: string; date?: string }[];
+}
+
 export interface UnifiedSearchResult {
   id: string; // ID gerado para agrupamento
   title: string;
