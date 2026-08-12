@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Hero } from "@/components/home/Hero";
 import { SearchPanel } from "@/components/home/SearchPanel";
 import { ResultView } from "@/components/results/ResultView";
@@ -14,7 +14,6 @@ import { addSearchHistoryItem } from "@/lib/user-history";
 import { getEmptySources, hasReadableSource } from "@/lib/empty-sources";
 import { pickBestSource } from "@/lib/pick-best-source";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
-import { getGenreBasedSuggestions } from "@/lib/recommendations";
 
 interface UnifiedSearchResult {
   id: string;
@@ -302,34 +301,6 @@ export default function Home() {
     return () => window.removeEventListener("nsfw-change", handleNsfwChange);
   }, []);
 
-  // "Sugestões pra você" — same getGenreBasedSuggestions() logic Explore.tsx
-  // and the title-detail page already use, ranking the popular catalog by
-  // overlap with the user's own favorites/history genres. Home has no
-  // catalog fetch of its own (it's search-first), so this fetches its own
-  // pool once per NSFW state; the ranking itself is recomputed locally
-  // (no re-fetch) whenever a favorite changes, since that's what shifts the
-  // user's genre signal.
-  const [suggestionPool, setSuggestionPool] = useState<UnifiedSearchResult[]>([]);
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch(`${BASE}/api/providers/catalog?listType=popular&nsfw=${isNsfw}`, { signal: controller.signal })
-      .then(res => res.ok ? res.json() : [])
-      .then((pool: UnifiedSearchResult[]) => setSuggestionPool(pool))
-      .catch(err => { if (err.name !== "AbortError") console.error("Failed to load genre suggestions:", err); });
-    return () => controller.abort();
-  }, [isNsfw]);
-  // Filtered against the CURRENT isNsfw at read time, not baked in when the
-  // pool was fetched — flipping the toggle off shouldn't keep rendering an
-  // already-fetched adult-inclusive pool for the moment before the next
-  // fetch resolves. favoriteVersion is read for its change, not its value:
-  // getGenreBasedSuggestions reads favorites straight from localStorage, so
-  // this only needs to re-run, not receive a new argument.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const genreSuggestions = useMemo(() => {
-    const safePool = isNsfw ? suggestionPool : suggestionPool.filter(item => !isAdultItem(item));
-    return getGenreBasedSuggestions(safePool, 10);
-  }, [suggestionPool, isNsfw, favoriteVersion]);
-
   // On mount: re-run a search coming from history (?q=...), or restore the last
   // online search ONLY when returning via "Voltar aos resultados" (?restore=1).
   // A plain visit to "/" (e.g. clicking the logo) starts clean.
@@ -496,28 +467,6 @@ export default function Home() {
           onSearchOnline={searchByOnline}
           isPending={aiPending || onlineSearching}
         />
-
-        {/* Genre-based suggestions — hidden once a search is active/showing
-            results, and (like Explore's identical row) hidden entirely below
-            4 items rather than showing a half-empty row: a new user with no
-            favorites/history yet has no genre signal, and getGenreBasedSuggestions
-            returns [] for them by design. */}
-        {!aiPending && !results && !onlineResults && !onlineSearching && !onlineSearchError && genreSuggestions.length >= 4 && (
-          <div className="mt-12">
-            <h2 className="font-display text-2xl text-black uppercase mb-4">✨ Sugestões pra você</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-              {genreSuggestions.map((item) => (
-                <SearchResultCard
-                  key={item.id}
-                  item={item}
-                  openingId={openingId}
-                  onOpen={handleOpenOnlineResult}
-                  onToggleFavorite={handleToggleFavorite}
-                />
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Loading Spinner for Online Search */}
         {onlineSearching && (
