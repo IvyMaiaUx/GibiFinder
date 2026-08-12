@@ -60,10 +60,12 @@ export default function ResultDetail() {
   const initialTitle = searchParams.get("title") || "";
   const initialCoverUrl = searchParams.get("coverUrl") || "";
   const initialDescription = searchParams.get("description") || "";
-  // Navigation origin: "explore" when the user came from the Explorar tabs (not
-  // from a search), so the back button returns there instead of a stale search.
-  const cameFromExplore = searchParams.get("from") === "explore";
-  const exploreTab = searchParams.get("tab") || "";
+  // Full path+query of wherever the user came from inside Explorar — the
+  // catalog tab, and if they were inside a "Ver tudo" list (genre page or
+  // franchise), that exact list/sort/page. Built by Explore.tsx/GenrePage.tsx
+  // (buildReturnTo) so this only has to send the user back to it verbatim,
+  // not reconstruct which of several "ver tudo" flavors they were in.
+  const returnTo = searchParams.get("returnTo");
 
   const isOnlineResult = id === "online";
 
@@ -262,9 +264,9 @@ export default function ResultDetail() {
 
   return (
       <div className="max-w-4xl mx-auto pb-16">
-        {cameFromExplore ? (
+        {returnTo ? (
           <button
-            onClick={() => setLocation(exploreTab ? `/explorar?tab=${exploreTab}` : "/explorar")}
+            onClick={() => setLocation(returnTo)}
             className="mb-6 inline-flex items-center gap-2 bg-white text-black font-display text-sm uppercase px-4 py-2.5 border-4 border-black rounded-lg comic-shadow-sm hover:bg-secondary transition-colors"
           >
             <ArrowLeft className="w-4 h-4" strokeWidth={3} />

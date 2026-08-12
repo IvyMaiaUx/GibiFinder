@@ -4,7 +4,7 @@
 // This is that view promoted to a real route, plus the sort control the
 // catalog-redesign proposal asked for (Explore's own "Ver tudo" had
 // pagination already, but never a sort).
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
 import { Loader2, AlertCircle, ChevronLeft, ArrowUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -49,8 +49,22 @@ export default function GenrePage() {
   const [items, setItems] = useState<UnifiedCatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sort, setSort] = useState<SortMode>("rating");
-  const [page, setPage] = useState(1);
+  // Restored from the URL so opening a title then hitting "Voltar" (which
+  // sends the user back to this exact ?sort=&page= URL, see openItem below)
+  // lands back on the same sort/page instead of resetting to defaults.
+  const [sort, setSort] = useState<SortMode>(() => {
+    const s = new URLSearchParams(window.location.search).get("sort");
+    return s === "recent" || s === "az" ? s : "rating";
+  });
+  const [page, setPage] = useState(() => {
+    const p = Number(new URLSearchParams(window.location.search).get("page"));
+    return Number.isFinite(p) && p > 0 ? p : 1;
+  });
+  // The genre-fetch effect below resets page to 1 whenever genre/isNsfw
+  // change — correct once the user is already on the page, but it would
+  // also fire on the very first render and stomp the page just restored
+  // from the URL above. Skip it exactly once.
+  const isFirstLoad = useRef(true);
   const [isNsfw, setIsNsfw] = useState(() => document.documentElement.classList.contains("nsfw"));
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [favVersion, setFavVersion] = useState(0);
@@ -66,7 +80,7 @@ export default function GenrePage() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    setPage(1);
+    if (isFirstLoad.current) { isFirstLoad.current = false; } else { setPage(1); }
     fetch(`${BASE}/api/providers/by-genre?genre=${encodeURIComponent(genre)}&nsfw=${isNsfw}`)
       .then(res => (res.ok ? res.json() : Promise.reject(new Error())))
       .then((data: UnifiedCatalogItem[]) => { if (!cancelled) setItems(Array.isArray(data) ? data : []); })
@@ -106,12 +120,23 @@ export default function GenrePage() {
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const pageItems = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
+  // Sort/page already live in this page's own URL (restored above), so the
+  // return trip just needs to point back at it — no separate state to
+  // thread through the detail page and back.
+  const buildReturnTo = () => {
+    const params = new URLSearchParams();
+    if (sort !== "rating") params.set("sort", sort);
+    if (page > 1) params.set("page", String(page));
+    const qs = params.toString();
+    return `/explorar/genero/${encodeURIComponent(genre)}${qs ? `?${qs}` : ""}`;
+  };
+
   const openItem = async (item: UnifiedCatalogItem) => {
     if ((item.sources?.length ?? 0) > 1) setOpeningId(item.id);
     const src = await pickBestSource(item.sources);
     setOpeningId(null);
     if (!src) return;
-    setLocation(`/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}`);
+    setLocation(`/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}&returnTo=${encodeURIComponent(buildReturnTo())}`);
   };
 
   const handleToggleFav = (item: UnifiedCatalogItem, e: React.MouseEvent) => {
