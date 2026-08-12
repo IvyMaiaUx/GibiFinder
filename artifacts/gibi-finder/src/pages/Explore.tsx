@@ -58,6 +58,20 @@ const NON_GENRE_DENYLIST = new Set([
   "caverna do dragao", "dungeons & dragons", "mestre dos magos",
   "diana", "bobby", "eric", "hank", "presto", "sheila", "uni",
   "justiceiro", "vingador", "invasao skrull", "universo absoluto", "universo compartilhado",
+  // +18 catalog: adult-provider site names scraped as if they were genre
+  // tags (nhentai, hentai-home, hentai-teca are already in ADULT_PROVIDERS/
+  // adultProviderIds — they're sources, not genres), plus SEO "[qualifier]
+  // + hentai/porno" duplicates of the plain "Hentai" tag that already
+  // exists. Found while reorganizing the Filtros panel: with these left in,
+  // it renders ~150 chips with real genres, provider names, and technical
+  // descriptors all at the same visual weight.
+  "nhentai", "hentai home", "hentai teca", "hentaiteca", "mundo hentai",
+  "ia hentai", "the hentai", "anime hentai", "manga hentai", "super hentai",
+  "muito hentai", "hq de sexo", "super hq", "hq traducao", "cartoon porno",
+  "comics porno", "desenho porno", "naruto porno", "simpsons porno",
+  "dragon ball porno",
+  // Technical/format descriptors, not genres.
+  "partial censorship", "censored", "uncensored", "full color", "serialized", "x-ray",
 ]);
 // Franchise/character rows (mostly for HQs, where genre tags are sparse).
 const FRANCHISES = [
