@@ -63,14 +63,19 @@ const FRANCHISES = [
   "Lanterna Verde", "Demolidor", "Wolverine", "Venom", "Deadpool", "Liga da Justiça",
   "Capitão América", "Pantera Negra", "Coringa", "Turma da Mônica",
 ];
-const MIN_FRANCHISE_ITEMS = 2;
+// Minimum items for any shelf row (franchise, genre, or curated HQ/Gibi) to
+// render at all. Was 2 for franchises and "any" (>0) for curated rows — a
+// row with just 1-2 covers reads as broken next to full 8-10 cover rows
+// (real examples: Liga da Justiça, Homem-Aranha). One shared constant, not
+// a separate threshold per row type, so they can't drift apart again.
+const MIN_ROW_ITEMS = 4;
+const MIN_FRANCHISE_ITEMS = MIN_ROW_ITEMS;
 // Hentai subgenres highlighted when +18 mode is on.
 const ADULT_FEATURED_GENRES = ["Yaoi", "Yuri", "Lolicon", "Shotacon", "Bakunyū", "Futanari", "Incesto", "Netorare", "Hentai", "Ecchi"];
 // Curated rows fetched on demand for the HQ and Gibi tabs (their catalog is
 // sparse, so we search each series/character to populate real rows).
 const HQ_SERIES = ["Batman", "Superman", "Homem-Aranha", "X-Men", "Vingadores", "Liga da Justiça", "Star Wars", "The Boys", "Coringa", "Mulher-Maravilha", "Lanterna Verde", "Flash", "Aquaman", "Capitão América", "Homem de Ferro", "Thor", "Hulk", "Wolverine", "Deadpool", "Pantera Negra", "Venom", "Demolidor", "Quarteto Fantástico", "Guardiões da Galáxia", "Justiceiro"];
 const GIBI_SERIES = ["Turma da Mônica", "Turma da Mônica Jovem", "Mônica", "Cebolinha", "Magali", "Cascão", "Chico Bento", "Almanaque", "Pelezinho", "Ronaldinho Gaúcho", "Menino Maluquinho"];
-const MIN_ROW_ITEMS = 4;
 // How many items a shelf row shows before the user has to open "Ver tudo".
 // Every row already has a full paginated view behind that button, so this is
 // purely about how much of a first impression each shelf gives up front.
@@ -394,7 +399,11 @@ export default function Explore() {
       for (let i = 0; i < series.length && !cancelled; i += BATCH) {
         const rows = await Promise.all(series.slice(i, i + BATCH).map(fetchSeries));
         if (cancelled) return;
-        setCuratedRows(prev => [...prev, ...rows.filter(r => r.items.length > 0)]);
+        // Was `> 0` — a series search that only turns up 1-2 volumes made the
+        // same broken-looking sparse row as the franchise shelves below.
+        // Reuses MIN_ROW_ITEMS so every shelf on the page has one consistent
+        // minimum density instead of a separate threshold per row type.
+        setCuratedRows(prev => [...prev, ...rows.filter(r => r.items.length >= MIN_ROW_ITEMS)]);
       }
       if (!cancelled) setCuratedLoading(false);
     })();
