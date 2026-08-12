@@ -958,15 +958,31 @@ export class ProviderManager {
     const cached = this.recentUpdatesCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < this.RECENT_UPDATES_CACHE_TTL) return cached.items;
 
-    // "latest" already goes through getCatalog()'s own 5-min cache, so this
-    // doesn't add a second live fan-out to every other provider. nsfw=true
-    // returns safe+adult items together (it's an inclusion flag, not an
-    // adult-only one) — isAdult === !!nsfw narrows to the same safe/adult
-    // split every other row on this page already enforces (matchesNsfw in
-    // Explore.tsx), so this shelf doesn't mix classes into "+18 mode".
-    const latest = await this.getCatalog("latest", nsfw);
+    // "latest" and "popular" both already go through getCatalog()'s own
+    // 5-min cache, so this doesn't add a second live fan-out to every other
+    // provider. nsfw=true returns safe+adult items together (it's an
+    // inclusion flag, not an adult-only one) — isAdult === !!nsfw narrows to
+    // the same safe/adult split every other row on this page already
+    // enforces (matchesNsfw in Explore.tsx), so this shelf doesn't mix
+    // classes into "+18 mode".
+    //
+    // "latest" alone sorts by most-recently-uploaded-chapter, which surfaces
+    // whatever obscure title happened to update in the last few minutes —
+    // not what a "here's the good stuff" row should show. Intersecting with
+    // "popular" keeps only titles that are ALSO reasonably well-known, so
+    // this row reads as "the popular series you follow just updated," not
+    // "here's a title you've never heard of."
+    const [latest, popular] = await Promise.all([
+      this.getCatalog("latest", nsfw),
+      this.getCatalog("popular", nsfw),
+    ]);
+    const popularIds = new Set(popular.map(item => item.id));
     const candidates = latest
-      .filter(item => item.sources.some(s => s.providerId === "mangadex") && item.isAdult === !!nsfw)
+      .filter(item =>
+        item.sources.some(s => s.providerId === "mangadex") &&
+        item.isAdult === !!nsfw &&
+        popularIds.has(item.id)
+      )
       .slice(0, this.RECENT_UPDATES_MAX_TITLES);
 
     if (candidates.length === 0) return [];
