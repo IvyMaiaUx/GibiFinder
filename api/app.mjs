@@ -96249,8 +96249,16 @@ var MangaDexProvider = class _MangaDexProvider {
     const enAlt = altTitles.find((t2) => t2?.en)?.en;
     if (enAlt) return enAlt;
     if (titleMap.ja) return titleMap.ja;
-    const firstVal = Object.values(titleMap)[0];
-    return typeof firstVal === "string" && firstVal ? firstVal : "Sem t\xEDtulo";
+    return this.getTitleMapValues(item)[0] || "Sem t\xEDtulo";
+  }
+  // All non-empty primary-title-map values, e.g. every {"ko-ro": "...",
+  // "ja": "..."} entry — not just the one extractDisplayTitle() settles on
+  // for display. findBestMatch() needs the full set so a query using the
+  // *original* (non-English) primary title still matches once display
+  // preference has moved to an English altTitle (CodeRabbit PR #48).
+  getTitleMapValues(item) {
+    const titleMap = item.attributes?.title || {};
+    return Object.values(titleMap).filter((v) => typeof v === "string" && v.length > 0);
   }
   getReleaseDate(item) {
     const year = item.attributes?.year;
@@ -96314,7 +96322,7 @@ var MangaDexProvider = class _MangaDexProvider {
       for (const item of data.data || []) {
         const mainTitle = this.extractDisplayTitle(item);
         const altTitles = (item.attributes?.altTitles || []).flatMap((entry) => Object.values(entry));
-        const candidateTitles = [mainTitle, ...altTitles].filter(Boolean);
+        const candidateTitles = [mainTitle, ...this.getTitleMapValues(item), ...altTitles].filter(Boolean);
         if (!candidateTitles.some((t2) => normalizeTitleForMatch(t2) === normQuery)) continue;
         const id = item.id;
         const descMap = item.attributes?.description || {};

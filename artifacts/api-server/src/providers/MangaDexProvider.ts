@@ -53,8 +53,20 @@ export class MangaDexProvider implements Provider {
     const enAlt = altTitles.find((t: any) => t?.en)?.en;
     if (enAlt) return enAlt;
     if (titleMap.ja) return titleMap.ja;
-    const firstVal = Object.values(titleMap)[0];
-    return typeof firstVal === "string" && firstVal ? firstVal : "Sem título";
+    // Object.values(titleMap)[0] only checked the first key, which could be
+    // an empty string while a later language had a real title — walk all of
+    // them instead of bailing to "Sem título" too early (CodeRabbit PR #48).
+    return this.getTitleMapValues(item)[0] || "Sem título";
+  }
+
+  // All non-empty primary-title-map values, e.g. every {"ko-ro": "...",
+  // "ja": "..."} entry — not just the one extractDisplayTitle() settles on
+  // for display. findBestMatch() needs the full set so a query using the
+  // *original* (non-English) primary title still matches once display
+  // preference has moved to an English altTitle (CodeRabbit PR #48).
+  private getTitleMapValues(item: any): string[] {
+    const titleMap = item.attributes?.title || {};
+    return Object.values(titleMap).filter((v): v is string => typeof v === "string" && v.length > 0);
   }
 
   private getReleaseDate(item: any): string | undefined {
@@ -143,7 +155,12 @@ export class MangaDexProvider implements Provider {
       for (const item of (data.data || [])) {
         const mainTitle = this.extractDisplayTitle(item);
         const altTitles: string[] = (item.attributes?.altTitles || []).flatMap((entry: any) => Object.values(entry) as string[]);
-        const candidateTitles = [mainTitle, ...altTitles].filter(Boolean);
+        // Include every primary-title-map value, not just the one
+        // extractDisplayTitle() picked for display — otherwise a query for
+        // the original non-English primary title (e.g. the Korean
+        // romanization) stops matching once display prefers an English
+        // altTitle instead (CodeRabbit PR #48).
+        const candidateTitles = [mainTitle, ...this.getTitleMapValues(item), ...altTitles].filter(Boolean);
         if (!candidateTitles.some(t => normalizeTitleForMatch(t) === normQuery)) continue;
 
         const id = item.id;
