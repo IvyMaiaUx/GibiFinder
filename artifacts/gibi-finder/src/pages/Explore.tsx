@@ -63,7 +63,10 @@ const FRANCHISES = [
   "Lanterna Verde", "Demolidor", "Wolverine", "Venom", "Deadpool", "Liga da Justiça",
   "Capitão América", "Pantera Negra", "Coringa", "Turma da Mônica",
 ];
-const MIN_FRANCHISE_ITEMS = 2;
+// Was 2 — a franchise row with just 2 covers reads as broken next to the
+// full rows around it (real examples: Liga da Justiça, Homem-Aranha).
+// Matches MIN_ROW_ITEMS below so every shelf has the same minimum density.
+const MIN_FRANCHISE_ITEMS = 4;
 // Hentai subgenres highlighted when +18 mode is on.
 const ADULT_FEATURED_GENRES = ["Yaoi", "Yuri", "Lolicon", "Shotacon", "Bakunyū", "Futanari", "Incesto", "Netorare", "Hentai", "Ecchi"];
 // Curated rows fetched on demand for the HQ and Gibi tabs (their catalog is
@@ -394,7 +397,11 @@ export default function Explore() {
       for (let i = 0; i < series.length && !cancelled; i += BATCH) {
         const rows = await Promise.all(series.slice(i, i + BATCH).map(fetchSeries));
         if (cancelled) return;
-        setCuratedRows(prev => [...prev, ...rows.filter(r => r.items.length > 0)]);
+        // Was `> 0` — a series search that only turns up 1-2 volumes made the
+        // same broken-looking sparse row as the franchise shelves below.
+        // Reuses MIN_ROW_ITEMS so every shelf on the page has one consistent
+        // minimum density instead of a separate threshold per row type.
+        setCuratedRows(prev => [...prev, ...rows.filter(r => r.items.length >= MIN_ROW_ITEMS)]);
       }
       if (!cancelled) setCuratedLoading(false);
     })();
