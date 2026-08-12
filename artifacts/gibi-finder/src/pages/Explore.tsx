@@ -316,10 +316,6 @@ export default function Explore() {
   });
   const [catalogSearchResults, setCatalogSearchResults] = useState<UnifiedCatalogItem[]>([]);
   const [catalogSearchLoading, setCatalogSearchLoading] = useState(false);
-  // Guards the debounced search effect below from resetting catalogPage back
-  // to 1 on the very first render, when catalogQuery/catalogPage were both
-  // just restored together from the URL (same isFirstViewAllLoad pattern).
-  const isFirstCatalogSearchLoad = useRef(true);
   const CATALOG_PAGE_SIZE = 60;
 
   const [continueItems, setContinueItems] = useState<{ providerId: string; mangaId: string; title: string; coverUrl?: string; chapterNum?: string; updatedAt: number }[]>([]);
@@ -510,7 +506,6 @@ export default function Explore() {
       return;
     }
     let cancelled = false;
-    if (isFirstCatalogSearchLoad.current) { isFirstCatalogSearchLoad.current = false; } else { setCatalogPage(1); }
     setCatalogSearchLoading(true);
     const controller = new AbortController();
     const timer = setTimeout(() => {
@@ -524,46 +519,6 @@ export default function Explore() {
   }, [catalogQuery, isNsfw]);
 
   const [openingId, setOpeningId] = useState<string | null>(null);
-
-  // Everything needed to land back on the exact view the user was on — the
-  // type tab, and if they were inside a franchise "Ver tudo", which one and
-  // what page — encoded into the URL ResultDetail's "Voltar" button sends
-  // them back to. viewAllGenre/viewAllKind/viewAllPage are restored from
-  // this same shape of URL on mount above, so the round trip is symmetric.
-  const buildReturnTo = () => {
-    const params = new URLSearchParams();
-    if (typeFilter !== "all") params.set("tab", typeFilter);
-    if (viewAllGenre) {
-      params.set("viewAll", viewAllGenre);
-      params.set("kind", viewAllKind);
-      if (viewAllPage > 1) params.set("page", String(viewAllPage));
-    }
-    if (catalogQuery.trim()) params.set("q", catalogQuery.trim());
-    if (catalogSort !== "default") params.set("catalogSort", catalogSort);
-    if (catalogPage > 1) params.set("catalogPage", String(catalogPage));
-    const qs = params.toString();
-    return `/explorar${qs ? `?${qs}` : ""}`;
-  };
-
-  const openItem = async (item: UnifiedCatalogItem) => {
-    // A single source skips straight to it (no network round-trip). With
-    // several, compare their chapter counts (pickBestSource) and open
-    // whichever has the most — previously just took the first non-known-dead
-    // source, which could land on a thin scrape when a fuller one existed.
-    if ((item.sources?.length ?? 0) > 1) setOpeningId(item.id);
-    const src = await pickBestSource(item.sources);
-    setOpeningId(null);
-    if (!src) return;
-    setLocation(`/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}&returnTo=${encodeURIComponent(buildReturnTo())}`);
-  };
-
-  const handleToggleFav = (item: UnifiedCatalogItem, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const src = item.sources?.[0];
-    if (!src) return;
-    toggleFavorite({ providerId: src.providerId, mangaId: src.id, title: item.title, coverUrl: item.coverUrl, description: item.description }, user?.id);
-    setFavVersion(v => v + 1);
-  };
 
   const empties = getEmptySources();
   const matchesType = (item: UnifiedCatalogItem) => typeFilter === "all" || typeOf(item) === typeFilter;
@@ -726,7 +681,54 @@ export default function Explore() {
     return items;
   })();
   const catalogTotalPages = Math.max(1, Math.ceil(catalogSortedItems.length / CATALOG_PAGE_SIZE));
-  const catalogPageItems = catalogSortedItems.slice((catalogPage - 1) * CATALOG_PAGE_SIZE, catalogPage * CATALOG_PAGE_SIZE);
+  // Defensive clamp — covers any path that could leave catalogPage pointing
+  // past the end of the current result set (e.g. a restored ?catalogPage=2
+  // URL whose first real search only has 1 page): render the last real page
+  // instead of an empty grid next to a nonzero counter (CodeRabbit, PR #61).
+  const catalogPageClamped = Math.min(catalogPage, catalogTotalPages);
+  const catalogPageItems = catalogSortedItems.slice((catalogPageClamped - 1) * CATALOG_PAGE_SIZE, catalogPageClamped * CATALOG_PAGE_SIZE);
+
+  // Everything needed to land back on the exact view the user was on — the
+  // type tab, and if they were inside a franchise "Ver tudo", which one and
+  // what page — encoded into the URL ResultDetail's "Voltar" button sends
+  // them back to. viewAllGenre/viewAllKind/viewAllPage are restored from
+  // this same shape of URL on mount above, so the round trip is symmetric.
+  // Defined after catalogPageClamped (not raw catalogPage) so a returnTo
+  // built from a real click always matches the page actually on screen.
+  const buildReturnTo = () => {
+    const params = new URLSearchParams();
+    if (typeFilter !== "all") params.set("tab", typeFilter);
+    if (viewAllGenre) {
+      params.set("viewAll", viewAllGenre);
+      params.set("kind", viewAllKind);
+      if (viewAllPage > 1) params.set("page", String(viewAllPage));
+    }
+    if (catalogQuery.trim()) params.set("q", catalogQuery.trim());
+    if (catalogSort !== "default") params.set("catalogSort", catalogSort);
+    if (catalogPageClamped > 1) params.set("catalogPage", String(catalogPageClamped));
+    const qs = params.toString();
+    return `/explorar${qs ? `?${qs}` : ""}`;
+  };
+
+  const openItem = async (item: UnifiedCatalogItem) => {
+    // A single source skips straight to it (no network round-trip). With
+    // several, compare their chapter counts (pickBestSource) and open
+    // whichever has the most — previously just took the first non-known-dead
+    // source, which could land on a thin scrape when a fuller one existed.
+    if ((item.sources?.length ?? 0) > 1) setOpeningId(item.id);
+    const src = await pickBestSource(item.sources);
+    setOpeningId(null);
+    if (!src) return;
+    setLocation(`/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}&returnTo=${encodeURIComponent(buildReturnTo())}`);
+  };
+
+  const handleToggleFav = (item: UnifiedCatalogItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const src = item.sources?.[0];
+    if (!src) return;
+    toggleFavorite({ providerId: src.providerId, mangaId: src.id, title: item.title, coverUrl: item.coverUrl, description: item.description }, user?.id);
+    setFavVersion(v => v + 1);
+  };
 
   void favVersion; // re-render favorites on toggle
 
@@ -1102,13 +1104,13 @@ export default function Explore() {
                   <input
                     type="text"
                     value={catalogQuery}
-                    onChange={(e) => setCatalogQuery(e.target.value)}
+                    onChange={(e) => { setCatalogQuery(e.target.value); setCatalogPage(1); }}
                     placeholder="Buscar título, autor, editora..."
                     className="w-full font-sans text-sm pl-9 pr-8 py-2.5 border-2 border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                   {catalogQuery && (
                     <button
-                      onClick={() => setCatalogQuery("")}
+                      onClick={() => { setCatalogQuery(""); setCatalogPage(1); }}
                       className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black"
                       title="Limpar busca"
                     >
@@ -1161,14 +1163,14 @@ export default function Explore() {
 
                   {catalogTotalPages > 1 && (
                     <div className="flex flex-wrap justify-center items-center gap-2 pt-4 font-sans">
-                      <button disabled={catalogPage === 1} onClick={() => { setCatalogPage(p => p - 1); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="px-3 py-1.5 border-2 border-black rounded font-bold bg-white text-black hover:bg-secondary disabled:opacity-40 disabled:hover:bg-white">&lt;</button>
+                      <button disabled={catalogPageClamped === 1} onClick={() => { setCatalogPage(catalogPageClamped - 1); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="px-3 py-1.5 border-2 border-black rounded font-bold bg-white text-black hover:bg-secondary disabled:opacity-40 disabled:hover:bg-white">&lt;</button>
                       {Array.from({ length: catalogTotalPages }).map((_, idx) => {
                         const p = idx + 1;
                         return (
-                          <button key={p} onClick={() => { setCatalogPage(p); window.scrollTo({ top: 0, behavior: "smooth" }); }} className={cn("w-9 h-9 border-2 border-black rounded font-bold transition-all", catalogPage === p ? "bg-secondary text-black scale-110 font-black" : "bg-white text-gray-700 hover:bg-muted")}>{p}</button>
+                          <button key={p} onClick={() => { setCatalogPage(p); window.scrollTo({ top: 0, behavior: "smooth" }); }} className={cn("w-9 h-9 border-2 border-black rounded font-bold transition-all", catalogPageClamped === p ? "bg-secondary text-black scale-110 font-black" : "bg-white text-gray-700 hover:bg-muted")}>{p}</button>
                         );
                       })}
-                      <button disabled={catalogPage === catalogTotalPages} onClick={() => { setCatalogPage(p => p + 1); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="px-3 py-1.5 border-2 border-black rounded font-bold bg-white text-black hover:bg-secondary disabled:opacity-40 disabled:hover:bg-white">&gt;</button>
+                      <button disabled={catalogPageClamped === catalogTotalPages} onClick={() => { setCatalogPage(catalogPageClamped + 1); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="px-3 py-1.5 border-2 border-black rounded font-bold bg-white text-black hover:bg-secondary disabled:opacity-40 disabled:hover:bg-white">&gt;</button>
                     </div>
                   )}
                 </>
