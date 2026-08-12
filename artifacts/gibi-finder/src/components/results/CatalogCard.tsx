@@ -21,6 +21,7 @@ export interface CatalogItem {
   rating?: number;
   genres?: string[];
   isAdult?: boolean;
+  releaseDate?: string;
   sources: CatalogSource[];
 }
 

@@ -14,6 +14,7 @@ const ResultDetail = lazy(() => import("@/pages/ResultDetail"));
 const Colecao = lazy(() => import("@/pages/Colecao"));
 const Admin = lazy(() => import("@/pages/Admin"));
 const Explore = lazy(() => import("@/pages/Explore"));
+const GenrePage = lazy(() => import("@/pages/GenrePage"));
 const Providers = lazy(() => import("@/pages/Providers"));
 const ProviderInspector = lazy(() => import("@/pages/ProviderInspector"));
 const Login = lazy(() => import("@/pages/Login"));
@@ -63,6 +64,7 @@ function MainRoutes() {
           <Route path="/provedores" component={Providers} />
           <Route path="/provedores/inspector" component={ProviderInspector} />
           <Route path="/explorar" component={Explore} />
+          <Route path="/explorar/genero/:genre" component={GenrePage} />
           <Route path="/login" component={Login} />
           <Route component={NotFound} />
         </Switch>
