@@ -96460,7 +96460,7 @@ var MangaDexProvider = class _MangaDexProvider {
         const id = item.id;
         const title = this.extractDisplayTitle(item);
         const descMap = item.attributes?.description || {};
-        const description = descMap.en || descMap["pt-br"] || (Object.values(descMap).length > 0 ? Object.values(descMap)[0] : "");
+        const description = this.extractPtDescription(descMap);
         const coverRel = item.relationships?.find((r2) => r2.type === "cover_art");
         const coverFileName = coverRel?.attributes?.fileName;
         const coverUrl = coverFileName ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.256.jpg` : void 0;
@@ -96482,7 +96482,7 @@ var MangaDexProvider = class _MangaDexProvider {
     const id = item.id;
     const title = this.extractDisplayTitle(item);
     const descMap = item.attributes?.description || {};
-    const description = descMap.en || descMap["pt-br"] || Object.values(descMap)[0] || "";
+    const description = this.extractPtDescription(descMap);
     const coverRel = item.relationships?.find((r2) => r2.type === "cover_art");
     const coverFileName = coverRel?.attributes?.fileName;
     const coverUrl = coverFileName ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.256.jpg` : void 0;
@@ -100551,6 +100551,7 @@ router3.get("/providers/search", async (req, res) => {
     res.setHeader("X-Adult-Query", adultQuery ? "true" : "false");
     const curated = applyOverrides(results, await getOverrides());
     await injectRatings(curated);
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
     res.json(curated);
   } catch (err) {
     res.status(500).json({ error: "search_failed", message: err instanceof Error ? err.message : String(err) });
