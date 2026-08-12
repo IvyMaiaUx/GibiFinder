@@ -99,6 +99,36 @@ export function CatalogCard({ item, onOpen, onToggleFav, favorited, status, full
   );
 }
 
+// Loading placeholder matching CatalogCard's own proportions (aspect-[3/4]
+// cover + two title lines), so the catalog's shape is recognizable the
+// instant data arrives instead of a big empty area collapsing/reflowing
+// into cards. `animate-pulse` is Tailwind's built-in shimmer — no extra
+// keyframes to define.
+export function CatalogCardSkeleton() {
+  return (
+    <div className="w-32 sm:w-40 shrink-0 snap-start bg-white border-4 border-black rounded-xl overflow-hidden animate-pulse">
+      <div className="aspect-[3/4] bg-zinc-200 border-b-4 border-black" />
+      <div className="p-2 space-y-1.5">
+        <div className="h-3 bg-zinc-200 rounded w-full" />
+        <div className="h-3 bg-zinc-200 rounded w-2/3" />
+      </div>
+    </div>
+  );
+}
+
+// A full shelf's worth of skeleton cards under a placeholder title bar —
+// same structure CatalogRow renders once real data comes in.
+export function CatalogRowSkeleton({ cardCount = 6 }: { cardCount?: number }) {
+  return (
+    <section className="space-y-2">
+      <div className="h-7 w-40 bg-zinc-200 rounded animate-pulse" />
+      <div className="flex gap-3 sm:gap-4 overflow-x-hidden">
+        {Array.from({ length: cardCount }, (_, i) => <CatalogCardSkeleton key={i} />)}
+      </div>
+    </section>
+  );
+}
+
 export function CatalogRow({ title, children, onSeeAll }: { title: string; children: React.ReactNode; onSeeAll?: () => void }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const scrollBy = (dir: 1 | -1) => {
