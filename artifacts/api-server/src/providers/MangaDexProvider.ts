@@ -233,14 +233,29 @@ export class MangaDexProvider implements Provider {
   // even ask for, since nothing before this needed it).
   async getRecentChapters(id: string, limit = 3, signal?: AbortSignal): Promise<{ chapterNum: string; date?: string }[]> {
     try {
-      const url = `https://api.mangadex.org/manga/${id}/feed?translatedLanguage[]=pt-br&translatedLanguage[]=pt&translatedLanguage[]=en&order[readableAt]=desc&limit=${limit}`;
+      // Over-fetch and de-dupe: MangaDex returns each translation of a
+      // chapter as its own feed resource, so requesting pt-br/pt/en
+      // together can return several entries for the SAME chapter number
+      // before the newest DISTINCT chapters are known — fetching exactly
+      // `limit` items risked returning duplicates instead of the 3 newest
+      // chapters. Same dedup approach getChapters() above already uses for
+      // its own multi-language feed, just windowed to the newest ones.
+      const overfetchLimit = Math.max(limit * 5, 15);
+      const url = `https://api.mangadex.org/manga/${id}/feed?translatedLanguage[]=pt-br&translatedLanguage[]=pt&translatedLanguage[]=en&order[readableAt]=desc&limit=${overfetchLimit}`;
       const res = await fetch(url, { signal });
       if (!res.ok) throw new Error(`MangaDex recent chapters error: ${res.status}`);
       const data = await res.json() as any;
-      return (data.data || []).map((item: any) => ({
-        chapterNum: item.attributes?.chapter || "Especial",
-        date: item.attributes?.readableAt || item.attributes?.publishAt,
-      }));
+
+      const seen = new Set<string>();
+      const result: { chapterNum: string; date?: string }[] = [];
+      for (const item of (data.data || [])) {
+        const chapterNum = item.attributes?.chapter || "Especial";
+        if (seen.has(chapterNum)) continue;
+        seen.add(chapterNum);
+        result.push({ chapterNum, date: item.attributes?.readableAt || item.attributes?.publishAt });
+        if (result.length >= limit) break;
+      }
+      return result;
     } catch (err) {
       if (!(err instanceof Error) || err.name !== "AbortError") {
         logger.error({ err }, "MangaDex getRecentChapters failed:");

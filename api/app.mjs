@@ -96382,14 +96382,21 @@ var MangaDexProvider = class _MangaDexProvider {
   // even ask for, since nothing before this needed it).
   async getRecentChapters(id, limit = 3, signal) {
     try {
-      const url = `https://api.mangadex.org/manga/${id}/feed?translatedLanguage[]=pt-br&translatedLanguage[]=pt&translatedLanguage[]=en&order[readableAt]=desc&limit=${limit}`;
+      const overfetchLimit = Math.max(limit * 5, 15);
+      const url = `https://api.mangadex.org/manga/${id}/feed?translatedLanguage[]=pt-br&translatedLanguage[]=pt&translatedLanguage[]=en&order[readableAt]=desc&limit=${overfetchLimit}`;
       const res = await fetch(url, { signal });
       if (!res.ok) throw new Error(`MangaDex recent chapters error: ${res.status}`);
       const data = await res.json();
-      return (data.data || []).map((item) => ({
-        chapterNum: item.attributes?.chapter || "Especial",
-        date: item.attributes?.readableAt || item.attributes?.publishAt
-      }));
+      const seen = /* @__PURE__ */ new Set();
+      const result = [];
+      for (const item of data.data || []) {
+        const chapterNum = item.attributes?.chapter || "Especial";
+        if (seen.has(chapterNum)) continue;
+        seen.add(chapterNum);
+        result.push({ chapterNum, date: item.attributes?.readableAt || item.attributes?.publishAt });
+        if (result.length >= limit) break;
+      }
+      return result;
     } catch (err) {
       if (!(err instanceof Error) || err.name !== "AbortError") {
         logger.error({ err }, "MangaDex getRecentChapters failed:");
@@ -99488,6 +99495,7 @@ var ProviderManager = class {
       if (typeof anyP.clearCache === "function") anyP.clearCache();
     }
     this.catalogCache.clear();
+    this.recentUpdatesCache.clear();
   }
   static listProviders() {
     return Array.from(this.providers.values()).map((p2) => ({
@@ -99955,20 +99963,32 @@ var ProviderManager = class {
   static recentUpdatesCache = /* @__PURE__ */ new Map();
   static RECENT_UPDATES_CACHE_TTL = 10 * 60 * 1e3;
   static RECENT_UPDATES_MAX_TITLES = 20;
-  static RECENT_UPDATES_CONCURRENCY = 6;
+  // MangaDex enforces an approximate 5 req/sec global limit per IP — lower
+  // than the enrichment pass's concurrency (which isn't overlapping with
+  // this: getCatalog() below fully resolves, enrichment included, before
+  // this method's own fetch loop starts). The per-worker stagger in the
+  // loop is a further, lightweight pacing measure on top of the cap; it is
+  // NOT a full shared rate limiter/429-retry-after system across every
+  // MangaDex call this app makes — a real gap for high traffic, just a
+  // smaller one than an unpaced concurrency-6 burst was.
+  static RECENT_UPDATES_CONCURRENCY = 4;
+  static RECENT_UPDATES_WORKER_STAGGER_MS = 150;
   static RECENT_UPDATES_TIMEOUT_MS = 4e3;
   static async getRecentUpdates(nsfw) {
+    await this.ensureOverridesLoaded();
+    const mangadex = this.providers.get("mangadex");
+    if (!(mangadex instanceof MangaDexProvider) || this.activeStates.get("mangadex") !== true) return [];
     const cacheKey = `${!!nsfw}`;
     const cached = this.recentUpdatesCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < this.RECENT_UPDATES_CACHE_TTL) return cached.items;
-    const mangadex = this.providers.get("mangadex");
-    if (!(mangadex instanceof MangaDexProvider) || this.activeStates.get("mangadex") !== true) return [];
     const latest = await this.getCatalog("latest", nsfw);
-    const candidates = latest.filter((item) => item.sources.some((s2) => s2.providerId === "mangadex")).slice(0, this.RECENT_UPDATES_MAX_TITLES);
+    const candidates = latest.filter((item) => item.sources.some((s2) => s2.providerId === "mangadex") && item.isAdult === !!nsfw).slice(0, this.RECENT_UPDATES_MAX_TITLES);
     if (candidates.length === 0) return [];
     const results = [];
+    let failureCount = 0;
     let cursor = 0;
-    const worker = async () => {
+    const worker = async (workerIndex) => {
+      await new Promise((resolve) => setTimeout(resolve, workerIndex * this.RECENT_UPDATES_WORKER_STAGGER_MS));
       while (cursor < candidates.length) {
         const item = candidates[cursor++];
         const src = item.sources.find((s2) => s2.providerId === "mangadex");
@@ -99978,21 +99998,28 @@ var ProviderManager = class {
           const chapters = await mangadex.getRecentChapters(src.id, 3, controller.signal);
           if (chapters.length > 0) {
             results.push({ id: item.id, title: item.title, coverUrl: item.coverUrl, mangaId: src.id, chapters });
+          } else {
+            failureCount++;
           }
         } catch (err) {
+          failureCount++;
           logger.error({ err }, `Recent chapters lookup failed for "${item.title}"`);
         } finally {
           clearTimeout(timer);
         }
       }
     };
-    await Promise.all(Array.from({ length: Math.min(this.RECENT_UPDATES_CONCURRENCY, candidates.length) }, worker));
+    await Promise.all(
+      Array.from({ length: Math.min(this.RECENT_UPDATES_CONCURRENCY, candidates.length) }, (_, i2) => worker(i2))
+    );
     results.sort((a2, b) => {
       const aTime = a2.chapters[0]?.date ? new Date(a2.chapters[0].date).getTime() : 0;
       const bTime = b.chapters[0]?.date ? new Date(b.chapters[0].date).getTime() : 0;
       return bTime - aTime;
     });
-    this.recentUpdatesCache.set(cacheKey, { items: results, ts: Date.now() });
+    if (failureCount < candidates.length / 2) {
+      this.recentUpdatesCache.set(cacheKey, { items: results, ts: Date.now() });
+    }
     return results;
   }
   // Groups a flat list of provider results into unified titles (merging sources,
