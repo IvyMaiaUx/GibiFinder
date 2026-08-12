@@ -22,7 +22,10 @@ interface RowData {
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "mega-hq", "meu-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai", "tankou-hentai"];
+// "tankouhentai" (no hyphen) is a duplicate custom-provider registration of
+// the same site as "tankou-hentai" — without it here too, items sourced only
+// from it leak past the client-side isAdultItem() check as well.
+const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "mega-hq", "meu-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai", "tankou-hentai", "tankouhentai"];
 const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult", "lolicon", "shotacon"];
 
 // Preferred genre rows, in display order (only shown if there are enough items).
