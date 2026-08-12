@@ -87,6 +87,15 @@ router.get("/providers/search", async (req: Request, res: Response) => {
     res.setHeader("X-Adult-Query", adultQuery ? "true" : "false");
     const curated = applyOverrides(results, await getOverrides());
     await injectRatings(curated);
+    // Was uncached — every hit paid the full active-provider fan-out live
+    // (7s timeout per provider), confirmed at 4.5-7.6s on every single call,
+    // including identical repeats. This endpoint is also franchise "Ver
+    // tudo"'s data source (Explore.tsx), so that flow paid this cost on
+    // every open with zero benefit from the s-maxage caching already given
+    // to /catalog and /by-genre. Same header pattern as those two — no
+    // per-user data in the query (just query/nsfw/providers), so a public
+    // edge cache is safe.
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
     res.json(curated);
   } catch (err) {
     res.status(500).json({ error: "search_failed", message: err instanceof Error ? err.message : String(err) });

@@ -339,7 +339,7 @@ export class MangaDexProvider implements Provider {
         const id = item.id;
         const title = this.extractDisplayTitle(item);
         const descMap = item.attributes?.description || {};
-        const description = descMap.en || descMap["pt-br"] || (Object.values(descMap).length > 0 ? Object.values(descMap)[0] : "");
+        const description = this.extractPtDescription(descMap);
         
         const coverRel = item.relationships?.find((r: any) => r.type === "cover_art");
         const coverFileName = coverRel?.attributes?.fileName;
@@ -366,7 +366,7 @@ export class MangaDexProvider implements Provider {
     const id = item.id;
     const title = this.extractDisplayTitle(item);
     const descMap = item.attributes?.description || {};
-    const description = (descMap.en || descMap["pt-br"] || (Object.values(descMap)[0] as string) || "") as string;
+    const description = this.extractPtDescription(descMap);
     const coverRel = item.relationships?.find((r: any) => r.type === "cover_art");
     const coverFileName = coverRel?.attributes?.fileName;
     const coverUrl = coverFileName ? `https://uploads.mangadex.org/covers/${id}/${coverFileName}.256.jpg` : undefined;
