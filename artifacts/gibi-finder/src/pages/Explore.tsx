@@ -23,13 +23,16 @@ interface RowData {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const ADULT_PROVIDERS = ["eightmuses", "hentai-home", "hentai-fox", "hentai2read", "hq-desejo", "insta-hentai", "mega-hentai", "mega-hq", "meu-hentai", "my-manga-comics", "nhentai", "quadrinhos-de-sexo", "quadrinhos-eroticos", "universo-hentai", "hentai-teca", "sombras-de-hentai", "superhentais", "hentaidatia", "muitohentai", "tankou-hentai"];
-const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult"];
+const ADULT_GENRES = ["hentai", "ecchi", "doujinshi", "erótico", "erotica", "adulto", "adult", "lolicon", "shotacon"];
 
 // Preferred genre rows, in display order (only shown if there are enough items).
 const FEATURED_GENRES = ["Ação", "Aventura", "Comédia", "Romance", "Drama", "Fantasia", "Terror", "Sobrenatural", "Super-Herói", "Shounen", "Seinen"];
 // Source/type markers — not real genres, kept out of the genre rows (they have
 // their own type tabs: Mangás / HQs / Gibis).
-const EXCLUDED_GENRES = new Set(["biblioteca", "nacional", "gibi nacional", "drive", "hq", "catalogo", "sharepoint", "infantil"]);
+// "lolicon"/"shotacon" are excluded outright, not just left out of
+// ADULT_FEATURED_GENRES — the dynamic extraGenres list below would
+// otherwise resurface them as an ordinary browsable row on their own.
+const EXCLUDED_GENRES = new Set(["biblioteca", "nacional", "gibi nacional", "drive", "hq", "catalogo", "sharepoint", "infantil", "lolicon", "shotacon"]);
 // Genre tag data comes straight from provider scrapes with zero curation — a
 // handful of WordPress HQ sources tag every chapter with the publisher name,
 // a creator byline, or SEO download-page boilerplate instead of (or
@@ -71,7 +74,7 @@ const FRANCHISES = [
 const MIN_ROW_ITEMS = 4;
 const MIN_FRANCHISE_ITEMS = MIN_ROW_ITEMS;
 // Hentai subgenres highlighted when +18 mode is on.
-const ADULT_FEATURED_GENRES = ["Yaoi", "Yuri", "Lolicon", "Shotacon", "Bakunyū", "Futanari", "Incesto", "Netorare", "Hentai", "Ecchi"];
+const ADULT_FEATURED_GENRES = ["Yaoi", "Yuri", "Bakunyū", "Futanari", "Incesto", "Netorare", "Hentai", "Ecchi"];
 // Curated rows fetched on demand for the HQ and Gibi tabs (their catalog is
 // sparse, so we search each series/character to populate real rows).
 const HQ_SERIES = ["Batman", "Superman", "Homem-Aranha", "X-Men", "Vingadores", "Liga da Justiça", "Star Wars", "The Boys", "Coringa", "Mulher-Maravilha", "Lanterna Verde", "Flash", "Aquaman", "Capitão América", "Homem de Ferro", "Thor", "Hulk", "Wolverine", "Deadpool", "Pantera Negra", "Venom", "Demolidor", "Quarteto Fantástico", "Guardiões da Galáxia", "Justiceiro"];
