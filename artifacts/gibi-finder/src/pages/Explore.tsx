@@ -146,6 +146,50 @@ function ContinueCard({ item, onClick }: { item: { title: string; coverUrl?: str
   );
 }
 
+interface RecentUpdateItem {
+  id: string;
+  title: string;
+  coverUrl?: string;
+  mangaId: string;
+  chapters: { chapterNum: string; date?: string }[];
+}
+
+// "NOVO" inside the first 24h, then "Xd" up to a month, then a short date —
+// same tier the "Ver tudo" reference (Pluma Comics) uses for chapter lists.
+const formatRelativeDate = (date?: string) => {
+  if (!date) return "";
+  const time = new Date(date).getTime();
+  if (!Number.isFinite(time)) return "";
+  const diffDays = Math.floor((Date.now() - time) / 86_400_000);
+  if (diffDays <= 0) return "NOVO";
+  if (diffDays < 30) return `${diffDays}d`;
+  return new Date(date).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+};
+
+function RecentUpdateCard({ item, onClick }: { item: RecentUpdateItem; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="group relative w-36 sm:w-40 shrink-0 snap-start bg-white border-4 border-black rounded-xl overflow-hidden text-left comic-shadow-sm hover:translate-y-[-4px] hover:shadow-[6px_6px_0_rgba(0,0,0,1)] transition-all"
+    >
+      <div className="relative aspect-[3/4] bg-zinc-950 border-b-4 border-black overflow-hidden">
+        <SafeImage src={item.coverUrl} alt={item.title} width={320} className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy" />
+      </div>
+      <div className="p-2">
+        <h4 className="font-display text-xs sm:text-sm text-black leading-tight line-clamp-2 group-hover:text-primary mb-1.5">{item.title}</h4>
+        <div className="space-y-0.5">
+          {item.chapters.slice(0, 3).map((ch, i) => (
+            <div key={`${ch.chapterNum}-${i}`} className="flex items-center justify-between gap-1 text-3xs font-sans font-bold text-gray-500">
+              <span className="truncate">Cap. {ch.chapterNum}</span>
+              <span className={cn("shrink-0", i === 0 ? "text-primary font-black" : "text-gray-400")}>{formatRelativeDate(ch.date)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </button>
+  );
+}
+
 export default function Explore() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
@@ -206,6 +250,7 @@ export default function Explore() {
   const [viewAllPage, setViewAllPage] = useState(1);
   const VIEW_ALL_PAGE_SIZE = 250;
   const [continueItems, setContinueItems] = useState<{ providerId: string; mangaId: string; title: string; coverUrl?: string; chapterNum?: string; updatedAt: number }[]>([]);
+  const [recentUpdates, setRecentUpdates] = useState<RecentUpdateItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [favVersion, setFavVersion] = useState(0);
@@ -274,6 +319,18 @@ export default function Explore() {
   }, []);
 
   useEffect(() => { loadCatalog(isNsfw); }, [isNsfw, loadCatalog]);
+
+  // "Atualizações recentes" — MangaDex-only (see the backend's
+  // ProviderManager.getRecentUpdates for why: no other provider tracks a
+  // date per chapter today).
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${BASE}/api/providers/recent-updates?nsfw=${isNsfw}`)
+      .then(r => (r.ok ? r.json() : []))
+      .then((data: RecentUpdateItem[]) => { if (!cancelled) setRecentUpdates(Array.isArray(data) ? data : []); })
+      .catch(() => { if (!cancelled) setRecentUpdates([]); });
+    return () => { cancelled = true; };
+  }, [isNsfw]);
 
   // HQ/Gibi tabs use curated franchise rows (sparse genre tags there) — the
   // genre filter panel doesn't apply, so drop any active selection.
@@ -791,6 +848,19 @@ export default function Explore() {
                 </Row>
               );
             })()}
+
+            {/* MangaDex-only (see the fetch effect above), so hidden on the HQ/Gibi tabs entirely. */}
+            {(typeFilter === "all" || typeFilter === "manga") && recentUpdates.length > 0 && (
+              <Row title="🆕 Atualizações recentes">
+                {recentUpdates.map(item => (
+                  <RecentUpdateCard
+                    key={item.id}
+                    item={item}
+                    onClick={() => setLocation(`/gibi/online?providerId=mangadex&id=${encodeURIComponent(item.mangaId)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&from=explore&tab=${typeFilter}`)}
+                  />
+                ))}
+              </Row>
+            )}
 
             {suggestions.filter(matchesType).length >= MIN_ROW_ITEMS && (
               <Row title="✨ Sugestões pra você">
