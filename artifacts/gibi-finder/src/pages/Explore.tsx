@@ -165,7 +165,17 @@ export default function Explore() {
   const [curatedLoading, setCuratedLoading] = useState(false);
   const [viewAllGenre, setViewAllGenre] = useState<string | null>(null);
   const [viewAllKind, setViewAllKind] = useState<"genre" | "franchise">("genre");
+  // Genre "Ver tudo" now goes to a real route (GenrePage.tsx) — bookmarkable/
+  // shareable, and gets a sort control the old client-state toggle never
+  // had. Franchise rows (Batman, Homem-Aranha, ...) keep the original
+  // in-page toggle below; the catalog-redesign proposal only asked for a
+  // dedicated genre page, and franchise browsing doesn't have the same
+  // "share this exact list" use case a genre does.
   const openViewAll = (value: string, kind: "genre" | "franchise") => {
+    if (kind === "genre") {
+      setLocation(`/explorar/genero/${encodeURIComponent(value)}`);
+      return;
+    }
     setSelectedGenreKeys(new Set());
     setViewAllKind(kind);
     setViewAllGenre(value);
