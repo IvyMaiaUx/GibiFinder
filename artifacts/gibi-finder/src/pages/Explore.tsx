@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Loader2, AlertCircle, Compass, Play, Star, BookOpen, ChevronLeft, Filter, X, Search } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
@@ -232,8 +232,20 @@ export default function Explore() {
   });
   const [curatedRows, setCuratedRows] = useState<RowData[]>([]);
   const [curatedLoading, setCuratedLoading] = useState(false);
-  const [viewAllGenre, setViewAllGenre] = useState<string | null>(null);
-  const [viewAllKind, setViewAllKind] = useState<"genre" | "franchise">("genre");
+  // Restored the same way typeFilter above already is, so returning from a
+  // title opened inside a franchise "Ver tudo" (see buildReturnTo/openItem
+  // below) lands back on that exact list instead of the plain catalog.
+  const [viewAllGenre, setViewAllGenre] = useState<string | null>(() => new URLSearchParams(window.location.search).get("viewAll"));
+  const [viewAllKind, setViewAllKind] = useState<"genre" | "franchise">(() => {
+    const k = new URLSearchParams(window.location.search).get("kind");
+    return k === "franchise" ? "franchise" : "genre";
+  });
+  // The view-all fetch effect below resets viewAllPage to 1 whenever
+  // viewAllGenre changes — correct once the user is already viewing a list,
+  // but it would also fire on the very first render (viewAllGenre restored
+  // from the URL above) and stomp the page just restored alongside it. Skip
+  // it exactly once, same guard as GenrePage.tsx's isFirstLoad.
+  const isFirstViewAllLoad = useRef(true);
   // Genre "Ver tudo" now goes to a real route (GenrePage.tsx) — bookmarkable/
   // shareable, and gets a sort control the old client-state toggle never
   // had. Franchise rows (Batman, Homem-Aranha, ...) keep the original
@@ -272,7 +284,10 @@ export default function Explore() {
   const clearGenreFilters = () => setSelectedGenreKeys(new Set());
   const [viewAllItems, setViewAllItems] = useState<UnifiedCatalogItem[]>([]);
   const [viewAllLoading, setViewAllLoading] = useState(false);
-  const [viewAllPage, setViewAllPage] = useState(1);
+  const [viewAllPage, setViewAllPage] = useState(() => {
+    const p = Number(new URLSearchParams(window.location.search).get("page"));
+    return Number.isFinite(p) && p > 0 ? p : 1;
+  });
   const VIEW_ALL_PAGE_SIZE = 250;
   const [continueItems, setContinueItems] = useState<{ providerId: string; mangaId: string; title: string; coverUrl?: string; chapterNum?: string; updatedAt: number }[]>([]);
   const [recentUpdates, setRecentUpdates] = useState<RecentUpdateItem[]>([]);
@@ -435,7 +450,7 @@ export default function Explore() {
   useEffect(() => {
     if (!viewAllGenre) { setViewAllItems([]); return; }
     let cancelled = false;
-    setViewAllPage(1);
+    if (isFirstViewAllLoad.current) { isFirstViewAllLoad.current = false; } else { setViewAllPage(1); }
     setViewAllLoading(true);
     const endpoint = viewAllKind === "franchise"
       // "Ver tudo" queries ALL providers for completeness (rows stay scoped/fast).
@@ -451,6 +466,23 @@ export default function Explore() {
 
   const [openingId, setOpeningId] = useState<string | null>(null);
 
+  // Everything needed to land back on the exact view the user was on — the
+  // type tab, and if they were inside a franchise "Ver tudo", which one and
+  // what page — encoded into the URL ResultDetail's "Voltar" button sends
+  // them back to. viewAllGenre/viewAllKind/viewAllPage are restored from
+  // this same shape of URL on mount above, so the round trip is symmetric.
+  const buildReturnTo = () => {
+    const params = new URLSearchParams();
+    if (typeFilter !== "all") params.set("tab", typeFilter);
+    if (viewAllGenre) {
+      params.set("viewAll", viewAllGenre);
+      params.set("kind", viewAllKind);
+      if (viewAllPage > 1) params.set("page", String(viewAllPage));
+    }
+    const qs = params.toString();
+    return `/explorar${qs ? `?${qs}` : ""}`;
+  };
+
   const openItem = async (item: UnifiedCatalogItem) => {
     // A single source skips straight to it (no network round-trip). With
     // several, compare their chapter counts (pickBestSource) and open
@@ -460,7 +492,7 @@ export default function Explore() {
     const src = await pickBestSource(item.sources);
     setOpeningId(null);
     if (!src) return;
-    setLocation(`/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}&from=explore&tab=${typeFilter}`);
+    setLocation(`/gibi/online?providerId=${src.providerId}&id=${encodeURIComponent(src.id)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&description=${encodeURIComponent(item.description || "")}&returnTo=${encodeURIComponent(buildReturnTo())}`);
   };
 
   const handleToggleFav = (item: UnifiedCatalogItem, e: React.MouseEvent) => {
@@ -886,7 +918,7 @@ export default function Explore() {
                     <ContinueCard
                       key={`${item.providerId}-${item.mangaId}`}
                       item={item}
-                      onClick={() => setLocation(`/gibi/online?providerId=${item.providerId}&id=${encodeURIComponent(item.mangaId)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&resume=true&from=explore&tab=${typeFilter}`)}
+                      onClick={() => setLocation(`/gibi/online?providerId=${item.providerId}&id=${encodeURIComponent(item.mangaId)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&resume=true&returnTo=${encodeURIComponent(buildReturnTo())}`)}
                     />
                   ))}
                 </Row>
@@ -900,7 +932,7 @@ export default function Explore() {
                   <RecentUpdateCard
                     key={item.id}
                     item={item}
-                    onClick={() => setLocation(`/gibi/online?providerId=mangadex&id=${encodeURIComponent(item.mangaId)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&from=explore&tab=${typeFilter}`)}
+                    onClick={() => setLocation(`/gibi/online?providerId=mangadex&id=${encodeURIComponent(item.mangaId)}&title=${encodeURIComponent(item.title)}&coverUrl=${encodeURIComponent(item.coverUrl || "")}&returnTo=${encodeURIComponent(buildReturnTo())}`)}
                   />
                 ))}
               </Row>
