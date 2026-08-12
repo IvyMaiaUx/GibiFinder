@@ -1087,7 +1087,13 @@ export default function Explore() {
             <section className="space-y-3 pt-4 border-t-4 border-black">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <h2 className="font-display text-2xl sm:text-3xl text-black uppercase">📚 Todo o catálogo</h2>
-                <span className="font-sans text-xs font-bold text-gray-500">{catalogSortedItems.length} títulos encontrados</span>
+                {/* Suppressed mid-search — catalogSortedItems is still the
+                    previous (often empty) result while catalogSearchLoading
+                    is true, so "0 títulos encontrados" would flash next to
+                    the loading skeletons below and read as a real zero. */}
+                {!(isCatalogSearching && catalogSearchLoading) && (
+                  <span className="font-sans text-xs font-bold text-gray-500">{catalogSortedItems.length} títulos encontrados</span>
+                )}
               </div>
 
               <div className="flex flex-col sm:flex-row sm:items-center gap-3">
