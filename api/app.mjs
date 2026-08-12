@@ -99253,6 +99253,86 @@ var InternetArchiveProvider = class {
   }
 };
 
+// src/providers/CoverEnrichment.ts
+init_logger();
+var FETCH_TIMEOUT_MS = 3500;
+function stripEditionNoise(title) {
+  return title.replace(/#\d+.*$/, "").replace(/\(\d{4}\)\s*$/, "").replace(/\b(vol(ume)?|n[uú]mero|edi[cç][aã]o)\.?\s*\d+\b/gi, "").trim();
+}
+function isConfidentMatch(queryNorm, candidateTitle) {
+  if (!queryNorm || queryNorm.length < 3) return false;
+  const candidateNorm = normalizeTitleForMatch(candidateTitle);
+  if (!candidateNorm) return false;
+  return candidateNorm === queryNorm || candidateNorm.startsWith(queryNorm);
+}
+async function fetchWithTimeout2(url, signal) {
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  signal?.addEventListener("abort", onAbort);
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    return res.ok ? res : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+var warnedNoGoogleBooksKey = false;
+async function searchGoogleBooksCover(baseTitle, queryNorm, signal) {
+  const key = process.env["GOOGLE_BOOKS_API_KEY"];
+  if (!key && !warnedNoGoogleBooksKey) {
+    warnedNoGoogleBooksKey = true;
+    logger.warn("GOOGLE_BOOKS_API_KEY not set \u2014 Google Books cover fallback runs against the unauthenticated (low) quota");
+  }
+  const params = new URLSearchParams({
+    q: `intitle:${baseTitle}`,
+    maxResults: "5",
+    ...key ? { key } : {}
+  });
+  const res = await fetchWithTimeout2(`https://www.googleapis.com/books/v1/volumes?${params}`, signal);
+  if (!res) return null;
+  try {
+    const data = await res.json();
+    for (const item of data.items || []) {
+      const title = item.volumeInfo?.title;
+      const thumbnail = item.volumeInfo?.imageLinks?.thumbnail;
+      if (title && thumbnail && isConfidentMatch(queryNorm, title)) {
+        return thumbnail.replace(/^http:/, "https:").replace("zoom=1", "zoom=2");
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, "Google Books cover search: bad response body");
+  }
+  return null;
+}
+async function searchOpenLibraryCover(baseTitle, queryNorm, signal) {
+  const params = new URLSearchParams({ title: baseTitle, limit: "5" });
+  const res = await fetchWithTimeout2(`https://openlibrary.org/search.json?${params}`, signal);
+  if (!res) return null;
+  try {
+    const data = await res.json();
+    for (const doc of data.docs || []) {
+      if (doc.title && doc.cover_i && isConfidentMatch(queryNorm, doc.title)) {
+        return `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`;
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, "Open Library cover search: bad response body");
+  }
+  return null;
+}
+async function findWesternCover(title, signal) {
+  const baseTitle = stripEditionNoise(title);
+  const queryNorm = normalizeTitleForMatch(baseTitle);
+  if (!queryNorm) return null;
+  const fromGoogle = await searchGoogleBooksCover(baseTitle, queryNorm, signal);
+  if (fromGoogle) return fromGoogle;
+  return searchOpenLibraryCover(baseTitle, queryNorm, signal);
+}
+
 // src/providers/ProviderManager.ts
 import * as fs from "fs";
 import * as path from "path";
@@ -99953,6 +100033,7 @@ var ProviderManager = class {
     const flatResults = resultsArray.flat();
     const unified = this.unifyCatalog(flatResults, nsfw);
     await this.enrichFromMangaDex(unified);
+    await this.enrichWesternCovers(unified);
     this.catalogCache.set(cacheKey, { items: unified, ts: Date.now() });
     return unified;
   }
@@ -100011,6 +100092,35 @@ var ProviderManager = class {
           if (!this.hasUsableDescription(item.description) && match.description) item.description = this.normalizeDescription(match.description);
         } catch (err) {
           logger.error({ err }, `MangaDex enrichment failed for "${item.title}"`);
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(this.ENRICH_CONCURRENCY, candidates.length) }, worker));
+  }
+  // Cover-only fallback for whatever's left without one after MangaDex
+  // enrichment above — see CoverEnrichment.ts for the Google Books/Open
+  // Library lookup and its title-matching rule. Same shape as
+  // enrichFromMangaDex (capped, concurrency-limited, per-lookup abort +
+  // timeout, fail-open on any single miss) deliberately kept as a separate
+  // pass rather than folded into it: different sources, different matching
+  // rule, and it only ever needs to run on the subset MangaDex didn't
+  // already fill in.
+  static async enrichWesternCovers(items) {
+    const candidates = items.filter((item) => !item.coverUrl).slice(0, this.ENRICH_MAX_ITEMS);
+    if (candidates.length === 0) return;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < candidates.length) {
+        const item = candidates[cursor++];
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.ENRICH_TIMEOUT_MS);
+        try {
+          const coverUrl = await findWesternCover(item.title, controller.signal);
+          if (coverUrl) item.coverUrl = coverUrl;
+        } catch (err) {
+          logger.error({ err }, `Western cover enrichment failed for "${item.title}"`);
         } finally {
           clearTimeout(timer);
         }
@@ -100610,7 +100720,7 @@ function resolveUrl(value, baseUrl) {
 function unique(items) {
   return Array.from(new Set(items));
 }
-async function fetchWithTimeout2(url, init = {}, timeoutMs = 12e3, redirects = 0) {
+async function fetchWithTimeout3(url, init = {}, timeoutMs = 12e3, redirects = 0) {
   if (redirects > 5) throw new Error("too_many_redirects");
   const parsed = new URL(url);
   await resolveAndPinPublicHost(parsed.hostname);
@@ -100624,7 +100734,7 @@ async function fetchWithTimeout2(url, init = {}, timeoutMs = 12e3, redirects = 0
   }
   if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
     const nextUrl = new URL(res.headers.get("location"), url).toString();
-    return fetchWithTimeout2(nextUrl, init, timeoutMs, redirects + 1);
+    return fetchWithTimeout3(nextUrl, init, timeoutMs, redirects + 1);
   }
   return res;
 }
@@ -100710,9 +100820,9 @@ function countSelectorImages(html, selector, blockRegex) {
   return { selector, count };
 }
 async function probeOneImage(image2, headers, accessMode) {
-  let res = await fetchWithTimeout2(image2.url, { method: "HEAD", headers }, 8e3);
+  let res = await fetchWithTimeout3(image2.url, { method: "HEAD", headers }, 8e3);
   if (!res.ok || !res.headers.get("content-type")?.startsWith("image/")) {
-    res = await fetchWithTimeout2(image2.url, { method: "GET", headers: { ...headers, Range: "bytes=0-32" } }, 8e3);
+    res = await fetchWithTimeout3(image2.url, { method: "GET", headers: { ...headers, Range: "bytes=0-32" } }, 8e3);
   }
   return {
     url: image2.url,
@@ -100817,7 +100927,7 @@ router3.get("/providers/inspect", async (req, res) => {
   const origin = parsed.origin;
   const normalizedTarget = parsed.toString();
   try {
-    const pageRes = await fetchWithTimeout2(normalizedTarget, { headers: INSPECT_HEADERS }, 15e3);
+    const pageRes = await fetchWithTimeout3(normalizedTarget, { headers: INSPECT_HEADERS }, 15e3);
     const contentType = pageRes.headers.get("content-type") || "";
     const server = pageRes.headers.get("server") || "";
     const html = await pageRes.text();
@@ -100827,12 +100937,12 @@ router3.get("/providers/inspect", async (req, res) => {
     let wpPostsAvailable = false;
     let wpError = null;
     try {
-      const wpRes = await fetchWithTimeout2(`${origin}/wp-json/`, { headers: INSPECT_HEADERS }, 1e4);
+      const wpRes = await fetchWithTimeout3(`${origin}/wp-json/`, { headers: INSPECT_HEADERS }, 1e4);
       wpJson = wpRes.ok ? await readJsonIfPossible(wpRes) : null;
       const namespaces2 = Array.isArray(wpJson?.namespaces) ? wpJson.namespaces : [];
       wpRestAvailable = wpRes.ok && namespaces2.length > 0;
       if (namespaces2.includes("wp/v2")) {
-        const postsRes = await fetchWithTimeout2(`${origin}/wp-json/wp/v2/posts?per_page=1&_embed=1`, { headers: INSPECT_HEADERS }, 1e4);
+        const postsRes = await fetchWithTimeout3(`${origin}/wp-json/wp/v2/posts?per_page=1&_embed=1`, { headers: INSPECT_HEADERS }, 1e4);
         const postsJson = postsRes.ok ? await readJsonIfPossible(postsRes) : null;
         wpPostsAvailable = postsRes.ok && Array.isArray(postsJson);
       }

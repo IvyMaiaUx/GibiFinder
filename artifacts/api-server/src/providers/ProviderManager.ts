@@ -14,6 +14,7 @@ import { SlimeReadProvider } from "./SlimeReadProvider";
 import { CuratedComicsProvider } from "./CuratedComicsProvider";
 import { InternetArchiveProvider } from "./InternetArchiveProvider";
 import { normalizeTitleForMatch } from "./titleMatch";
+import { findWesternCover } from "./CoverEnrichment";
 import { supabase } from "../lib/supabase";
 import * as fs from "fs";
 import * as path from "path";
@@ -909,6 +910,12 @@ export class ProviderManager {
     // per request — see enrichFromMangaDex below for why this is safe to
     // leave in the hot path.
     await this.enrichFromMangaDex(unified);
+    // Whatever's still missing a cover after MangaDex enrichment isn't in
+    // MangaDex's catalog at all (or is obscure enough not to matter) — that's
+    // exactly the Western HQ/gibi population Google Books/Open Library can
+    // actually help with, and it means this doesn't need its own copy of the
+    // frontend's manga/HQ/gibi type heuristic to know which items to try.
+    await this.enrichWesternCovers(unified);
     this.catalogCache.set(cacheKey, { items: unified, ts: Date.now() });
     return unified;
   }
@@ -980,6 +987,38 @@ export class ProviderManager {
           if (!this.hasUsableDescription(item.description) && match.description) item.description = this.normalizeDescription(match.description);
         } catch (err) {
           logger.error({ err }, `MangaDex enrichment failed for "${item.title}"`);
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(this.ENRICH_CONCURRENCY, candidates.length) }, worker));
+  }
+
+  // Cover-only fallback for whatever's left without one after MangaDex
+  // enrichment above — see CoverEnrichment.ts for the Google Books/Open
+  // Library lookup and its title-matching rule. Same shape as
+  // enrichFromMangaDex (capped, concurrency-limited, per-lookup abort +
+  // timeout, fail-open on any single miss) deliberately kept as a separate
+  // pass rather than folded into it: different sources, different matching
+  // rule, and it only ever needs to run on the subset MangaDex didn't
+  // already fill in.
+  private static async enrichWesternCovers(items: UnifiedSearchResult[]): Promise<void> {
+    const candidates = items.filter(item => !item.coverUrl).slice(0, this.ENRICH_MAX_ITEMS);
+    if (candidates.length === 0) return;
+
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < candidates.length) {
+        const item = candidates[cursor++];
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.ENRICH_TIMEOUT_MS);
+        try {
+          const coverUrl = await findWesternCover(item.title, controller.signal);
+          if (coverUrl) item.coverUrl = coverUrl;
+        } catch (err) {
+          logger.error({ err }, `Western cover enrichment failed for "${item.title}"`);
         } finally {
           clearTimeout(timer);
         }
