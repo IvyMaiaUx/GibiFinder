@@ -10,7 +10,7 @@ import { getEmptySources, hasReadableSource } from "@/lib/empty-sources";
 import { pickBestSource } from "@/lib/pick-best-source";
 import { useAuth } from "@/hooks/use-auth";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
-import { CatalogCard, CatalogRow as Row, CatalogRowSkeleton, type CatalogItem as UnifiedCatalogItem } from "@/components/results/CatalogCard";
+import { CatalogCard, CatalogCardSkeleton, CatalogRow as Row, CatalogRowSkeleton, type CatalogItem as UnifiedCatalogItem } from "@/components/results/CatalogCard";
 
 interface RowData {
   key: string;
@@ -141,6 +141,17 @@ const isAdultItem = (item: UnifiedCatalogItem) => {
 };
 
 const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+
+// "Recentes" sort for the full-catalog grid — same year-only-string handling
+// as GenrePage.tsx's own getReleaseTime, so the two "Ver tudo"-style grids
+// behave identically.
+const getReleaseTime = (date?: string) => {
+  if (!date) return 0;
+  const trimmed = String(date).trim();
+  if (/^\d{4}$/.test(trimmed)) return new Date(`${trimmed}-01-01T00:00:00.000Z`).getTime();
+  const time = new Date(trimmed).getTime();
+  return Number.isFinite(time) ? time : 0;
+};
 
 const isRealGenre = (g: string) => {
   const n = norm(g);
@@ -289,6 +300,28 @@ export default function Explore() {
     return Number.isFinite(p) && p > 0 ? p : 1;
   });
   const VIEW_ALL_PAGE_SIZE = 250;
+
+  // "Todo o catálogo" — persistent searchable/sortable/paginated grid at the
+  // bottom of the shelf stack (independent of the viewAllGenre/selectedGenres
+  // drill-downs above, which still replace the whole stack as before). Same
+  // URL-restore + buildReturnTo convention as viewAllGenre/GenrePage.tsx.
+  const [catalogQuery, setCatalogQuery] = useState(() => new URLSearchParams(window.location.search).get("q") || "");
+  const [catalogSort, setCatalogSort] = useState<"default" | "recent" | "rating" | "az">(() => {
+    const s = new URLSearchParams(window.location.search).get("catalogSort");
+    return s === "recent" || s === "rating" || s === "az" ? s : "default";
+  });
+  const [catalogPage, setCatalogPage] = useState(() => {
+    const p = Number(new URLSearchParams(window.location.search).get("catalogPage"));
+    return Number.isFinite(p) && p > 0 ? p : 1;
+  });
+  const [catalogSearchResults, setCatalogSearchResults] = useState<UnifiedCatalogItem[]>([]);
+  const [catalogSearchLoading, setCatalogSearchLoading] = useState(false);
+  // Guards the debounced search effect below from resetting catalogPage back
+  // to 1 on the very first render, when catalogQuery/catalogPage were both
+  // just restored together from the URL (same isFirstViewAllLoad pattern).
+  const isFirstCatalogSearchLoad = useRef(true);
+  const CATALOG_PAGE_SIZE = 60;
+
   const [continueItems, setContinueItems] = useState<{ providerId: string; mangaId: string; title: string; coverUrl?: string; chapterNum?: string; updatedAt: number }[]>([]);
   const [recentUpdates, setRecentUpdates] = useState<RecentUpdateItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -464,6 +497,32 @@ export default function Explore() {
     return () => { cancelled = true; };
   }, [viewAllGenre, viewAllKind, isNsfw]);
 
+  // "Todo o catálogo" search — debounced (400ms), queries every active
+  // provider via the same route franchise "Ver tudo" already uses (now
+  // cached server-side, see PR #60). Below 2 characters it's not worth a
+  // real request, so the grid just falls back to the already-fetched
+  // popular+latest union (see catalogSourceItems below).
+  useEffect(() => {
+    const q = catalogQuery.trim();
+    if (q.length < 2) {
+      setCatalogSearchResults([]);
+      setCatalogSearchLoading(false);
+      return;
+    }
+    let cancelled = false;
+    if (isFirstCatalogSearchLoad.current) { isFirstCatalogSearchLoad.current = false; } else { setCatalogPage(1); }
+    setCatalogSearchLoading(true);
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(q)}&nsfw=${isNsfw}`, { signal: controller.signal })
+        .then(r => (r.ok ? r.json() : []))
+        .then((data: UnifiedCatalogItem[]) => { if (!cancelled) setCatalogSearchResults(Array.isArray(data) ? data : []); })
+        .catch(() => { if (!cancelled) setCatalogSearchResults([]); })
+        .finally(() => { if (!cancelled) setCatalogSearchLoading(false); });
+    }, 400);
+    return () => { cancelled = true; controller.abort(); clearTimeout(timer); };
+  }, [catalogQuery, isNsfw]);
+
   const [openingId, setOpeningId] = useState<string | null>(null);
 
   // Everything needed to land back on the exact view the user was on — the
@@ -479,6 +538,9 @@ export default function Explore() {
       params.set("kind", viewAllKind);
       if (viewAllPage > 1) params.set("page", String(viewAllPage));
     }
+    if (catalogQuery.trim()) params.set("q", catalogQuery.trim());
+    if (catalogSort !== "default") params.set("catalogSort", catalogSort);
+    if (catalogPage > 1) params.set("catalogPage", String(catalogPage));
     const qs = params.toString();
     return `/explorar${qs ? `?${qs}` : ""}`;
   };
@@ -643,6 +705,28 @@ export default function Explore() {
     for (const it of genreFilterItems) if (!byId.has(it.id)) byId.set(it.id, it);
     return Array.from(byId.values()).filter(i => matchesNsfw(i));
   })();
+
+  // "Todo o catálogo": no query reuses uniqueItems (already nsfw+type
+  // filtered via matchesNsfw, no extra request); a query swaps in the real
+  // search results, filtered by the active type tab + the same adult-safety
+  // check viewAllList already applies to freshly-fetched items above.
+  const catalogQueryTrimmed = catalogQuery.trim();
+  const isCatalogSearching = catalogQueryTrimmed.length >= 2;
+  const catalogSourceItems = isCatalogSearching
+    ? catalogSearchResults.filter(i => matchesType(i) && (isNsfw || !isAdultItem(i)))
+    : uniqueItems;
+  const catalogSortedItems = (() => {
+    const items = [...catalogSourceItems];
+    if (catalogSort === "recent") return items.sort((a, b) => getReleaseTime(b.releaseDate) - getReleaseTime(a.releaseDate));
+    if (catalogSort === "rating") return items.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+    if (catalogSort === "az") return items.sort((a, b) => (a.title || "").localeCompare(b.title || "", "pt-BR"));
+    // "default": keep the order already returned by the fetch (popularity for
+    // the browse case, relevance for a search) — no client resort, honest
+    // about what's real popularity/relevance vs. what isn't.
+    return items;
+  })();
+  const catalogTotalPages = Math.max(1, Math.ceil(catalogSortedItems.length / CATALOG_PAGE_SIZE));
+  const catalogPageItems = catalogSortedItems.slice((catalogPage - 1) * CATALOG_PAGE_SIZE, catalogPage * CATALOG_PAGE_SIZE);
 
   void favVersion; // re-render favorites on toggle
 
@@ -994,6 +1078,96 @@ export default function Explore() {
                 <p className="font-sans font-bold text-gray-500 mt-1">Nenhum provedor retornou dados no momento.</p>
               </div>
             )}
+
+            {/* Todo o catálogo — searchable, sortable, paginated grid. No
+                query: the same popular+latest union the shelves above
+                already show. With a query (≥2 chars): a real search across
+                every provider (same route franchise "Ver tudo" uses,
+                cached since PR #60). */}
+            <section className="space-y-3 pt-4 border-t-4 border-black">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <h2 className="font-display text-2xl sm:text-3xl text-black uppercase">📚 Todo o catálogo</h2>
+                <span className="font-sans text-xs font-bold text-gray-500">{catalogSortedItems.length} títulos encontrados</span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" strokeWidth={2.5} />
+                  <input
+                    type="text"
+                    value={catalogQuery}
+                    onChange={(e) => setCatalogQuery(e.target.value)}
+                    placeholder="Buscar título, autor, editora..."
+                    className="w-full font-sans text-sm pl-9 pr-8 py-2.5 border-2 border-black rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  {catalogQuery && (
+                    <button
+                      onClick={() => setCatalogQuery("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black"
+                      title="Limpar busca"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {([
+                    { id: "default", label: isCatalogSearching ? "Relevância" : "Populares" },
+                    { id: "recent", label: "Recentes" },
+                    { id: "rating", label: "Melhor avaliados" },
+                    { id: "az", label: "A–Z" },
+                  ] as const).map(opt => (
+                    <button
+                      key={opt.id}
+                      onClick={() => { setCatalogSort(opt.id); setCatalogPage(1); }}
+                      className={cn(
+                        "font-display text-xs uppercase px-3 py-1.5 border-2 border-black rounded-full transition-all",
+                        catalogSort === opt.id ? "bg-primary text-white" : "bg-white text-black hover:bg-secondary"
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {isCatalogSearching && catalogSearchLoading ? (
+                <div className="grid grid-cols-2 min-[480px]:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 sm:gap-4">
+                  {Array.from({ length: 12 }, (_, i) => <CatalogCardSkeleton key={i} />)}
+                </div>
+              ) : catalogSortedItems.length === 0 ? (
+                <div className="py-20 text-center border-4 border-dashed border-black bg-white rounded-xl">
+                  <p className="font-display text-2xl text-gray-400">NENHUM QUADRINHO ENCONTRADO</p>
+                  <p className="font-sans font-bold text-gray-500 mt-1">
+                    {isCatalogSearching ? `Nenhum resultado para "${catalogQueryTrimmed}".` : "Nenhum provedor retornou dados no momento."}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 min-[480px]:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 sm:gap-4">
+                    {catalogPageItems.map(item => {
+                      const src = item.sources?.[0];
+                      return (
+                        <CatalogCard key={`cat-${item.id}`} item={item} onOpen={() => openItem(item)} onToggleFav={(e) => handleToggleFav(item, e)} favorited={!!src && isFavorite(src.providerId, src.id)} status={statusOf(item)} loading={openingId === item.id} full />
+                      );
+                    })}
+                  </div>
+
+                  {catalogTotalPages > 1 && (
+                    <div className="flex flex-wrap justify-center items-center gap-2 pt-4 font-sans">
+                      <button disabled={catalogPage === 1} onClick={() => { setCatalogPage(p => p - 1); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="px-3 py-1.5 border-2 border-black rounded font-bold bg-white text-black hover:bg-secondary disabled:opacity-40 disabled:hover:bg-white">&lt;</button>
+                      {Array.from({ length: catalogTotalPages }).map((_, idx) => {
+                        const p = idx + 1;
+                        return (
+                          <button key={p} onClick={() => { setCatalogPage(p); window.scrollTo({ top: 0, behavior: "smooth" }); }} className={cn("w-9 h-9 border-2 border-black rounded font-bold transition-all", catalogPage === p ? "bg-secondary text-black scale-110 font-black" : "bg-white text-gray-700 hover:bg-muted")}>{p}</button>
+                        );
+                      })}
+                      <button disabled={catalogPage === catalogTotalPages} onClick={() => { setCatalogPage(p => p + 1); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="px-3 py-1.5 border-2 border-black rounded font-bold bg-white text-black hover:bg-secondary disabled:opacity-40 disabled:hover:bg-white">&gt;</button>
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
           </div>
         )}
       </div>
