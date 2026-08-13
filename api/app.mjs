@@ -99973,6 +99973,8 @@ var ProviderManager = class {
     const allResults = this.finalizeGroupResults(groups, coverProvenance);
     const relevantResults = allResults.filter((result) => this.isRelevantSearchResult(query, result));
     const visibleResults = (nsfw ? relevantResults.map((result) => this.stripInternalFields(result)) : relevantResults.map((result) => this.stripAdultSources(result)).filter((result) => result !== null)).sort((a2, b) => this.getSearchRelevance(query, b) - this.getSearchRelevance(query, a2));
+    await this.enrichFromMangaDex(visibleResults);
+    await this.enrichWesternCovers(visibleResults);
     const hiddenAdultCount = nsfw ? 0 : relevantResults.filter((result) => this.stripAdultSources(result) === null).length;
     return {
       results: visibleResults,
@@ -100300,20 +100302,23 @@ var ProviderManager = class {
     const flat = (await Promise.all(promises2)).flat();
     const groups = /* @__PURE__ */ new Map();
     const coverProvenance = /* @__PURE__ */ new Map();
-    for (const result of flat) {
-      if (!result || !result.title) continue;
-      const norm = this.normalizeTitle(result.title);
+    for (const result2 of flat) {
+      if (!result2 || !result2.title) continue;
+      const norm = this.normalizeTitle(result2.title);
       if (!norm) continue;
       const existing = groups.get(norm);
       if (existing) {
-        this.mergeIntoGroup(existing, result, norm, coverProvenance);
-        existing.releaseDate = this.pickNewestReleaseDate(existing.releaseDate, result.releaseDate);
+        this.mergeIntoGroup(existing, result2, norm, coverProvenance);
+        existing.releaseDate = this.pickNewestReleaseDate(existing.releaseDate, result2.releaseDate);
       } else {
-        groups.set(norm, this.createGroupEntry(result, norm, coverProvenance));
+        groups.set(norm, this.createGroupEntry(result2, norm, coverProvenance));
       }
     }
     const all = this.finalizeGroupResults(groups, coverProvenance);
-    return nsfw ? all.filter((r2) => r2.isAdult).map((r2) => this.stripInternalFields(r2)) : all.map((r2) => this.stripAdultSources(r2)).filter((r2) => r2 !== null);
+    const result = nsfw ? all.filter((r2) => r2.isAdult).map((r2) => this.stripInternalFields(r2)) : all.map((r2) => this.stripAdultSources(r2)).filter((r2) => r2 !== null);
+    await this.enrichFromMangaDex(result);
+    await this.enrichWesternCovers(result);
+    return result;
   }
 };
 

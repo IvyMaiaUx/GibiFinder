@@ -832,6 +832,18 @@ export class ProviderManager {
         .filter((result): result is UnifiedSearchResult => result !== null))
       .sort((a, b) => this.getSearchRelevance(query, b) - this.getSearchRelevance(query, a));
 
+    // Same cover/description backfill getCatalog() already applies — was
+    // missing here, so franchise "Ver tudo" and any other consumer of
+    // search() never got it. Both enrichment passes already no-op fast
+    // (empty candidate list) once an item has a real cover/description, so
+    // this only adds real latency for the items that actually need it.
+    // Safe to run per-request here (unlike getCatalog, search has no
+    // server-side result cache) because /providers/search now has edge
+    // Cache-Control (PR #60): a cold query pays this once, every repeat
+    // within the cache window is free.
+    await this.enrichFromMangaDex(visibleResults);
+    await this.enrichWesternCovers(visibleResults);
+
     const hiddenAdultCount = nsfw
       ? 0
       : relevantResults.filter(result => this.stripAdultSources(result) === null).length;
@@ -1272,8 +1284,15 @@ export class ProviderManager {
       }
     }
     const all = this.finalizeGroupResults(groups, coverProvenance);
-    return nsfw
+    const result = nsfw
       ? all.filter(r => r.isAdult).map(r => this.stripInternalFields(r))
       : all.map(r => this.stripAdultSources(r)).filter((r): r is UnifiedSearchResult => r !== null);
+    // Same backfill as search()/getCatalog() — genre "Ver tudo" (GenrePage.tsx)
+    // is a real bookmarkable route now, so it deserves the same cover
+    // quality. /by-genre already has edge Cache-Control, same amortization
+    // as search()'s.
+    await this.enrichFromMangaDex(result);
+    await this.enrichWesternCovers(result);
+    return result;
   }
 }
