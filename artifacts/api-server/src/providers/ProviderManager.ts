@@ -894,14 +894,40 @@ export class ProviderManager {
   private static catalogCache = new Map<string, { items: UnifiedSearchResult[]; ts: number }>();
   private static readonly CATALOG_CACHE_TTL = 5 * 60 * 1000;
 
-  static async getCatalog(listType: "popular" | "latest", nsfw?: boolean): Promise<UnifiedSearchResult[]> {
-    const cacheKey = `${listType}:${!!nsfw}`;
+  // providerIds: optional scope (same convention as search()'s own
+  // providerIds param) — e.g. the Explorar HQ/Gibi tabs' "Todos os
+  // HQs/Gibis" row, which needs every item those specific providers have,
+  // not a genre tag lookup (no provider actually tags anything with the
+  // literal compound string "HQ"/"Gibi Nacional" — that row silently
+  // returned 0 results before this).
+  static async getCatalog(listType: "popular" | "latest", nsfw?: boolean, providerIds?: string[]): Promise<UnifiedSearchResult[]> {
+    // Canonicalize against registered provider ids before this becomes a
+    // cache key — an arbitrary/unknown/garbage ?providers= value would
+    // otherwise mint its own catalogCache entry forever (only ever checked
+    // for staleness on read, never swept), letting a client grow this Map
+    // without bound (CodeRabbit, PR #64). Requested-but-scoped-to-nothing
+    // (every id unknown) collapses to one shared "__none__" slot instead of
+    // silently falling back to the unscoped "all" catalog — the caller
+    // asked for specific providers that don't exist, so the honest answer
+    // is an empty result, not everything.
+    const hasScope = !!providerIds && providerIds.length > 0;
+    const validIds = hasScope ? [...new Set(providerIds)].filter(id => this.providers.has(id)).sort() : [];
+    const scopeKey = !hasScope ? "all" : validIds.length > 0 ? validIds.join(",") : "__none__";
+    const cacheKey = `${listType}:${!!nsfw}:${scopeKey}`;
     const cached = this.catalogCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < this.CATALOG_CACHE_TTL) return cached.items;
+    // Opportunistic sweep — canonicalization above already bounds this to a
+    // handful of real scope combinations, so this stays cheap, but it keeps
+    // the Map from accumulating stale entries indefinitely over a long-lived
+    // warm instance.
+    for (const [key, entry] of this.catalogCache) {
+      if (Date.now() - entry.ts >= this.CATALOG_CACHE_TTL) this.catalogCache.delete(key);
+    }
 
     await this.ensureOverridesLoaded();
+    const scope = hasScope ? new Set(validIds) : null;
     const activeProviders = Array.from(this.providers.values()).filter(
-      p => this.activeStates.get(p.id) === true
+      p => this.activeStates.get(p.id) === true && (!scope || scope.has(p.id))
     );
 
     const catalogPromises = activeProviders.map(p =>

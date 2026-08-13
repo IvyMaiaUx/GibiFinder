@@ -442,30 +442,42 @@ export default function Explore() {
     setCuratedRows([]);
     setCuratedLoading(true);
 
-    // Lead with a "Todos os HQs / Gibis" row (the whole curated library of this
-    // type), whose "Ver tudo" opens the full paginated set.
-    const allTag = typeFilter === "hq" ? "HQ" : "Gibi Nacional";
-    const allTitle = typeFilter === "hq" ? "📚 Todos os HQs" : "📚 Todos os Gibis";
-    fetch(`${BASE}/api/providers/by-genre?genre=${encodeURIComponent(allTag)}&nsfw=${isNsfw}`)
-      .then(r => (r.ok ? r.json() : []))
-      .then((items: UnifiedCatalogItem[]) => {
-        if (cancelled) return;
-        const list = (Array.isArray(items) ? items : []).filter(i => typeOf(i) === typeFilter);
-        if (list.length > 0) {
-          setCuratedRows(prev => [
-            { key: "all", title: allTitle, items: list.slice(0, ROW_DISPLAY_CAP), seeAllTerm: allTag, seeAllKind: "genre" },
-            ...prev.filter(r => r.key !== "all"),
-          ]);
-        }
-      })
-      .catch(() => { /* ignore */ });
-
     // Completeness first: HQ rows include the HQ providers (Batcave, Jon Domingues,
     // etc.) so franchises like Coringa / Lanterna Verde / Justiceiro — which live
     // there, not in the Drive library — don't vanish. Gibi is Drive-only (fast).
     const scope = typeFilter === "hq"
       ? [...HQ_PROVIDER_IDS, ...GIBI_PROVIDER_IDS].join(",")
       : GIBI_PROVIDER_IDS.join(",");
+
+    // Lead with a "Todos os HQs / Gibis" row (the whole curated library of
+    // this type). Used to be a by-genre lookup for a literal "HQ"/"Gibi
+    // Nacional" tag — no provider actually tags anything with that exact
+    // compound string (real tags are "Nacional"/"Biblioteca"/publisher
+    // names/SEO strings), so this always silently returned 0 items and the
+    // row never rendered — the whole point of "see everything in this tab"
+    // never actually worked. Fetches the real catalog scoped to the same
+    // providers the per-series rows below already use instead. No "Ver
+    // tudo" on this one yet (a full paginated view scoped to these
+    // providers doesn't exist — separate follow-up, not silently dropped).
+    const allTitle = typeFilter === "hq" ? "📚 Todos os HQs" : "📚 Todos os Gibis";
+    fetch(`${BASE}/api/providers/catalog?listType=popular&nsfw=${isNsfw}&providers=${encodeURIComponent(scope)}`)
+      .then(r => (r.ok ? r.json() : []))
+      .then((items: UnifiedCatalogItem[]) => {
+        if (cancelled) return;
+        // getCatalog(nsfw=true) returns safe+adult mixed (nsfw there just
+        // means "don't hide adult", not "adult only") — same exclusive
+        // safe-xor-adult split matchesNsfw already applies to every other
+        // row on this page, or +18 mode would show safe titles in this row
+        // too (CodeRabbit, PR #64).
+        const list = (Array.isArray(items) ? items : []).filter(i => typeOf(i) === typeFilter && (isNsfw ? isAdultItem(i) : !isAdultItem(i)));
+        if (list.length > 0) {
+          setCuratedRows(prev => [
+            { key: "all", title: allTitle, items: list.slice(0, ROW_DISPLAY_CAP) },
+            ...prev.filter(r => r.key !== "all"),
+          ]);
+        }
+      })
+      .catch(() => { /* ignore */ });
 
     const fetchSeries = (term: string) =>
       fetch(`${BASE}/api/providers/search?query=${encodeURIComponent(term)}&nsfw=${isNsfw}&providers=${encodeURIComponent(scope)}`)
@@ -1124,7 +1136,7 @@ export default function Explore() {
               </div>
             )}
             {curatedRows.map(row => (
-              <Row key={row.key} title={row.title} onSeeAll={() => openViewAll(row.seeAllTerm ?? row.title, row.seeAllKind ?? "franchise")}>
+              <Row key={row.key} title={row.title} onSeeAll={row.key === "all" ? undefined : () => openViewAll(row.seeAllTerm ?? row.title, row.seeAllKind ?? "franchise")}>
                 {row.items.map(item => {
                   const src = item.sources?.[0];
                   return (
