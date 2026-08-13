@@ -100020,12 +100020,17 @@ var ProviderManager = class {
   // literal compound string "HQ"/"Gibi Nacional" — that row silently
   // returned 0 results before this).
   static async getCatalog(listType, nsfw, providerIds) {
-    const scopeKey = providerIds && providerIds.length ? [...providerIds].sort().join(",") : "all";
+    const hasScope = !!providerIds && providerIds.length > 0;
+    const validIds = hasScope ? [...new Set(providerIds)].filter((id) => this.providers.has(id)).sort() : [];
+    const scopeKey = !hasScope ? "all" : validIds.length > 0 ? validIds.join(",") : "__none__";
     const cacheKey = `${listType}:${!!nsfw}:${scopeKey}`;
     const cached = this.catalogCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < this.CATALOG_CACHE_TTL) return cached.items;
+    for (const [key, entry] of this.catalogCache) {
+      if (Date.now() - entry.ts >= this.CATALOG_CACHE_TTL) this.catalogCache.delete(key);
+    }
     await this.ensureOverridesLoaded();
-    const scope = providerIds && providerIds.length ? new Set(providerIds) : null;
+    const scope = hasScope ? new Set(validIds) : null;
     const activeProviders = Array.from(this.providers.values()).filter(
       (p2) => this.activeStates.get(p2.id) === true && (!scope || scope.has(p2.id))
     );

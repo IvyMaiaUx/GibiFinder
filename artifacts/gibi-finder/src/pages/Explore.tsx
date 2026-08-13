@@ -464,7 +464,12 @@ export default function Explore() {
       .then(r => (r.ok ? r.json() : []))
       .then((items: UnifiedCatalogItem[]) => {
         if (cancelled) return;
-        const list = (Array.isArray(items) ? items : []).filter(i => typeOf(i) === typeFilter);
+        // getCatalog(nsfw=true) returns safe+adult mixed (nsfw there just
+        // means "don't hide adult", not "adult only") — same exclusive
+        // safe-xor-adult split matchesNsfw already applies to every other
+        // row on this page, or +18 mode would show safe titles in this row
+        // too (CodeRabbit, PR #64).
+        const list = (Array.isArray(items) ? items : []).filter(i => typeOf(i) === typeFilter && (isNsfw ? isAdultItem(i) : !isAdultItem(i)));
         if (list.length > 0) {
           setCuratedRows(prev => [
             { key: "all", title: allTitle, items: list.slice(0, ROW_DISPLAY_CAP) },
