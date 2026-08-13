@@ -279,7 +279,14 @@ export default function Explore() {
   // franchise rows instead, so the panel is hidden/cleared there).
   const [showFilters, setShowFilters] = useState(false);
   const [genreSearch, setGenreSearch] = useState("");
-  const [selectedGenreKeys, setSelectedGenreKeys] = useState<Set<string>>(new Set());
+  // Restored from the URL — previously this filter had no URL state at all,
+  // so returning from a title opened inside a genre-filtered view always
+  // lost the selection. Values here are already normalized (norm()), same
+  // shape used internally, so no re-normalization needed on read.
+  const [selectedGenreKeys, setSelectedGenreKeys] = useState<Set<string>>(() => {
+    const g = new URLSearchParams(window.location.search).get("genres");
+    return g ? new Set(g.split(",").filter(Boolean)) : new Set();
+  });
   const [genreFilterItems, setGenreFilterItems] = useState<UnifiedCatalogItem[]>([]);
   const [genreFilterLoading, setGenreFilterLoading] = useState(false);
   const [genreFilterPage, setGenreFilterPage] = useState(1);
@@ -292,7 +299,22 @@ export default function Explore() {
       return next;
     });
   };
-  const clearGenreFilters = () => setSelectedGenreKeys(new Set());
+  // Progresso — purely client-side (no API call), reuses statusOf() below
+  // (already computed for card badges from local reading history) as a
+  // filter dimension instead of new data. Single-select: clicking the
+  // already-active option clears it.
+  const [progressFilter, setProgressFilter] = useState<"unread" | "reading" | "read" | null>(() => {
+    const p = new URLSearchParams(window.location.search).get("progress");
+    return p === "unread" || p === "reading" || p === "read" ? p : null;
+  });
+  const PROGRESS_OPTIONS: { id: "unread" | "reading" | "read"; label: string }[] = [
+    { id: "unread", label: "Não iniciado" },
+    { id: "reading", label: "Lendo" },
+    { id: "read", label: "Concluído" },
+  ];
+  // Clears both filter dimensions at once — used by the panel's own "Limpar"
+  // and by the filtered-view header's "Voltar"/"Limpar tudo".
+  const clearAllFilters = () => { setSelectedGenreKeys(new Set()); setProgressFilter(null); };
   const [viewAllItems, setViewAllItems] = useState<UnifiedCatalogItem[]>([]);
   const [viewAllLoading, setViewAllLoading] = useState(false);
   const [viewAllPage, setViewAllPage] = useState(() => {
@@ -661,6 +683,20 @@ export default function Explore() {
     return Array.from(byId.values()).filter(i => matchesNsfw(i));
   })();
 
+  const matchesProgress = (item: UnifiedCatalogItem) => {
+    if (!progressFilter) return true;
+    const status = statusOf(item);
+    if (progressFilter === "unread") return status === undefined;
+    return status === progressFilter;
+  };
+  const activeFilterCount = selectedGenres.length + (progressFilter ? 1 : 0);
+  const hasActiveFilter = activeFilterCount > 0;
+  // No genre selected: progress-only (or no filter at all) falls back to the
+  // already-fetched catalog union — zero extra requests, same reuse pattern
+  // "Todo o catálogo" already uses below.
+  const filteredResultsBase = selectedGenres.length > 0 ? genreFilterList : uniqueItems;
+  const activeFilterResults = filteredResultsBase.filter(matchesProgress);
+
   // "Todo o catálogo": no query reuses uniqueItems (already nsfw+type
   // filtered via matchesNsfw, no extra request); a query swaps in the real
   // search results, filtered by the active type tab + the same adult-safety
@@ -706,6 +742,8 @@ export default function Explore() {
     if (catalogQuery.trim()) params.set("q", catalogQuery.trim());
     if (catalogSort !== "default") params.set("catalogSort", catalogSort);
     if (catalogPageClamped > 1) params.set("catalogPage", String(catalogPageClamped));
+    if (selectedGenreKeys.size > 0) params.set("genres", Array.from(selectedGenreKeys).join(","));
+    if (progressFilter) params.set("progress", progressFilter);
     const qs = params.toString();
     return `/explorar${qs ? `?${qs}` : ""}`;
   };
@@ -824,11 +862,11 @@ export default function Explore() {
                   onClick={() => setShowFilters(v => { if (v) setGenreSearch(""); return !v; })}
                   className={cn(
                     "inline-flex items-center gap-1.5 font-display text-sm uppercase px-4 py-2 border-4 border-black rounded-lg transition-all sm:ml-auto",
-                    showFilters || selectedGenres.length > 0 ? "bg-secondary text-black comic-shadow-sm" : "bg-white text-black hover:bg-secondary"
+                    showFilters || activeFilterCount > 0 ? "bg-secondary text-black comic-shadow-sm" : "bg-white text-black hover:bg-secondary"
                   )}
                 >
                   <Filter className="w-4 h-4" strokeWidth={3} />
-                  Filtros{selectedGenres.length > 0 ? ` (${selectedGenres.length})` : ""}
+                  Filtros{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
                 </button>
               )}
             </div>
@@ -837,8 +875,8 @@ export default function Explore() {
               <div className="bg-white border-4 border-black rounded-xl p-4 comic-shadow-sm space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
                 <div className="flex items-center justify-between">
                   <h3 className="font-display text-sm uppercase text-black tracking-wide">Gêneros</h3>
-                  {selectedGenres.length > 0 && (
-                    <button onClick={clearGenreFilters} className="inline-flex items-center gap-1 font-sans text-xs font-bold text-gray-500 hover:text-primary transition-colors">
+                  {activeFilterCount > 0 && (
+                    <button onClick={clearAllFilters} className="inline-flex items-center gap-1 font-sans text-xs font-bold text-gray-500 hover:text-primary transition-colors">
                       <X className="w-3.5 h-3.5" /> Limpar
                     </button>
                   )}
@@ -885,6 +923,24 @@ export default function Explore() {
                   {genreSearch.trim() && !allGenres.some(g => norm(g).includes(norm(genreSearch))) && (
                     <p className="font-sans text-xs text-gray-400 py-1">Nenhum gênero encontrado.</p>
                   )}
+                </div>
+
+                <div className="space-y-2 pt-2 border-t-2 border-black/10">
+                  <h3 className="font-display text-sm uppercase text-black tracking-wide">Progresso</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {PROGRESS_OPTIONS.map(opt => (
+                      <button
+                        key={opt.id}
+                        onClick={() => { setProgressFilter(p => p === opt.id ? null : opt.id); setGenreFilterPage(1); }}
+                        className={cn(
+                          "font-display text-xs uppercase px-3 py-1.5 border-2 border-black rounded-full transition-all",
+                          progressFilter === opt.id ? "bg-primary text-white" : "bg-white text-black hover:bg-secondary"
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -937,29 +993,54 @@ export default function Explore() {
               );
             })()}
           </div>
-        ) : selectedGenres.length > 0 ? (
+        ) : hasActiveFilter ? (
           <div className="space-y-5">
             <div className="flex items-center gap-3 flex-wrap">
               <button
-                onClick={clearGenreFilters}
+                onClick={clearAllFilters}
                 className="inline-flex items-center gap-1 bg-white text-black font-display text-sm uppercase px-3 py-2 border-4 border-black rounded-lg comic-shadow-sm hover:bg-secondary transition-colors"
               >
                 <ChevronLeft className="w-4 h-4" strokeWidth={3} /> Voltar
               </button>
-              <h2 className="font-display text-2xl sm:text-3xl text-black uppercase line-clamp-1">{selectedGenres.join(" + ")}</h2>
-              <span className="font-sans text-xs font-bold text-gray-500">{genreFilterList.length} títulos</span>
+              <div className="flex flex-wrap gap-2">
+                {selectedGenres.map(g => (
+                  <button
+                    key={g}
+                    onClick={() => toggleGenre(g)}
+                    className="inline-flex items-center gap-1 bg-primary text-white font-display text-xs uppercase px-3 py-1.5 border-2 border-black rounded-full hover:opacity-90 transition-opacity"
+                    title={`Remover filtro "${g}"`}
+                  >
+                    {g} <X className="w-3 h-3" strokeWidth={3} />
+                  </button>
+                ))}
+                {progressFilter && (
+                  <button
+                    onClick={() => setProgressFilter(null)}
+                    className="inline-flex items-center gap-1 bg-primary text-white font-display text-xs uppercase px-3 py-1.5 border-2 border-black rounded-full hover:opacity-90 transition-opacity"
+                    title="Remover filtro de progresso"
+                  >
+                    {PROGRESS_OPTIONS.find(o => o.id === progressFilter)?.label} <X className="w-3 h-3" strokeWidth={3} />
+                  </button>
+                )}
+              </div>
+              <span className="font-sans text-xs font-bold text-gray-500">{activeFilterResults.length} títulos</span>
               {genreFilterLoading && <Loader2 className="w-5 h-5 animate-spin text-primary" />}
+              {activeFilterCount > 1 && (
+                <button onClick={clearAllFilters} className="font-sans text-xs font-bold text-gray-500 hover:text-primary transition-colors sm:ml-auto">
+                  Limpar tudo
+                </button>
+              )}
             </div>
 
-            {genreFilterList.length === 0 && !genreFilterLoading ? (
+            {activeFilterResults.length === 0 && !genreFilterLoading ? (
               <div className="py-20 text-center border-4 border-dashed border-black bg-white rounded-xl">
                 <p className="font-display text-2xl text-gray-400">NENHUM QUADRINHO ENCONTRADO</p>
-                <p className="font-sans font-bold text-gray-500 mt-1">Tente combinar com outro gênero.</p>
+                <p className="font-sans font-bold text-gray-500 mt-1">Nenhum resultado com esses filtros. Tente remover algum.</p>
               </div>
             ) : (
               <>
                 <div className="grid grid-cols-2 min-[480px]:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 sm:gap-4">
-                  {genreFilterList
+                  {activeFilterResults
                     .slice((genreFilterPage - 1) * VIEW_ALL_PAGE_SIZE, genreFilterPage * VIEW_ALL_PAGE_SIZE)
                     .map(item => {
                       const src = item.sources?.[0];
@@ -970,19 +1051,20 @@ export default function Explore() {
                 </div>
 
                 {(() => {
-                  const totalPages = Math.ceil(genreFilterList.length / VIEW_ALL_PAGE_SIZE);
+                  const totalPages = Math.ceil(activeFilterResults.length / VIEW_ALL_PAGE_SIZE);
                   if (totalPages <= 1) return null;
+                  const genreFilterPageClamped = Math.min(genreFilterPage, totalPages);
                   const go = (p: number) => { setGenreFilterPage(p); window.scrollTo({ top: 0, behavior: "smooth" }); };
                   return (
                     <div className="flex flex-wrap justify-center items-center gap-2 pt-4 font-sans">
-                      <button disabled={genreFilterPage === 1} onClick={() => go(genreFilterPage - 1)} className="px-3 py-1.5 border-2 border-black rounded font-bold bg-white text-black hover:bg-secondary disabled:opacity-40 disabled:hover:bg-white">&lt;</button>
+                      <button disabled={genreFilterPageClamped === 1} onClick={() => go(genreFilterPageClamped - 1)} className="px-3 py-1.5 border-2 border-black rounded font-bold bg-white text-black hover:bg-secondary disabled:opacity-40 disabled:hover:bg-white">&lt;</button>
                       {Array.from({ length: totalPages }).map((_, idx) => {
                         const p = idx + 1;
                         return (
-                          <button key={p} onClick={() => go(p)} className={cn("w-9 h-9 border-2 border-black rounded font-bold transition-all", genreFilterPage === p ? "bg-secondary text-black scale-110 font-black" : "bg-white text-gray-700 hover:bg-muted")}>{p}</button>
+                          <button key={p} onClick={() => go(p)} className={cn("w-9 h-9 border-2 border-black rounded font-bold transition-all", genreFilterPageClamped === p ? "bg-secondary text-black scale-110 font-black" : "bg-white text-gray-700 hover:bg-muted")}>{p}</button>
                         );
                       })}
-                      <button disabled={genreFilterPage === totalPages} onClick={() => go(genreFilterPage + 1)} className="px-3 py-1.5 border-2 border-black rounded font-bold bg-white text-black hover:bg-secondary disabled:opacity-40 disabled:hover:bg-white">&gt;</button>
+                      <button disabled={genreFilterPageClamped === totalPages} onClick={() => go(genreFilterPageClamped + 1)} className="px-3 py-1.5 border-2 border-black rounded font-bold bg-white text-black hover:bg-secondary disabled:opacity-40 disabled:hover:bg-white">&gt;</button>
                     </div>
                   );
                 })()}
