@@ -387,7 +387,23 @@ export class CuratedComicsProvider implements Provider {
         if (pageToken) params.set("pageToken", pageToken);
 
         const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`);
-        if (!res.ok) break;
+        if (!res.ok) {
+          // Was silent — a single failed page (quota, transient 5xx, a
+          // folder the key can't read) cut off that folder's pagination
+          // with zero trace anywhere, and since child folders are only
+          // discovered from the files returned on each page, it could also
+          // silently prune an entire unvisited subtree beneath it. Found
+          // investigating a "the library has way fewer items than it
+          // should" report where the admin UI showed a configured key and
+          // a persisting (but small) cache — indistinguishable from a
+          // genuinely small folder without this.
+          const body = await res.text().catch(() => "");
+          logger.warn(
+            { folderId, status: res.status, statusText: res.statusText, body: body.slice(0, 500) },
+            `Curated provider [${this.id}] Drive folder listing failed — pagination stopped early for this folder`
+          );
+          break;
+        }
         const data = await res.json() as { nextPageToken?: string; files?: { id: string; name: string; mimeType: string; thumbnailLink?: string; hasThumbnail?: boolean }[] };
 
         for (const file of data.files || []) {
@@ -435,6 +451,17 @@ export class CuratedComicsProvider implements Provider {
         const childLists = await Promise.all(batch.map(id => listFolder(id).catch(() => [] as string[])));
         for (const children of childLists) frontier.push(...children);
       }
+      // Visibility for exactly the "cache is persisting but the count looks
+      // way too low" report — folder-listing failures above are now logged
+      // individually, but this summarizes the whole crawl (was previously
+      // impossible to tell from the outside whether a small result meant a
+      // genuinely small library or something cut the walk short) and flags
+      // the two silent stopping conditions (MAX_FOLDERS/MAX_ITEMS hit,
+      // frontier not actually exhausted) explicitly.
+      logger.info(
+        { roots: roots.length, foldersVisited, itemsFound: items.length, foldersRemainingInFrontier: frontier.length },
+        `Curated provider [${this.id}] Drive crawl finished`
+      );
       return items;
     } catch (err) {
       logger.warn({ err: err }, `Curated provider [${this.id}] Drive folder fetch failed:`);

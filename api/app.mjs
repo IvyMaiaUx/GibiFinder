@@ -98892,7 +98892,14 @@ var CuratedComicsProvider = class {
         });
         if (pageToken) params.set("pageToken", pageToken);
         const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`);
-        if (!res.ok) break;
+        if (!res.ok) {
+          const body = await res.text().catch(() => "");
+          logger.warn(
+            { folderId, status: res.status, statusText: res.statusText, body: body.slice(0, 500) },
+            `Curated provider [${this.id}] Drive folder listing failed \u2014 pagination stopped early for this folder`
+          );
+          break;
+        }
         const data = await res.json();
         for (const file of data.files || []) {
           if (file.mimeType === "application/vnd.google-apps.folder") {
@@ -98934,6 +98941,10 @@ var CuratedComicsProvider = class {
         const childLists = await Promise.all(batch.map((id) => listFolder(id).catch(() => [])));
         for (const children2 of childLists) frontier.push(...children2);
       }
+      logger.info(
+        { roots: roots.length, foldersVisited, itemsFound: items.length, foldersRemainingInFrontier: frontier.length },
+        `Curated provider [${this.id}] Drive crawl finished`
+      );
       return items;
     } catch (err) {
       logger.warn({ err }, `Curated provider [${this.id}] Drive folder fetch failed:`);
