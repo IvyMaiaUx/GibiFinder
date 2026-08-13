@@ -181,12 +181,16 @@ router.post("/providers/toggle", async (req: Request, res: Response) => {
 });
 
 // GET /api/providers/catalog - Fetch unified catalog from all active providers
+// (or a scoped subset via ?providers=, same convention as /providers/search)
 router.get("/providers/catalog", async (req: Request, res: Response) => {
   const listType = (req.query.listType as "popular" | "latest") || "popular";
   const nsfw = req.query.nsfw === "true";
+  const providers = typeof req.query.providers === "string" && req.query.providers
+    ? req.query.providers.split(",").map(p => p.trim()).filter(Boolean)
+    : undefined;
 
   try {
-    const items = applyOverrides(await ProviderManager.getCatalog(listType, nsfw), await getOverrides());
+    const items = applyOverrides(await ProviderManager.getCatalog(listType, nsfw, providers), await getOverrides());
     await injectRatings(items);
     // The underlying fan-out (13 providers, up to 12s worst case) only ever
     // changes when the 4am cron re-crawls or an admin override lands — every

@@ -894,14 +894,22 @@ export class ProviderManager {
   private static catalogCache = new Map<string, { items: UnifiedSearchResult[]; ts: number }>();
   private static readonly CATALOG_CACHE_TTL = 5 * 60 * 1000;
 
-  static async getCatalog(listType: "popular" | "latest", nsfw?: boolean): Promise<UnifiedSearchResult[]> {
-    const cacheKey = `${listType}:${!!nsfw}`;
+  // providerIds: optional scope (same convention as search()'s own
+  // providerIds param) — e.g. the Explorar HQ/Gibi tabs' "Todos os
+  // HQs/Gibis" row, which needs every item those specific providers have,
+  // not a genre tag lookup (no provider actually tags anything with the
+  // literal compound string "HQ"/"Gibi Nacional" — that row silently
+  // returned 0 results before this).
+  static async getCatalog(listType: "popular" | "latest", nsfw?: boolean, providerIds?: string[]): Promise<UnifiedSearchResult[]> {
+    const scopeKey = providerIds && providerIds.length ? [...providerIds].sort().join(",") : "all";
+    const cacheKey = `${listType}:${!!nsfw}:${scopeKey}`;
     const cached = this.catalogCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < this.CATALOG_CACHE_TTL) return cached.items;
 
     await this.ensureOverridesLoaded();
+    const scope = providerIds && providerIds.length ? new Set(providerIds) : null;
     const activeProviders = Array.from(this.providers.values()).filter(
-      p => this.activeStates.get(p.id) === true
+      p => this.activeStates.get(p.id) === true && (!scope || scope.has(p.id))
     );
 
     const catalogPromises = activeProviders.map(p =>

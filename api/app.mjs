@@ -100013,13 +100013,21 @@ var ProviderManager = class {
   // same 5-minute TTL pattern already used by search() and CuratedComicsProvider.
   static catalogCache = /* @__PURE__ */ new Map();
   static CATALOG_CACHE_TTL = 5 * 60 * 1e3;
-  static async getCatalog(listType, nsfw) {
-    const cacheKey = `${listType}:${!!nsfw}`;
+  // providerIds: optional scope (same convention as search()'s own
+  // providerIds param) — e.g. the Explorar HQ/Gibi tabs' "Todos os
+  // HQs/Gibis" row, which needs every item those specific providers have,
+  // not a genre tag lookup (no provider actually tags anything with the
+  // literal compound string "HQ"/"Gibi Nacional" — that row silently
+  // returned 0 results before this).
+  static async getCatalog(listType, nsfw, providerIds) {
+    const scopeKey = providerIds && providerIds.length ? [...providerIds].sort().join(",") : "all";
+    const cacheKey = `${listType}:${!!nsfw}:${scopeKey}`;
     const cached = this.catalogCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < this.CATALOG_CACHE_TTL) return cached.items;
     await this.ensureOverridesLoaded();
+    const scope = providerIds && providerIds.length ? new Set(providerIds) : null;
     const activeProviders = Array.from(this.providers.values()).filter(
-      (p2) => this.activeStates.get(p2.id) === true
+      (p2) => this.activeStates.get(p2.id) === true && (!scope || scope.has(p2.id))
     );
     const catalogPromises = activeProviders.map(
       (p2) => this.withTimeout(
@@ -100628,8 +100636,9 @@ router3.post("/providers/toggle", async (req, res) => {
 router3.get("/providers/catalog", async (req, res) => {
   const listType = req.query.listType || "popular";
   const nsfw = req.query.nsfw === "true";
+  const providers = typeof req.query.providers === "string" && req.query.providers ? req.query.providers.split(",").map((p2) => p2.trim()).filter(Boolean) : void 0;
   try {
-    const items = applyOverrides(await ProviderManager.getCatalog(listType, nsfw), await getOverrides());
+    const items = applyOverrides(await ProviderManager.getCatalog(listType, nsfw, providers), await getOverrides());
     await injectRatings(items);
     res.setHeader("Cache-Control", `public, max-age=60, s-maxage=${listType === "popular" ? 600 : 120}, stale-while-revalidate=600`);
     res.json(items);
