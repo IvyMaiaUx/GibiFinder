@@ -11,9 +11,16 @@ export function Layout({ children, minimal = false }: { children: React.ReactNod
   useSuppressNsfwTheme(minimal);
 
   return (
-    <div className="min-h-screen flex flex-col pt-20 md:pt-24">
+    <div className="min-h-[100dvh] flex flex-col pt-20 md:pt-24 px-safe">
       <Header minimal={minimal} />
-      <main className={`flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12 ${minimal ? "pb-12" : "pb-24 lg:pb-12"}`}>
+      {/* `pb-24` (96px) only just cleared the 56px tab bar; on a phone with a
+          home indicator the bar grows by its safe-area inset and the last card
+          ended up underneath it. `lg:!pb-12` must be important to beat the
+          inline style, which exists only to reach `env()`. */}
+      <main
+        className={`flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12 ${minimal ? "pb-12" : "lg:!pb-12"}`}
+        style={minimal ? undefined : { paddingBottom: "calc(7rem + env(safe-area-inset-bottom))" }}
+      >
         {children}
       </main>
       {/* Chrome (footer / feedback / bottom nav) is hidden in the minimal variant. */}

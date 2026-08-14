@@ -1,4 +1,4 @@
-import { RefObject, useEffect, useRef, useState } from "react";
+import { RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 interface UseReaderZoomOptions {
   /** Only bind gesture listeners while the reader is open. */
@@ -7,59 +7,185 @@ interface UseReaderZoomOptions {
   resetKey?: string;
   /** Maximum zoom factor (default 4x). */
   max?: number;
+  /** Enable double-tap-to-zoom (default true). */
+  doubleTap?: boolean;
+  /** Scale a double-tap jumps to from fit (default 2.5x, capped by `max`). */
+  doubleTapScale?: number;
   /**
    * Element whose bounding box pan is clamped against — ideally the actual
    * zoomed content, not the (often larger) scroll container: a page/spread
    * is frequently narrower than the container it's centered in, and
    * clamping against the container would let it be dragged partly or fully
    * out of view. Falls back to the scroll container when omitted.
+   *
+   * This element is also what the focal-point maths measures, so passing it
+   * is what makes a pinch anchor properly.
    */
   contentRef?: RefObject<HTMLElement | null>;
 }
 
+interface Tr {
+  z: number;
+  x: number;
+  y: number;
+}
+
+/** Geometry captured once per gesture so no frame forces a re-layout. */
+interface Geom {
+  /** Viewport position of the content's border box with no transform applied. */
+  lx: number;
+  ly: number;
+  /** transform-origin in element-local, unscaled px. */
+  ox: number;
+  oy: number;
+  /** Unscaled content size, for the pan bounds. */
+  w: number;
+  h: number;
+}
+
 /**
- * In-reader zoom driven by touch gestures. Native pinch-zoom is unreliable inside
- * a fixed overlay and blocked in installed PWAs, so we drive the zoom ourselves.
- * Extracted (Phase 1) from MangaDexReader so any reader mode can reuse it.
+ * In-reader zoom driven by pointer gestures. Native pinch-zoom is unreliable
+ * inside a fixed overlay and blocked in installed PWAs, so we drive it ourselves.
  *
  * Applies via CSS `transform: scale()`, not the `zoom` property — `zoom` changes
- * the element's layout box on every touchmove, forcing a full reflow per frame,
- * which reads as janky/"stuck" mid-gesture. `transform` is compositor-only (GPU),
- * so it stays smooth continuously tracking a pinch — same technique apps like
- * Instagram/Facebook use for their photo zoom.
+ * the element's layout box on every move, forcing a full reflow per frame, which
+ * reads as janky mid-gesture. `transform` is compositor-only (GPU).
  *
  * Because `transform` doesn't grow the layout box the way `zoom` did, native
  * `overflow: auto` scrolling can no longer reach the part of a zoomed page that
- * extends past the viewport — so this hook also tracks `pan` (one-finger drag
- * once zoomed), clamped so the content can't be dragged entirely off-screen.
+ * extends past the viewport — so this hook also tracks `pan`, clamped so the
+ * content can't be dragged off-screen.
  *
- * - two-finger pinch changes zoom (growing from each usage's own fixed
- *   transform-origin) and pans by however far the pinch's own midpoint moves
- *   on screen — not a pixel-perfect "keep this exact point under the fingers"
- *   anchor (that needs knowing the transformed element's untransformed layout
- *   position too, which this hook doesn't have), but tracks a pinch closely
- *   enough to feel natural without that complexity.
- * - one-finger drag pans once zoomed in
- * (non-passive listeners so both gestures are preventable)
+ * Focal point
+ * -----------
+ * A pinch keeps the content point that started under the fingers under the
+ * fingers, rather than growing from a fixed origin and merely following the
+ * midpoint's drift. With `transform: translate(pan) scale(z)` about an origin
+ * `O`, an element-local point `p` lands at:
  *
- * Live zoom/pan are read from refs inside the listeners so they never re-attach
- * mid-gesture (which would break a continuous pinch or drag).
+ *     screen = L + pan + O + (p - O) * z
+ *
+ * where `L` is the element's untransformed viewport position. Solving for `p`
+ * at the current scale and re-solving `pan` at the new one anchors it:
+ *
+ *     p    = O + (f - L - pan - O) / z
+ *     pan' = f - L - O - (p - O) * z'
+ *
+ * `O` is read from the computed style rather than assumed, because the callers
+ * use different origins ("center top" for the cascade column, "left top" for a
+ * split spread, centre for a single page) and each needs its own maths.
+ *
+ * `L` is recovered from the live rect instead of `offsetLeft`, so it is correct
+ * regardless of which element is positioned or how it is nested:
+ *
+ *     rect.left = L + pan + O * (1 - z)   =>   L = rect.left - pan - O * (1 - z)
+ *
+ * Performance
+ * -----------
+ * Geometry is measured once per gesture (a `getBoundingClientRect()` per frame
+ * forces a synchronous layout), the live transform lives in a ref that handlers
+ * read synchronously, and React state is coalesced to at most one update per
+ * animation frame instead of two per pointer event.
  */
 export function useReaderZoom(
   scrollRef: RefObject<HTMLElement | null>,
-  { enabled, resetKey, max = 4, contentRef }: UseReaderZoomOptions,
+  { enabled, resetKey, max = 4, doubleTap = true, doubleTapScale = 2.5, contentRef }: UseReaderZoomOptions,
 ) {
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const zoomRef = useRef(1);
-  const panRef = useRef({ x: 0, y: 0 });
-  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
-  useEffect(() => { panRef.current = pan; }, [pan]);
+  const [tr, setTr] = useState<Tr>({ z: 1, x: 0, y: 0 });
+  const trRef = useRef<Tr>({ z: 1, x: 0, y: 0 });
+  const raf = useRef<number | null>(null);
+
+  const clampZoom = useCallback((v: number) => Math.min(max, Math.max(1, v)), [max]);
+
+  const target = useCallback(
+    () => contentRef?.current || scrollRef.current,
+    [contentRef, scrollRef],
+  );
+
+  /** Measure the content once — see the Performance note above. */
+  const measure = useCallback((): Geom | null => {
+    const el = target();
+    if (!el) return null;
+    const { z, x, y } = trRef.current;
+    const rect = el.getBoundingClientRect();
+
+    const origin = getComputedStyle(el).transformOrigin.split(" ");
+    const ox = parseFloat(origin[0] ?? "0") || 0;
+    const oy = parseFloat(origin[1] ?? "0") || 0;
+
+    // Some callers put the transform on this very element (its rect is already
+    // scaled), others point `contentRef` at a stable wrapper around the scaled
+    // child (rect is natural size). Back the scale out only in the first case.
+    const selfScaled = el.style.transform.includes("scale(");
+    const w = selfScaled ? rect.width / z : rect.width;
+    const h = selfScaled ? rect.height / z : rect.height;
+
+    return {
+      lx: rect.left - x - ox * (1 - z),
+      ly: rect.top - y - oy * (1 - z),
+      ox,
+      oy,
+      w,
+      h,
+    };
+  }, [target]);
+
+  /** Once zoomed, the overhang is content*(z-1); half of it in each direction. */
+  const clampPan = useCallback((p: { x: number; y: number }, z: number, g: Geom | null) => {
+    if (!g) return p;
+    const maxX = Math.max(0, (g.w * (z - 1)) / 2);
+    const maxY = Math.max(0, (g.h * (z - 1)) / 2);
+    return {
+      x: Math.min(maxX, Math.max(-maxX, p.x)),
+      y: Math.min(maxY, Math.max(-maxY, p.y)),
+    };
+  }, []);
+
+  /** Update the ref synchronously; coalesce the React render to one per frame. */
+  const commit = useCallback((next: Tr) => {
+    trRef.current = next;
+    if (raf.current !== null) return;
+    raf.current = requestAnimationFrame(() => {
+      raf.current = null;
+      setTr(trRef.current);
+    });
+  }, []);
+
+  /** Scale about a viewport-space focal point, keeping that point anchored. */
+  const zoomAbout = useCallback((nextZ: number, focal: { x: number; y: number } | null, g: Geom | null) => {
+    const cur = trRef.current;
+    const z2 = clampZoom(nextZ);
+    if (!g || !focal) {
+      commit({ z: z2, ...clampPan({ x: cur.x, y: cur.y }, z2, g) });
+      return;
+    }
+    const px = g.ox + (focal.x - g.lx - cur.x - g.ox) / cur.z;
+    const py = g.oy + (focal.y - g.ly - cur.y - g.oy) / cur.z;
+    const x = focal.x - g.lx - g.ox - (px - g.ox) * z2;
+    const y = focal.y - g.ly - g.oy - (py - g.oy) * z2;
+    commit({ z: z2, ...clampPan({ x, y }, z2, g) });
+  }, [clampZoom, clampPan, commit]);
+
+  // Public setters. Kept in the original `{ zoom, setZoom, pan, setPan }` shape
+  // so the readers' markup does not change.
+  const setZoom = useCallback((v: number | ((z: number) => number)) => {
+    const next = typeof v === "function" ? v(trRef.current.z) : v;
+    // Toolbar zooming has no finger to anchor to, so hold the content centre.
+    const g = measure();
+    const focal = g ? { x: g.lx + g.ox, y: g.ly + g.oy } : null;
+    zoomAbout(next, focal, g);
+  }, [measure, zoomAbout]);
+
+  const setPan = useCallback((v: { x: number; y: number } | ((p: { x: number; y: number }) => { x: number; y: number })) => {
+    const cur = trRef.current;
+    const next = typeof v === "function" ? v({ x: cur.x, y: cur.y }) : v;
+    commit({ z: cur.z, ...clampPan(next, cur.z, measure()) });
+  }, [clampPan, commit, measure]);
 
   // Reset zoom/pan on chapter / mode change.
   useEffect(() => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
+    trRef.current = { z: 1, x: 0, y: 0 };
+    setTr({ z: 1, x: 0, y: 0 });
   }, [resetKey]);
 
   useEffect(() => {
@@ -67,142 +193,147 @@ export function useReaderZoom(
     const el = scrollRef.current;
     if (!el) return;
 
-    const clampZoom = (v: number) => Math.min(max, Math.max(1, v));
-    // Once zoomed, the content is `zoom`x its own size — panning past half
-    // that overhang in either direction would drag it fully off-screen.
-    // Measured against contentRef (the actual zoomed content) when given —
-    // the scroll container is frequently larger than the content centered
-    // inside it, which would let it be dragged out of view before hitting
-    // this container-sized bound.
-    const clampPan = (p: { x: number; y: number }, z: number) => {
-      const target = contentRef?.current || el;
-      const rect = target.getBoundingClientRect();
-      // Some usages apply the zoom transform directly to contentRef's own
-      // element (its rect is then already zoom×'d), others apply it to a
-      // child while contentRef points at a stable, untransformed wrapper
-      // (its rect is already the natural 1x size). Detect which one we got
-      // by checking whether this element currently carries the scale — if
-      // so, back that factor out first so the overhang math below always
-      // works in unscaled units regardless of which pattern the caller used.
-      const isSelfTransformed = target.style.transform.includes("scale(");
-      const unzoom = isSelfTransformed ? zoomRef.current : 1;
-      const width = rect.width / unzoom;
-      const height = rect.height / unzoom;
-      const maxX = (width * (z - 1)) / 2;
-      const maxY = (height * (z - 1)) / 2;
+    const pts = new Map<number, { x: number; y: number }>();
+    let geom: Geom | null = null;
+    let startDist = 0;
+    let startZoom = 1;
+    let startMid = { x: 0, y: 0 };
+    let startPan = { x: 0, y: 0 };
+    let dragFrom: { x: number; y: number } | null = null;
+    let dragPan = { x: 0, y: 0 };
+    let lastTapAt = 0;
+    let lastTapPos = { x: 0, y: 0 };
+    let moved = false;
+
+    const two = () => {
+      const [a, b] = [...pts.values()];
+      if (!a || !b) return null;
       return {
-        x: Math.min(maxX, Math.max(-maxX, p.x)),
-        y: Math.min(maxY, Math.max(-maxY, p.y)),
+        dist: Math.hypot(a.x - b.x, a.y - b.y),
+        mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
       };
     };
-    const dist = (t: TouchList) =>
-      Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-    const mid = (t: TouchList) => ({
-      x: (t[0].clientX + t[1].clientX) / 2,
-      y: (t[0].clientY + t[1].clientY) / 2,
-    });
 
-    // setZoom/setPan only reach zoomRef/panRef on the next effect flush, which
-    // lags a native touch event by a frame or more. If touchend follows the
-    // last pinch touchmove before that flush, onTouchEnd would read the
-    // pre-gesture zoom/pan and start the drag-continuation from a stale
-    // point. Update the refs synchronously alongside the state so any touch
-    // handler — including one firing in the same tick — always sees the
-    // latest values.
-    const applyZoom = (z: number) => {
-      zoomRef.current = z;
-      setZoom(z);
-    };
-    const applyPan = (p: { x: number; y: number }) => {
-      panRef.current = p;
-      setPan(p);
+    const beginPinch = () => {
+      const g = two();
+      if (!g) return;
+      geom = measure();
+      startDist = g.dist;
+      startMid = g.mid;
+      startZoom = trRef.current.z;
+      startPan = { x: trRef.current.x, y: trRef.current.y };
+      dragFrom = null;
     };
 
-    let pinchStartDist = 0;
-    let pinchStartZoom = 1;
-    let pinchStartPan = { x: 0, y: 0 };
-    let pinchStartMid = { x: 0, y: 0 };
-    let dragStart: { x: number; y: number } | null = null;
-    let dragStartPan = { x: 0, y: 0 };
+    const onDown = (e: PointerEvent) => {
+      // Secondary mouse buttons keep opening the context menu.
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      moved = false;
 
-    const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
-        pinchStartDist = dist(e.touches);
-        pinchStartZoom = zoomRef.current;
-        pinchStartPan = panRef.current;
-        pinchStartMid = mid(e.touches);
-        dragStart = null;
-      } else if (e.touches.length === 1 && zoomRef.current > 1) {
-        dragStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        dragStartPan = panRef.current;
+      if (pts.size === 2) {
+        beginPinch();
+      } else if (pts.size === 1 && trRef.current.z > 1) {
+        geom = measure();
+        dragFrom = { x: e.clientX, y: e.clientY };
+        dragPan = { x: trRef.current.x, y: trRef.current.y };
+        try { el.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
       }
     };
-    const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 2 && pinchStartDist > 0) {
+
+    const onMove = (e: PointerEvent) => {
+      const prev = pts.get(e.pointerId);
+      if (!prev) return;
+      if (Math.hypot(e.clientX - prev.x, e.clientY - prev.y) > 6) moved = true;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (pts.size >= 2 && startDist > 0) {
+        const g = two();
+        if (!g) return;
+        // Non-passive, so the browser's own pinch never competes with ours.
         e.preventDefault();
-        const newZoom = clampZoom(pinchStartZoom * (dist(e.touches) / pinchStartDist));
-        // Scale grows from the element's own transform-origin (fixed, set
-        // where each usage applies this hook's `zoom`); pan tracks the pinch
-        // midpoint's own on-screen movement on top of that — simpler than
-        // (and avoids the math error of) trying to keep the exact point
-        // under the fingers pixel-anchored, which would need this hook to
-        // know the transformed element's untransformed layout position too.
-        const nowMid = mid(e.touches);
-        const panX = pinchStartPan.x + (nowMid.x - pinchStartMid.x);
-        const panY = pinchStartPan.y + (nowMid.y - pinchStartMid.y);
-        applyZoom(newZoom);
-        applyPan(clampPan({ x: panX, y: panY }, newZoom));
-      } else if (e.touches.length === 1 && dragStart && zoomRef.current > 1) {
+        const z2 = clampZoom(startZoom * (g.dist / startDist));
+        if (!geom) { commit({ z: z2, x: startPan.x, y: startPan.y }); return; }
+        // Anchor on the ORIGINAL midpoint's content point, re-projected onto
+        // where the fingers are now: pinch and drag then compose in one gesture.
+        const px = geom.ox + (startMid.x - geom.lx - startPan.x - geom.ox) / startZoom;
+        const py = geom.oy + (startMid.y - geom.ly - startPan.y - geom.oy) / startZoom;
+        const x = g.mid.x - geom.lx - geom.ox - (px - geom.ox) * z2;
+        const y = g.mid.y - geom.ly - geom.oy - (py - geom.oy) * z2;
+        commit({ z: z2, ...clampPan({ x, y }, z2, geom) });
+      } else if (dragFrom && trRef.current.z > 1) {
         e.preventDefault();
-        const dx = e.touches[0].clientX - dragStart.x;
-        const dy = e.touches[0].clientY - dragStart.y;
-        applyPan(clampPan({ x: dragStartPan.x + dx, y: dragStartPan.y + dy }, zoomRef.current));
-      }
-    };
-    const onTouchEnd = (e: TouchEvent) => {
-      if (e.touches.length < 2) pinchStartDist = 0;
-      if (e.touches.length === 1 && zoomRef.current > 1) {
-        // Lifting one finger out of a pinch leaves exactly one touch still
-        // down — start a drag from here instead of waiting for a fresh
-        // touchstart, so pinch-then-continue-with-one-finger keeps panning.
-        dragStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        dragStartPan = panRef.current;
-      } else if (e.touches.length < 1) {
-        dragStart = null;
+        const x = dragPan.x + (e.clientX - dragFrom.x);
+        const y = dragPan.y + (e.clientY - dragFrom.y);
+        commit({ z: trRef.current.z, ...clampPan({ x, y }, trRef.current.z, geom) });
       }
     };
 
-    el.addEventListener("touchstart", onTouchStart, { passive: false });
-    el.addEventListener("touchmove", onTouchMove, { passive: false });
-    el.addEventListener("touchend", onTouchEnd, { passive: false });
+    const onUp = (e: PointerEvent) => {
+      const had = pts.delete(e.pointerId);
+      try { el.releasePointerCapture(e.pointerId); } catch { /* was not captured */ }
+
+      if (pts.size < 2) startDist = 0;
+
+      if (pts.size === 1 && trRef.current.z > 1) {
+        // Lifting one finger out of a pinch leaves one touch down — continue as
+        // a drag from here so panning is not interrupted.
+        const [only] = [...pts.values()];
+        if (only) {
+          geom = geom || measure();
+          dragFrom = { ...only };
+          dragPan = { x: trRef.current.x, y: trRef.current.y };
+        }
+      } else if (pts.size === 0) {
+        dragFrom = null;
+        if (had && doubleTap && !moved) {
+          const now = Date.now();
+          const p = { x: e.clientX, y: e.clientY };
+          const near = Math.hypot(p.x - lastTapPos.x, p.y - lastTapPos.y) < 40;
+          if (now - lastTapAt < 300 && near) {
+            const to = trRef.current.z > 1.01 ? 1 : Math.min(doubleTapScale, max);
+            zoomAbout(to, p, measure());
+            lastTapAt = 0;
+          } else {
+            lastTapAt = now;
+            lastTapPos = p;
+          }
+        }
+      }
+    };
+
+    // Trackpad pinch arrives as wheel+ctrlKey. A plain wheel is left alone so
+    // the cascade keeps scrolling normally.
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      zoomAbout(trRef.current.z * Math.exp(-e.deltaY * 0.0022), { x: e.clientX, y: e.clientY }, measure());
+    };
+
+    // Safari raises these for a pinch and would zoom the whole overlay.
+    const stopGesture = (ev: Event) => ev.preventDefault();
+
+    el.addEventListener("pointerdown", onDown, { passive: true });
+    el.addEventListener("pointermove", onMove, { passive: false });
+    el.addEventListener("pointerup", onUp, { passive: true });
+    el.addEventListener("pointercancel", onUp, { passive: true });
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("gesturestart", stopGesture);
+    el.addEventListener("gesturechange", stopGesture);
     return () => {
-      el.removeEventListener("touchstart", onTouchStart);
-      el.removeEventListener("touchmove", onTouchMove);
-      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("gesturestart", stopGesture);
+      el.removeEventListener("gesturechange", stopGesture);
+      if (raf.current !== null) cancelAnimationFrame(raf.current);
     };
-  }, [enabled, resetKey, scrollRef, contentRef, max]);
+  }, [enabled, resetKey, scrollRef, max, doubleTap, doubleTapScale, measure, clampZoom, clampPan, commit, zoomAbout]);
 
-  // Re-clamp pan whenever zoom changes via the +/- buttons (not just gestures)
-  // so a manual zoom-out doesn't leave the pan offset stranded out of bounds.
-  useEffect(() => {
-    const el = contentRef?.current || scrollRef.current;
-    if (!el) return;
-    setPan(p => {
-      const rect = el.getBoundingClientRect();
-      // Same self-transformed detection as clampPan above — by the time this
-      // effect runs the DOM (and zoomRef) already reflect the new `zoom`, so
-      // dividing a self-transformed rect by it still correctly recovers the
-      // unscaled size.
-      const unzoom = el.style.transform.includes("scale(") ? zoom : 1;
-      const width = rect.width / unzoom;
-      const height = rect.height / unzoom;
-      const maxX = (width * (zoom - 1)) / 2;
-      const maxY = (height * (zoom - 1)) / 2;
-      const x = Math.min(maxX, Math.max(-maxX, p.x));
-      const y = Math.min(maxY, Math.max(-maxY, p.y));
-      return x === p.x && y === p.y ? p : { x, y };
-    });
-  }, [zoom, scrollRef, contentRef]);
+  // Stable identity so consumers can depend on `pan` without re-running effects.
+  const pan = useMemo(() => ({ x: tr.x, y: tr.y }), [tr.x, tr.y]);
 
-  return { zoom, setZoom, pan, setPan };
+  return { zoom: tr.z, setZoom, pan, setPan };
 }

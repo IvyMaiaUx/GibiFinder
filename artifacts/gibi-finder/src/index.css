@@ -90,15 +90,46 @@
     overflow-x: hidden;
   }
 
+  html {
+    /* iOS inflates font sizes when a phone rotates to landscape unless this is
+       pinned, which silently breaks every carefully-sized mobile layout. */
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     @apply font-sans antialiased text-foreground bg-background;
     background-image: radial-gradient(hsl(39 17% 81%) 15%, transparent 15%);
     background-size: 12px 12px;
+    /* Kills the grey flash Android paints over every tapped control. */
+    -webkit-tap-highlight-color: transparent;
   }
 
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
     @apply tracking-wide;
+  }
+
+  /* Long-pressing a reader page would otherwise start a native image drag on
+     desktop, or raise the iOS "save image" sheet in the middle of a pinch. */
+  img {
+    -webkit-user-drag: none;
+  }
+}
+
+@layer utilities {
+  /* Device safe areas. index.html already sets `viewport-fit=cover`, so without
+     these the notch and the home indicator crop real content. */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  /* Landscape on a notched phone puts the cutout over the left or right edge,
+     so the horizontal insets matter too. */
+  .px-safe {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
 }
 

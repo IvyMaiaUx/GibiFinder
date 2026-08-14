@@ -50,8 +50,15 @@ export function FeedbackButton() {
         onClick={() => setOpen(true)}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
-        className="fixed bottom-20 right-4 lg:bottom-6 lg:right-6 z-40 bg-black text-white border-4 border-black comic-shadow flex items-center gap-2 px-4 py-3 font-display text-base hover:bg-primary transition-colors"
+        // `bottom-20` (80px) sat *under* the bottom nav on any phone with a home
+        // indicator: the bar is 56px tall plus its own safe-area padding (~34px
+        // on iPhone), reaching ~90px. Stack off the same variable rather than a
+        // guessed constant. `lg:!bottom-6` must be important to beat the inline
+        // style, which only exists to reach `env()`.
+        style={{ bottom: "calc(3.5rem + 0.75rem + env(safe-area-inset-bottom))" }}
+        className="fixed right-4 lg:!bottom-6 lg:right-6 z-40 bg-black text-white border-4 border-black comic-shadow flex items-center gap-2 px-4 py-3 min-h-12 font-display text-base hover:bg-primary transition-colors"
         title="Enviar feedback"
+        aria-label="Enviar feedback"
       >
         <MessageSquarePlus className="w-5 h-5" strokeWidth={2.5} />
         <span className="hidden sm:inline">FEEDBACK</span>

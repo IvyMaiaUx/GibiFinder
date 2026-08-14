@@ -3,6 +3,7 @@ import { Document, Page, pdfjs } from "react-pdf";
 import {
   Loader2, X, Maximize, Minimize, Layers, FileText,
   ChevronLeft, ChevronRight, AlertCircle, ExternalLink, SlidersHorizontal,
+  ZoomIn, ZoomOut,
 } from "lucide-react";
 import { cn, drivePreviewUrl } from "@/lib/utils";
 import { saveReadingState, markChapterCompleted, type ReadingProgressItem } from "@/lib/user-history";
@@ -78,10 +79,16 @@ export function PdfReader({
   const cursorHidden = immersion !== "clean" && !uiActive;
   const rtl = settings.direction === "rtl";
 
-  const { zoom } = useReaderZoom(scrollRef, {
+  // The element the zoom transform is applied to. Passing it lets the hook
+  // measure the real page box, which is what both the focal point and the pan
+  // bounds are derived from.
+  const zoomContentRef = useRef<HTMLDivElement>(null);
+
+  const { zoom, setZoom, pan } = useReaderZoom(scrollRef, {
     enabled: true,
     resetKey: settings.rememberZoom ? "keep" : `${readerMode}`,
     max: settings.maxZoom,
+    contentRef: zoomContentRef,
   });
 
   // ---- Fullscreen (desktop / iPad; no-op on iPhone Safari) ----
@@ -414,7 +421,10 @@ export function PdfReader({
       {/* Body */}
       <div
         ref={scrollRef}
-        className={`flex-1 overflow-auto overscroll-contain flex ${zoom > 1 ? "justify-start" : "justify-center"} ${bodyPad}`}
+        // `justify-start` while zoomed was a workaround for CSS `zoom` growing
+        // the layout box past the container. With a transform the box never
+        // changes, so the page stays centred and `pan` reaches the overhang.
+        className={`flex-1 overflow-auto overscroll-contain flex justify-center ${bodyPad}`}
         onClick={readerMode === "scroll" && zoom === 1 ? toggleChrome : undefined}
       >
         {loadError ? (
@@ -431,7 +441,17 @@ export function PdfReader({
             )}
           </div>
         ) : (
-          <div style={{ zoom }}>
+          <div
+            ref={zoomContentRef}
+            // Was CSS `zoom`, which reflows the whole page tree on every frame
+            // of a pinch and cannot hold a focal point. `transform` is
+            // compositor-only and keeps the placeholder heights measured by the
+            // cascade virtualiser valid, since layout no longer changes at all.
+            style={{
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transformOrigin: "center top",
+            }}
+          >
             <Document
               file={fileUrl}
               onLoadSuccess={({ numPages: n }) => setNumPages(n)}
@@ -487,16 +507,28 @@ export function PdfReader({
 
       {/* Bottom bar (clean level): progress + page controls in page mode */}
       {chromeVisible && numPages > 0 && (settings.showProgress || settings.showBottomBar) && (
-        <div className="border-t px-4 py-2 animate-in fade-in slide-in-from-bottom-2 duration-150" style={barStyle}>
+        <div
+          className="border-t px-3 sm:px-4 py-2 animate-in fade-in slide-in-from-bottom-2 duration-150"
+          // Clear the iPhone home indicator instead of sitting under it.
+          style={{ ...barStyle, paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+        >
           {settings.showProgress && (
             <div className="h-1.5 w-full rounded-full overflow-hidden mb-2" style={{ background: "var(--rd-control)" }}>
               <div className="h-full bg-primary transition-[width] duration-200" style={{ width: `${pct}%` }} />
             </div>
           )}
-          <div className="flex items-center justify-center gap-6">
-            <button disabled={currentPage === 0} onClick={() => (rtl ? nextPage() : prevPage())} className="disabled:opacity-30" style={{ color: "var(--rd-text)" }}><ChevronLeft className="w-6 h-6" strokeWidth={3} /></button>
-            <span className="font-display text-base" style={{ color: "var(--rd-text)" }}>{currentPage + 1} / {numPages}</span>
-            <button disabled={currentPage === numPages - 1} onClick={() => (rtl ? prevPage() : nextPage())} className="disabled:opacity-30" style={{ color: "var(--rd-text)" }}><ChevronRight className="w-6 h-6" strokeWidth={3} /></button>
+          <div className="flex items-center justify-center gap-2 sm:gap-6">
+            <button disabled={currentPage === 0} onClick={() => (rtl ? nextPage() : prevPage())} className="disabled:opacity-30 min-w-11 min-h-11 flex items-center justify-center" aria-label="Página anterior" style={{ color: "var(--rd-text)" }}><ChevronLeft className="w-6 h-6" strokeWidth={3} /></button>
+            <span className="font-display text-base tabular-nums" style={{ color: "var(--rd-text)" }}>{currentPage + 1} / {numPages}</span>
+            <button disabled={currentPage === numPages - 1} onClick={() => (rtl ? prevPage() : nextPage())} className="disabled:opacity-30 min-w-11 min-h-11 flex items-center justify-center" aria-label="Próxima página" style={{ color: "var(--rd-text)" }}><ChevronRight className="w-6 h-6" strokeWidth={3} /></button>
+
+            {/* This reader had no zoom control at all — a broken pinch was the
+                only way in, and nothing at all for anyone who cannot pinch. */}
+            <div className="flex items-center border-l pl-1 sm:pl-3 ml-1" style={{ borderColor: "var(--rd-border)" }}>
+              <button onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} disabled={zoom <= 1} className="disabled:opacity-30 opacity-70 hover:opacity-100 min-w-11 min-h-11 flex items-center justify-center" aria-label="Menos zoom" title="Menos zoom" style={{ color: "var(--rd-text)" }}><ZoomOut className="w-5 h-5" strokeWidth={3} /></button>
+              <button onClick={() => setZoom(1)} className="min-w-12 min-h-11 flex items-center justify-center font-sans font-bold text-2xs tabular-nums" aria-label="Ajustar à tela" title="Ajustar à tela" style={{ color: "var(--rd-text)" }}>{Math.round(zoom * 100)}%</button>
+              <button onClick={() => setZoom(z => Math.min(settings.maxZoom, +(z + 0.5).toFixed(2)))} disabled={zoom >= settings.maxZoom} className="disabled:opacity-30 opacity-70 hover:opacity-100 min-w-11 min-h-11 flex items-center justify-center" aria-label="Mais zoom" title="Mais zoom" style={{ color: "var(--rd-text)" }}><ZoomIn className="w-5 h-5" strokeWidth={3} /></button>
+            </div>
           </div>
         </div>
       )}

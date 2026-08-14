@@ -25,35 +25,48 @@ export function SearchPanel({
 }: SearchPanelProps) {
   const [mode, setMode] = useState<SearchMode>('online');
 
+  // `short` is the phone label. The tabs used to hide their label below `sm`
+  // while keeping a 140px minimum width — five unlabelled icons spread across
+  // ~700px of horizontal scroll, so a phone showed two anonymous icons and no
+  // hint that the rest existed.
   const tabs = [
-    { id: 'online', label: 'Busca Direta', icon: Globe },
-    { id: 'image', label: 'Por Imagem (IA)', icon: Camera },
-    { id: 'text', label: 'Por Descrição (IA)', icon: Type },
-    { id: 'character', label: 'Por Personagem (IA)', icon: Users },
-    { id: 'quote', label: 'Por Fala (IA)', icon: MessageSquare },
+    { id: 'online', label: 'Busca Direta', short: 'Direta', icon: Globe },
+    { id: 'image', label: 'Por Imagem (IA)', short: 'Imagem', icon: Camera },
+    { id: 'text', label: 'Por Descrição (IA)', short: 'Descrição', icon: Type },
+    { id: 'character', label: 'Por Personagem (IA)', short: 'Personagem', icon: Users },
+    { id: 'quote', label: 'Por Fala (IA)', short: 'Fala', icon: MessageSquare },
   ] as const;
 
   return (
     <div className="comic-panel max-w-4xl mx-auto overflow-hidden">
       {/* Tabs Header */}
-      <div className="flex overflow-x-auto flex-nowrap no-scrollbar border-b-4 border-black bg-muted/30">
+      <div
+        role="tablist"
+        aria-label="Modo de busca"
+        className="flex overflow-x-auto flex-nowrap no-scrollbar border-b-4 border-black bg-muted/30 snap-x snap-mandatory"
+      >
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = mode === tab.id;
           return (
             <button
               key={tab.id}
+              role="tab"
+              aria-selected={isActive}
               onClick={() => setMode(tab.id)}
               disabled={isPending}
               className={cn(
-                "flex-1 flex-shrink-0 min-w-[140px] sm:min-w-[160px] flex items-center justify-center gap-2 py-4 px-3 font-display text-base sm:text-lg transition-colors border-b-4",
-                isActive 
-                  ? "bg-white text-black border-primary" 
+                "flex-1 flex-shrink-0 snap-start min-w-[84px] sm:min-w-[160px]",
+                "flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2",
+                "min-h-14 py-2.5 sm:py-4 px-2 sm:px-3 font-display text-2xs sm:text-lg transition-colors border-b-4",
+                isActive
+                  ? "bg-white text-black border-primary"
                   : "text-gray-500 border-transparent hover:bg-white/50 hover:text-black",
-                "focus:outline-none"
+                "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary focus:outline-none"
               )}
             >
-              <Icon className="w-5 h-5" strokeWidth={isActive ? 3 : 2} />
+              <Icon className="w-5 h-5 shrink-0" strokeWidth={isActive ? 3 : 2} />
+              <span className="sm:hidden leading-none">{tab.short}</span>
               <span className="hidden sm:inline">{tab.label}</span>
             </button>
           );
@@ -61,7 +74,7 @@ export function SearchPanel({
       </div>
 
       {/* Tab Content */}
-      <div className="p-6 md:p-8 bg-white">
+      <div className="p-4 sm:p-6 md:p-8 bg-white">
         {mode === 'online' && (
           <TextInputSearch 
             onSearch={onSearchOnline} 

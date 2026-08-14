@@ -1792,7 +1792,18 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
           {/* Header controls */}
           {chromeVisible && (
-            <div className="border-b-2 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 select-none animate-in fade-in slide-in-from-top duration-200" style={{ background: "var(--rd-surface)", color: "var(--rd-text)", borderColor: "var(--rd-border)", backdropFilter: "blur(8px)" }}>
+            <div
+              className="border-b-2 px-3 pb-3 sm:px-4 sm:pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 select-none animate-in fade-in slide-in-from-top duration-200"
+              style={{
+                background: "var(--rd-surface)",
+                color: "var(--rd-text)",
+                borderColor: "var(--rd-border)",
+                backdropFilter: "blur(8px)",
+                // Full-bleed overlay: the title would otherwise sit under the
+                // notch / status bar.
+                paddingTop: "max(0.75rem, env(safe-area-inset-top))",
+              }}
+            >
               {/* Left Column: Title & Thumbnail */}
               <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                 {(coverUrl || selectedResult?.coverUrl) && (
@@ -2228,7 +2239,17 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
           {/* Bottom bar (chrome) — page scrubber + chapter nav + zoom. Part of the
               auto-hiding interface; a tap on the reading area brings it back. */}
           {settings.showBottomBar && chromeVisible && !getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && (
-            <div className="fixed bottom-0 inset-x-0 z-[110] backdrop-blur-sm border-t-2 px-3 sm:px-5 py-2.5 flex items-center gap-2 sm:gap-3 select-none animate-in fade-in slide-in-from-bottom duration-200" style={{ background: "var(--rd-surface)", color: "var(--rd-text)", borderColor: "var(--rd-border)" }}>
+            <div
+              className="fixed bottom-0 inset-x-0 z-[110] backdrop-blur-sm border-t-2 px-2 sm:px-5 py-2 flex items-center gap-1.5 sm:gap-3 select-none animate-in fade-in slide-in-from-bottom duration-200"
+              style={{
+                background: "var(--rd-surface)",
+                color: "var(--rd-text)",
+                borderColor: "var(--rd-border)",
+                // The reader is a full-bleed overlay, so this bar would sit
+                // under the iPhone home indicator without an inset.
+                paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))",
+              }}
+            >
               <button
                 onClick={() => prevChapter && readChapter(prevChapter)}
                 disabled={!prevChapter}
@@ -2250,10 +2271,13 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               />
               <span className="opacity-50 font-sans font-bold text-2xs sm:text-xs tabular-nums w-7 sm:w-8 shrink-0">{pages.length}</span>
               {!pages[currentPage]?.url?.startsWith("pdf:") && (
-                <div className="hidden xs:flex items-center gap-0.5 shrink-0 border-l pl-2 ml-1" style={{ borderColor: "var(--rd-border)" }}>
-                  <button onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} disabled={zoom <= 1} className="opacity-70 hover:opacity-100 disabled:opacity-20 p-1" title="Menos zoom"><ZoomOut className="w-4 h-4" strokeWidth={3} /></button>
-                  <button onClick={() => setZoom(1)} className="text-3xs font-bold tabular-nums w-9 text-center" title="Restaurar zoom">{Math.round(zoom * 100)}%</button>
-                  <button onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))} disabled={zoom >= 4} className="opacity-70 hover:opacity-100 disabled:opacity-20 p-1" title="Mais zoom"><ZoomIn className="w-4 h-4" strokeWidth={3} /></button>
+                /* Shown at every width: these are the only route in for anyone
+                   who cannot pinch, and `xs` (360px) still excluded a 320px
+                   iPhone SE. Targets raised to 44px. */
+                <div className="flex items-center shrink-0 border-l pl-1 sm:pl-2 ml-0.5 sm:ml-1" style={{ borderColor: "var(--rd-border)" }}>
+                  <button onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} disabled={zoom <= 1} className="opacity-70 hover:opacity-100 disabled:opacity-20 min-w-11 min-h-11 flex items-center justify-center" aria-label="Menos zoom" title="Menos zoom"><ZoomOut className="w-4 h-4" strokeWidth={3} /></button>
+                  <button onClick={() => setZoom(1)} className="text-3xs font-bold tabular-nums min-w-11 min-h-11 flex items-center justify-center" aria-label="Ajustar à tela" title="Ajustar à tela">{Math.round(zoom * 100)}%</button>
+                  <button onClick={() => setZoom(z => Math.min(settings.maxZoom, +(z + 0.5).toFixed(2)))} disabled={zoom >= settings.maxZoom} className="opacity-70 hover:opacity-100 disabled:opacity-20 min-w-11 min-h-11 flex items-center justify-center" aria-label="Mais zoom" title="Mais zoom"><ZoomIn className="w-4 h-4" strokeWidth={3} /></button>
                 </div>
               )}
               {/* PDF/external sources already have their own direct download
