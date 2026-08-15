@@ -6,6 +6,8 @@ import { hasDriveKey } from "../lib/driveKeys";
 import { scrapeComicSynopsisDetailed } from "../lib/synopsisScraper";
 import { requireAdmin } from "../lib/auth";
 import { isPrivateOrInternalHost, resolveAndPinPublicHost, BlockedHostError } from "../lib/urlSafety";
+import { snapshotKey, readSnapshot, writeSnapshot, clearSnapshots } from "../lib/catalogSnapshot";
+import type { UnifiedSearchResult } from "../providers/types";
 
 const router = Router();
 
@@ -193,8 +195,38 @@ router.get("/providers/catalog", async (req: Request, res: Response) => {
     : undefined;
 
   try {
-    const items = applyOverrides(await ProviderManager.getCatalog(listType, nsfw, providers), await getOverrides());
-    await injectRatings(items);
+    // Only the unscoped catalog is snapshotted — a ?providers= subset is a rare,
+    // admin-ish query and would multiply the number of rows for no real gain.
+    const key = providers ? null : snapshotKey(listType, nsfw);
+
+    // The snapshot holds the RAW fan-out result; overrides are applied on read.
+    // Baking them in would freeze an admin's hide/retitle behind the snapshot's
+    // lifetime, while getOverrides() is a cheap 30s-TTL lookup.
+    let raw: UnifiedSearchResult[] | null = null;
+    if (key) {
+      const snap = await readSnapshot(key);
+      if (snap) {
+        // One indexed row read (~300ms) instead of the 8-12s provider fan-out.
+        // The 6h cron keeps it current; the snapshot's own max age is the
+        // backstop should the cron ever stop running.
+        raw = snap.items;
+        logger.info({ listType, nsfw, ageMs: snap.ageMs }, "catalog: served from snapshot");
+      }
+    }
+
+    if (!raw) {
+      raw = await ProviderManager.getCatalog(listType, nsfw, providers);
+      // Ratings are an uncached MangaDex request that blocks the response by
+      // roughly a second. Folding them into what gets stored means a snapshot
+      // hit skips the call entirely — the numbers are display-only stars that
+      // barely move, so serving them at the snapshot's age is fine.
+      await injectRatings(raw);
+      // Fire-and-forget: this visitor already paid for the crawl, so don't make
+      // them wait on the write too. writeSnapshot swallows its own errors.
+      if (key) void writeSnapshot(key, raw);
+    }
+
+    const items = applyOverrides(raw, await getOverrides());
     // The underlying fan-out (13 providers, up to 12s worst case) only ever
     // changes when the 4am cron re-crawls or an admin override lands — every
     // visitor between then paid that full cost again. s-maxage lets Vercel's
@@ -799,6 +831,9 @@ router.post("/admin/catalog/rebuild", async (req: Request, res: Response) => {
   if (!requireAdmin(req, res)) return;
   try {
     const { items, providerRaw, errors } = await ProviderManager.getFullCatalogDiag(false, true);
+    // A rebuild is the admin saying "what's cached is wrong" — leaving the
+    // shared snapshot in place would keep serving exactly that to everyone else.
+    await clearSnapshots();
     const cache = await ProviderManager.curatedCacheStatus();
     res.json(serializeAdminCatalog(items, { providerRaw, errors, driveKey: hasDriveKey(), cache }));
   } catch (err) {
@@ -866,7 +901,28 @@ router.get("/cron/refresh-catalog", async (req: Request, res: Response) => {
   try {
     const { items } = await ProviderManager.getFullCatalogDiag(false, true);
     logger.info({ total: items.length }, "cron: catalog refreshed");
-    res.json({ ok: true, total: items.length });
+
+    // Re-crawling only refreshed each provider's own cache, which lives in the
+    // lambda that ran the cron and dies with it. Persist the assembled lists so
+    // every other instance can answer from a row read instead of a fan-out —
+    // this is what actually keeps /providers/catalog off the 8-12s path.
+    const snapshots = await Promise.all(
+      (["popular", "latest"] as const).flatMap(listType =>
+        [false, true].map(async nsfw => {
+          try {
+            const list = await ProviderManager.getCatalog(listType, nsfw);
+            await writeSnapshot(snapshotKey(listType, nsfw), list);
+            return { listType, nsfw, count: list.length };
+          } catch (err) {
+            logger.warn({ err, listType, nsfw }, "cron: snapshot failed");
+            return { listType, nsfw, count: 0 };
+          }
+        }),
+      ),
+    );
+    logger.info({ snapshots }, "cron: catalog snapshots written");
+
+    res.json({ ok: true, total: items.length, snapshots });
   } catch (err) {
     logger.error({ err }, "cron catalog refresh failed");
     res.status(500).json({ error: "refresh_failed", message: err instanceof Error ? err.message : String(err) });
@@ -879,6 +935,9 @@ router.post("/admin/cache/clear", async (req: Request, res: Response) => {
   try {
     await getOverrides(true);
     ProviderManager.clearCatalogCache();
+    // clearCatalogCache only reaches this one lambda; the shared snapshot is
+    // what every other instance reads, so it has to go too.
+    await clearSnapshots();
     res.json({ ok: true, message: "Cache invalidado com sucesso." });
   } catch (err) {
     logger.error({ err }, "cache clear failed");

@@ -100512,6 +100512,56 @@ async function resolveAndPinPublicHost(hostname) {
   return { address: results[0].address, family: results[0].family };
 }
 
+// src/lib/catalogSnapshot.ts
+init_logger();
+var VERSION = "v2";
+var MAX_AGE_MS = 1e3 * 60 * 60 * 24;
+function snapshotKey(listType, nsfw) {
+  return `catalog-agg-${VERSION}:${listType}:${nsfw ? "nsfw" : "sfw"}`;
+}
+var memo = /* @__PURE__ */ new Map();
+var MEMO_TTL_MS = 1e3 * 60 * 5;
+async function readSnapshot(key) {
+  const hit = memo.get(key);
+  if (hit && Date.now() - hit.readAt < MEMO_TTL_MS) {
+    return { items: hit.items, ageMs: Date.now() - hit.storedAt };
+  }
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.from("curated_cache").select("data, updated_at").eq("id", key).maybeSingle();
+    if (error || !data?.data) return null;
+    const items = data.data;
+    if (!Array.isArray(items) || items.length === 0) return null;
+    const storedAt = new Date(data.updated_at).getTime();
+    const ageMs = Date.now() - storedAt;
+    if (!Number.isFinite(ageMs) || ageMs > MAX_AGE_MS) return null;
+    memo.set(key, { items, storedAt, readAt: Date.now() });
+    return { items, ageMs };
+  } catch (err) {
+    logger.warn({ err, key }, "catalog snapshot: read failed");
+    return null;
+  }
+}
+async function clearSnapshots() {
+  memo.clear();
+  if (!supabase) return;
+  try {
+    await supabase.from("curated_cache").delete().like("id", `catalog-agg-${VERSION}:%`);
+  } catch (err) {
+    logger.warn({ err }, "catalog snapshot: clear failed");
+  }
+}
+async function writeSnapshot(key, items) {
+  if (items.length === 0) return;
+  memo.set(key, { items, storedAt: Date.now(), readAt: Date.now() });
+  if (!supabase) return;
+  try {
+    await supabase.from("curated_cache").upsert({ id: key, data: items, updated_at: (/* @__PURE__ */ new Date()).toISOString() });
+  } catch (err) {
+    logger.warn({ err, key }, "catalog snapshot: write failed");
+  }
+}
+
 // src/routes/providers.ts
 var router3 = (0, import_express3.Router)();
 async function injectRatings(results) {
@@ -100654,8 +100704,21 @@ router3.get("/providers/catalog", async (req, res) => {
   const nsfw = req.query.nsfw === "true";
   const providers = typeof req.query.providers === "string" && req.query.providers ? req.query.providers.split(",").map((p2) => p2.trim()).filter(Boolean) : void 0;
   try {
-    const items = applyOverrides(await ProviderManager.getCatalog(listType, nsfw, providers), await getOverrides());
-    await injectRatings(items);
+    const key = providers ? null : snapshotKey(listType, nsfw);
+    let raw = null;
+    if (key) {
+      const snap = await readSnapshot(key);
+      if (snap) {
+        raw = snap.items;
+        logger.info({ listType, nsfw, ageMs: snap.ageMs }, "catalog: served from snapshot");
+      }
+    }
+    if (!raw) {
+      raw = await ProviderManager.getCatalog(listType, nsfw, providers);
+      await injectRatings(raw);
+      if (key) void writeSnapshot(key, raw);
+    }
+    const items = applyOverrides(raw, await getOverrides());
     res.setHeader("Cache-Control", "public, max-age=60, s-maxage=600, stale-while-revalidate=86400");
     res.json(items);
   } catch (err) {
@@ -101135,6 +101198,7 @@ router3.post("/admin/catalog/rebuild", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   try {
     const { items, providerRaw, errors } = await ProviderManager.getFullCatalogDiag(false, true);
+    await clearSnapshots();
     const cache3 = await ProviderManager.curatedCacheStatus();
     res.json(serializeAdminCatalog(items, { providerRaw, errors, driveKey: hasDriveKey(), cache: cache3 }));
   } catch (err) {
@@ -101199,7 +101263,22 @@ router3.get("/cron/refresh-catalog", async (req, res) => {
   try {
     const { items } = await ProviderManager.getFullCatalogDiag(false, true);
     logger.info({ total: items.length }, "cron: catalog refreshed");
-    res.json({ ok: true, total: items.length });
+    const snapshots = await Promise.all(
+      ["popular", "latest"].flatMap(
+        (listType) => [false, true].map(async (nsfw) => {
+          try {
+            const list = await ProviderManager.getCatalog(listType, nsfw);
+            await writeSnapshot(snapshotKey(listType, nsfw), list);
+            return { listType, nsfw, count: list.length };
+          } catch (err) {
+            logger.warn({ err, listType, nsfw }, "cron: snapshot failed");
+            return { listType, nsfw, count: 0 };
+          }
+        })
+      )
+    );
+    logger.info({ snapshots }, "cron: catalog snapshots written");
+    res.json({ ok: true, total: items.length, snapshots });
   } catch (err) {
     logger.error({ err }, "cron catalog refresh failed");
     res.status(500).json({ error: "refresh_failed", message: err instanceof Error ? err.message : String(err) });
@@ -101210,6 +101289,7 @@ router3.post("/admin/cache/clear", async (req, res) => {
   try {
     await getOverrides(true);
     ProviderManager.clearCatalogCache();
+    await clearSnapshots();
     res.json({ ok: true, message: "Cache invalidado com sucesso." });
   } catch (err) {
     logger.error({ err }, "cache clear failed");
