@@ -387,26 +387,33 @@ export default function Explore() {
     // state instead of spinning indefinitely if the request itself stalls.
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20000);
-    try {
-      const [pRes, lRes] = await Promise.all([
-        fetch(`${BASE}/api/providers/catalog?listType=popular&nsfw=${nsfw}`, { signal: controller.signal }),
-        fetch(`${BASE}/api/providers/catalog?listType=latest&nsfw=${nsfw}`, { signal: controller.signal }),
-      ]);
-      if (!pRes.ok || !lRes.ok) throw new Error();
-      setPopular(await pRes.json() as UnifiedCatalogItem[]);
-      setLatest(await lRes.json() as UnifiedCatalogItem[]);
-    } catch (err) {
+    // The two lists are independent, but a Promise.all held the whole page on
+    // the slower of the pair — and they don't go cold together, so a warm
+    // "popular" would still sit behind a cold "latest" for its full fan-out.
+    // Paint each as it lands; "popular" is the first row on screen, so the page
+    // stops looking empty as soon as it arrives.
+    const get = (listType: "popular" | "latest") =>
+      fetch(`${BASE}/api/providers/catalog?listType=${listType}&nsfw=${nsfw}`, { signal: controller.signal })
+        .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json() as Promise<UnifiedCatalogItem[]>; });
+
+    const pPopular = get("popular").then(items => { setPopular(items); return true; }, () => { setPopular([]); return false; });
+    const pLatest = get("latest").then(items => { setLatest(items); return true; }, () => { setLatest([]); return false; });
+
+    // Release the spinner on the first row that arrives, not on both.
+    void pPopular.then(() => setLoading(false));
+
+    const [okPopular, okLatest] = await Promise.all([pPopular, pLatest]);
+    // Only a total failure is worth an error banner; one list missing still
+    // leaves a usable page.
+    if (!okPopular && !okLatest) {
       setError(
-        err instanceof DOMException && err.name === "AbortError"
+        controller.signal.aborted
           ? "O catálogo demorou demais para responder. Tente novamente."
           : "Não foi possível carregar o catálogo agora. Tente novamente mais tarde."
       );
-      setPopular([]);
-      setLatest([]);
-    } finally {
-      clearTimeout(timeout);
-      setLoading(false);
     }
+    clearTimeout(timeout);
+    setLoading(false);
   }, []);
 
   useEffect(() => { loadCatalog(isNsfw); }, [isNsfw, loadCatalog]);

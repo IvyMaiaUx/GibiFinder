@@ -100580,7 +100580,7 @@ router3.get("/providers/search", async (req, res) => {
     res.setHeader("X-Adult-Query", adultQuery ? "true" : "false");
     const curated = applyOverrides(results, await getOverrides());
     await injectRatings(curated);
-    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=86400");
     res.json(curated);
   } catch (err) {
     res.status(500).json({ error: "search_failed", message: err instanceof Error ? err.message : String(err) });
@@ -100656,7 +100656,7 @@ router3.get("/providers/catalog", async (req, res) => {
   try {
     const items = applyOverrides(await ProviderManager.getCatalog(listType, nsfw, providers), await getOverrides());
     await injectRatings(items);
-    res.setHeader("Cache-Control", `public, max-age=60, s-maxage=${listType === "popular" ? 600 : 120}, stale-while-revalidate=600`);
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=600, stale-while-revalidate=86400");
     res.json(items);
   } catch (err) {
     res.status(500).json({
@@ -100676,7 +100676,7 @@ router3.get("/providers/by-genre", async (req, res) => {
   try {
     const items = applyOverrides(await ProviderManager.getByGenre(genre, nsfw), await getOverrides());
     await injectRatings(items);
-    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=86400");
     res.json(items);
   } catch (err) {
     logger.error({ err }, "by-genre failed");
@@ -100687,7 +100687,7 @@ router3.get("/providers/recent-updates", async (req, res) => {
   const nsfw = req.query.nsfw === "true";
   try {
     const items = await ProviderManager.getRecentUpdates(nsfw);
-    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=86400");
     res.json(items);
   } catch (err) {
     logger.error({ err }, "recent-updates failed");

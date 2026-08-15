@@ -95,7 +95,10 @@ router.get("/providers/search", async (req: Request, res: Response) => {
     // to /catalog and /by-genre. Same header pattern as those two — no
     // per-user data in the query (just query/nsfw/providers), so a public
     // edge cache is safe.
-    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
+    // Long stale window for the same reason as /providers/catalog: the edge
+    // should answer from a stale copy and refresh behind the visitor's back,
+    // never make them wait for the provider fan-out.
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=86400");
     res.json(curated);
   } catch (err) {
     res.status(500).json({ error: "search_failed", message: err instanceof Error ? err.message : String(err) });
@@ -198,7 +201,17 @@ router.get("/providers/catalog", async (req: Request, res: Response) => {
     // edge answer everyone after the first request from cache; the short
     // client max-age keeps a same-tab reload cheap without serving anyone a
     // truly stale catalog past the cron's own cadence.
-    res.setHeader("Cache-Control", `public, max-age=60, s-maxage=${listType === "popular" ? 600 : 120}, stale-while-revalidate=600`);
+    // `stale-while-revalidate` is what actually protects the visitor: once
+    // s-maxage lapses the edge answers from the stale copy *immediately* and
+    // re-crawls in the background, so nobody waits out the fan-out. It was 600s,
+    // which on a low-traffic region expires long before the next visit and hands
+    // that visitor the full 8-12s. A day covers the gap between visits, and the
+    // 6h cron keeps the underlying data fresher than that anyway.
+    //
+    // `latest` used to get s-maxage=120 — five times shorter than `popular` — so
+    // it went cold far more often, and since Explore awaits both before painting,
+    // it dictated the loading time. Same window for both now.
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=600, stale-while-revalidate=86400");
     res.json(items);
   } catch (err) {
     res.status(500).json({
@@ -220,7 +233,10 @@ router.get("/providers/by-genre", async (req: Request, res: Response) => {
   try {
     const items = applyOverrides(await ProviderManager.getByGenre(genre, nsfw), await getOverrides());
     await injectRatings(items);
-    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
+    // Long stale window for the same reason as /providers/catalog: the edge
+    // should answer from a stale copy and refresh behind the visitor's back,
+    // never make them wait for the provider fan-out.
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=86400");
     res.json(items);
   } catch (err) {
     logger.error({ err }, "by-genre failed");
@@ -235,7 +251,10 @@ router.get("/providers/recent-updates", async (req: Request, res: Response) => {
   const nsfw = req.query.nsfw === "true";
   try {
     const items = await ProviderManager.getRecentUpdates(nsfw);
-    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
+    // Long stale window for the same reason as /providers/catalog: the edge
+    // should answer from a stale copy and refresh behind the visitor's back,
+    // never make them wait for the provider fan-out.
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=86400");
     res.json(items);
   } catch (err) {
     logger.error({ err }, "recent-updates failed");
