@@ -2060,6 +2060,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                     zoom > 1 ? "items-start" : (!doubleActive && fitFor(currentPage) === "width" ? "items-start" : "items-center"),
                   )}
                   onClick={(e) => {
+                    // While magnified a tap is far more likely to be "let me see
+                    // the controls" than "next page" — and turning the page would
+                    // throw away the spot the reader just zoomed into.
+                    if (zoom > 1.01) { toggleChrome(); return; }
                     // Configurable 3 tap zones (default flips prev/next in RTL).
                     const rect = e.currentTarget.getBoundingClientRect();
                     const x = e.clientX - rect.left;

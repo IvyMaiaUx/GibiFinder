@@ -204,6 +204,11 @@ export function useReaderZoom(
     let lastTapAt = 0;
     let lastTapPos = { x: 0, y: 0 };
     let moved = false;
+    // A pinch or a drag ends with the browser synthesising a `click` from the
+    // last finger lifted. Both readers turn the page from a click on their tap
+    // zones, so without this every pinch — in *or* out — also flipped the page.
+    let gestured = false;
+    let swallowClickUntil = 0;
 
     const two = () => {
       const [a, b] = [...pts.values()];
@@ -231,7 +236,9 @@ export function useReaderZoom(
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       moved = false;
 
+      if (pts.size === 1) gestured = false;
       if (pts.size === 2) {
+        gestured = true;
         beginPinch();
       } else if (pts.size === 1 && trRef.current.z > 1) {
         geom = measure();
@@ -263,6 +270,7 @@ export function useReaderZoom(
         commit({ z: z2, ...clampPan({ x, y }, z2, geom) });
       } else if (dragFrom && trRef.current.z > 1) {
         e.preventDefault();
+        if (moved) gestured = true;
         const x = dragPan.x + (e.clientX - dragFrom.x);
         const y = dragPan.y + (e.clientY - dragFrom.y);
         commit({ z: trRef.current.z, ...clampPan({ x, y }, trRef.current.z, geom) });
@@ -286,19 +294,28 @@ export function useReaderZoom(
         }
       } else if (pts.size === 0) {
         dragFrom = null;
-        if (had && doubleTap && !moved) {
+
+        // Double-tap only while already magnified, as a quick way back to fit.
+        // Enabling it at 1x too would fight the tap zones: the *first* tap of
+        // the pair lands as an ordinary click and turns the page before the
+        // second one arrives. Zooming in stays on pinch and the toolbar.
+        if (had && doubleTap && !moved && trRef.current.z > 1.01) {
           const now = Date.now();
           const p = { x: e.clientX, y: e.clientY };
           const near = Math.hypot(p.x - lastTapPos.x, p.y - lastTapPos.y) < 40;
           if (now - lastTapAt < 300 && near) {
-            const to = trRef.current.z > 1.01 ? 1 : Math.min(doubleTapScale, max);
-            zoomAbout(to, p, measure());
+            zoomAbout(1, p, measure());
+            gestured = true;
             lastTapAt = 0;
           } else {
             lastTapAt = now;
             lastTapPos = p;
           }
         }
+
+        // The synthesised click arrives right after this; give it a window.
+        if (gestured) swallowClickUntil = Date.now() + 500;
+        gestured = false;
       }
     };
 
@@ -310,9 +327,19 @@ export function useReaderZoom(
       zoomAbout(trRef.current.z * Math.exp(-e.deltaY * 0.0022), { x: e.clientX, y: e.clientY }, measure());
     };
 
+    // Swallow the click a gesture leaves behind, before it reaches the tap
+    // zones. Capture phase, so it never gets to the reader's own handler.
+    const onClickCapture = (ev: MouseEvent) => {
+      if (Date.now() >= swallowClickUntil) return;
+      swallowClickUntil = 0;
+      ev.stopPropagation();
+      ev.preventDefault();
+    };
+
     // Safari raises these for a pinch and would zoom the whole overlay.
     const stopGesture = (ev: Event) => ev.preventDefault();
 
+    el.addEventListener("click", onClickCapture, true);
     el.addEventListener("pointerdown", onDown, { passive: true });
     el.addEventListener("pointermove", onMove, { passive: false });
     el.addEventListener("pointerup", onUp, { passive: true });
@@ -321,6 +348,7 @@ export function useReaderZoom(
     el.addEventListener("gesturestart", stopGesture);
     el.addEventListener("gesturechange", stopGesture);
     return () => {
+      el.removeEventListener("click", onClickCapture, true);
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);

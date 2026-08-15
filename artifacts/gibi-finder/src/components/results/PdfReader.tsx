@@ -349,7 +349,12 @@ export function PdfReader({
   // Tap zones (page mode): [left, centre, right] -> actions; rtl flips the default.
   const isDefaultZones = settings.tapZones[0] === "prev" && settings.tapZones[1] === "menu" && settings.tapZones[2] === "next";
   const tapZones = (isDefaultZones && rtl) ? (["next", "menu", "prev"] as const) : settings.tapZones;
-  const doTap = (a: string) => { if (a === "prev") prevPage(); else if (a === "next") nextPage(); else toggleChrome(); };
+  const doTap = (a: string) => {
+    // While magnified a tap means "show me the controls", not "next page" —
+    // turning the page would discard the spot the reader just zoomed into.
+    if (zoom > 1.01) { toggleChrome(); return; }
+    if (a === "prev") prevPage(); else if (a === "next") nextPage(); else toggleChrome();
+  };
 
   const previewFallback = drivePreviewUrl(rawUrl);
   const pct = numPages > 0 ? ((currentPage + 1) / numPages) * 100 : 0;
