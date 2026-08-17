@@ -60,6 +60,41 @@ async function injectRatings(results: any[]) {
   });
 }
 
+/**
+ * Re-crawl one catalog list and store it, without holding up the request that
+ * noticed it had gone stale.
+ *
+ * Best-effort by design: a serverless instance can be frozen once it has
+ * answered, so this may not always run to completion. That is why it is a
+ * *supplement* to the cron and not a replacement for it — the cron is still what
+ * keeps the snapshot fresh, this only closes the gap when a run slips or fails,
+ * and `HARD_MAX_MS` is the backstop if both give out.
+ *
+ * The guard is what keeps that cheap: without it, every request arriving during
+ * the ~10s crawl would start another one, so a stale row on a busy region would
+ * fan out to thirteen providers dozens of times over.
+ */
+const revalidating = new Set<string>();
+
+function revalidateSnapshot(key: string, listType: "popular" | "latest", nsfw: boolean): void {
+  if (revalidating.has(key)) return;
+  revalidating.add(key);
+  void (async () => {
+    try {
+      const fresh = await ProviderManager.getCatalog(listType, nsfw);
+      // Same shape the blocking path stores, ratings included — see the note at
+      // the fan-out below.
+      await injectRatings(fresh);
+      await writeSnapshot(key, fresh);
+      logger.info({ key, count: fresh.length }, "catalog: snapshot revalidated");
+    } catch (err) {
+      logger.warn({ err, key }, "catalog: snapshot revalidation failed");
+    } finally {
+      revalidating.delete(key);
+    }
+  })();
+}
+
 // GET /api/providers - List all active providers
 router.get("/providers", async (_req: Request, res: Response) => {
   try {
@@ -207,10 +242,15 @@ router.get("/providers/catalog", async (req: Request, res: Response) => {
       const snap = await readSnapshot(key);
       if (snap) {
         // One indexed row read (~300ms) instead of the 8-12s provider fan-out.
-        // The 6h cron keeps it current; the snapshot's own max age is the
+        // The daily cron keeps it current; the snapshot's own max age is the
         // backstop should the cron ever stop running.
         raw = snap.items;
-        logger.info({ listType, nsfw, ageMs: snap.ageMs }, "catalog: served from snapshot");
+        logger.info({ listType, nsfw, ageMs: snap.ageMs, stale: snap.stale }, "catalog: served from snapshot");
+        // Past its freshness window it is still served immediately and renewed
+        // behind this visitor — the whole point is that nobody waits out the
+        // fan-out. Blocking here would hand the wait to whoever happened to
+        // arrive first after the cron slipped.
+        if (snap.stale) revalidateSnapshot(key, listType, nsfw);
       }
     }
 
@@ -238,7 +278,7 @@ router.get("/providers/catalog", async (req: Request, res: Response) => {
     // re-crawls in the background, so nobody waits out the fan-out. It was 600s,
     // which on a low-traffic region expires long before the next visit and hands
     // that visitor the full 8-12s. A day covers the gap between visits, and the
-    // 6h cron keeps the underlying data fresher than that anyway.
+    // daily cron keeps the underlying data fresher than that anyway.
     //
     // `latest` used to get s-maxage=120 — five times shorter than `popular` — so
     // it went cold far more often, and since Explore awaits both before painting,
@@ -888,7 +928,8 @@ router.post("/admin/catalog/autofill-synopsis", async (req: Request, res: Respon
   }
 });
 
-// GET /api/cron/refresh-catalog — invoked by Vercel Cron every 6h to re-crawl the
+// GET /api/cron/refresh-catalog — invoked by Vercel Cron once a day (04:00, the
+// most a Hobby project allows — see 0ff3941) to re-crawl the
 // Drive/Sites catalog automatically (keeps covers + new folders fresh without a
 // manual RECONSTRUIR). Secured with CRON_SECRET when set (Vercel sends it as a
 // Bearer token); left open only when no secret is configured.

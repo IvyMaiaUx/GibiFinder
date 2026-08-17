@@ -2011,7 +2011,7 @@ router.get("/admin/system-health", async (req: Request, res: Response) => {
   // Architectural services (facts about how the app runs, not live metrics).
   const services = {
     deploy: { ok: true, detail: "push → Vercel" },
-    cron: { ok: true, detail: (process.env["CRON_SECRET"] || "").trim() ? "Catálogo a cada 6h (protegido)" : "Catálogo a cada 6h" },
+    cron: { ok: true, detail: (process.env["CRON_SECRET"] || "").trim() ? "Catálogo 1x/dia, 4h (protegido)" : "Catálogo 1x/dia, 4h" },
     logs: { ok: true, detail: "Vercel + pino" },
     backups: { ok: true, detail: "Supabase (gerenciado)" },
     jobs: { ok: null as boolean | null, detail: "Não usado" },

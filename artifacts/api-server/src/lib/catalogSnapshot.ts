@@ -26,8 +26,29 @@ import type { UnifiedSearchResult } from "../providers/types";
 // them, so serving one would drop every star rating until the next crawl.
 const VERSION = "v2";
 
-/** Older than this and the snapshot is refused, forcing a live crawl. */
-const MAX_AGE_MS = 1000 * 60 * 60 * 24;
+const HOUR = 1000 * 60 * 60;
+
+/**
+ * Past this the row is *served anyway* and the caller is told to revalidate
+ * behind the visitor's back — same bargain as the `stale-while-revalidate` on
+ * the edge response, one layer down.
+ *
+ * The cron used to run every 6h, which is what the old single 24h cut-off was
+ * sized against. It runs once a day now (0ff3941 — Vercel Hobby only allows a
+ * daily cron), so a 24h cut-off expires the row at almost exactly the moment
+ * the cron renews it: Hobby fires the job anywhere *inside* the scheduled hour,
+ * so two runs can sit up to ~25h apart, and every visitor in that gap paid the
+ * full 8-12s fan-out again. A day plus slack marks it stale instead.
+ */
+const FRESH_MAX_MS = 26 * HOUR;
+
+/**
+ * Past *this* the row is refused and the caller crawls for real. Serving stale
+ * forever would mean a cron that quietly stopped running is invisible: the
+ * catalog would just freeze at whatever it last saw. A week is long enough that
+ * the blocking crawl only comes back when something is genuinely broken.
+ */
+const HARD_MAX_MS = 7 * 24 * HOUR;
 
 export function snapshotKey(listType: string, nsfw: boolean): string {
   return `catalog-agg-${VERSION}:${listType}:${nsfw ? "nsfw" : "sfw"}`;
@@ -46,12 +67,23 @@ export function clearSnapshotMemo(): void {
   memo.clear();
 }
 
-export async function readSnapshot(
-  key: string,
-): Promise<{ items: UnifiedSearchResult[]; ageMs: number } | null> {
+export interface SnapshotRead {
+  items: UnifiedSearchResult[];
+  ageMs: number;
+  /** Serve it, then refresh behind the visitor's back. */
+  stale: boolean;
+}
+
+export async function readSnapshot(key: string): Promise<SnapshotRead | null> {
+  const usable = (items: UnifiedSearchResult[], storedAt: number): SnapshotRead | null => {
+    const ageMs = Date.now() - storedAt;
+    if (!Number.isFinite(ageMs) || ageMs > HARD_MAX_MS) return null;
+    return { items, ageMs, stale: ageMs > FRESH_MAX_MS };
+  };
+
   const hit = memo.get(key);
   if (hit && Date.now() - hit.readAt < MEMO_TTL_MS) {
-    return { items: hit.items, ageMs: Date.now() - hit.storedAt };
+    return usable(hit.items, hit.storedAt);
   }
   if (!supabase) return null;
   try {
@@ -66,11 +98,11 @@ export async function readSnapshot(
     if (!Array.isArray(items) || items.length === 0) return null;
 
     const storedAt = new Date(data.updated_at as string).getTime();
-    const ageMs = Date.now() - storedAt;
-    if (!Number.isFinite(ageMs) || ageMs > MAX_AGE_MS) return null;
+    const read = usable(items, storedAt);
+    if (!read) return null;
 
     memo.set(key, { items, storedAt, readAt: Date.now() });
-    return { items, ageMs };
+    return read;
   } catch (err) {
     logger.warn({ err, key }, "catalog snapshot: read failed");
     return null;

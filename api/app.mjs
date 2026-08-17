@@ -95961,7 +95961,7 @@ router2.get("/admin/system-health", async (req, res) => {
   };
   const services = {
     deploy: { ok: true, detail: "push \u2192 Vercel" },
-    cron: { ok: true, detail: (process.env["CRON_SECRET"] || "").trim() ? "Cat\xE1logo a cada 6h (protegido)" : "Cat\xE1logo a cada 6h" },
+    cron: { ok: true, detail: (process.env["CRON_SECRET"] || "").trim() ? "Cat\xE1logo 1x/dia, 4h (protegido)" : "Cat\xE1logo 1x/dia, 4h" },
     logs: { ok: true, detail: "Vercel + pino" },
     backups: { ok: true, detail: "Supabase (gerenciado)" },
     jobs: { ok: null, detail: "N\xE3o usado" },
@@ -100515,16 +100515,23 @@ async function resolveAndPinPublicHost(hostname) {
 // src/lib/catalogSnapshot.ts
 init_logger();
 var VERSION = "v2";
-var MAX_AGE_MS = 1e3 * 60 * 60 * 24;
+var HOUR2 = 1e3 * 60 * 60;
+var FRESH_MAX_MS = 26 * HOUR2;
+var HARD_MAX_MS = 7 * 24 * HOUR2;
 function snapshotKey(listType, nsfw) {
   return `catalog-agg-${VERSION}:${listType}:${nsfw ? "nsfw" : "sfw"}`;
 }
 var memo = /* @__PURE__ */ new Map();
 var MEMO_TTL_MS = 1e3 * 60 * 5;
 async function readSnapshot(key) {
+  const usable = (items, storedAt) => {
+    const ageMs = Date.now() - storedAt;
+    if (!Number.isFinite(ageMs) || ageMs > HARD_MAX_MS) return null;
+    return { items, ageMs, stale: ageMs > FRESH_MAX_MS };
+  };
   const hit = memo.get(key);
   if (hit && Date.now() - hit.readAt < MEMO_TTL_MS) {
-    return { items: hit.items, ageMs: Date.now() - hit.storedAt };
+    return usable(hit.items, hit.storedAt);
   }
   if (!supabase) return null;
   try {
@@ -100533,10 +100540,10 @@ async function readSnapshot(key) {
     const items = data.data;
     if (!Array.isArray(items) || items.length === 0) return null;
     const storedAt = new Date(data.updated_at).getTime();
-    const ageMs = Date.now() - storedAt;
-    if (!Number.isFinite(ageMs) || ageMs > MAX_AGE_MS) return null;
+    const read2 = usable(items, storedAt);
+    if (!read2) return null;
     memo.set(key, { items, storedAt, readAt: Date.now() });
-    return { items, ageMs };
+    return read2;
   } catch (err) {
     logger.warn({ err, key }, "catalog snapshot: read failed");
     return null;
@@ -100606,6 +100613,23 @@ async function injectRatings(results) {
       item.rating = Math.round(score * 10) / 10;
     }
   });
+}
+var revalidating = /* @__PURE__ */ new Set();
+function revalidateSnapshot(key, listType, nsfw) {
+  if (revalidating.has(key)) return;
+  revalidating.add(key);
+  void (async () => {
+    try {
+      const fresh = await ProviderManager.getCatalog(listType, nsfw);
+      await injectRatings(fresh);
+      await writeSnapshot(key, fresh);
+      logger.info({ key, count: fresh.length }, "catalog: snapshot revalidated");
+    } catch (err) {
+      logger.warn({ err, key }, "catalog: snapshot revalidation failed");
+    } finally {
+      revalidating.delete(key);
+    }
+  })();
 }
 router3.get("/providers", async (_req, res) => {
   try {
@@ -100710,7 +100734,8 @@ router3.get("/providers/catalog", async (req, res) => {
       const snap = await readSnapshot(key);
       if (snap) {
         raw = snap.items;
-        logger.info({ listType, nsfw, ageMs: snap.ageMs }, "catalog: served from snapshot");
+        logger.info({ listType, nsfw, ageMs: snap.ageMs, stale: snap.stale }, "catalog: served from snapshot");
+        if (snap.stale) revalidateSnapshot(key, listType, nsfw);
       }
     }
     if (!raw) {
