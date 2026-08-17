@@ -195,6 +195,44 @@ function fetchImage(url: string, headers: any, redirects = 0, deadline?: number)
   });
 }
 
+/**
+ * One retry for a *transient* upstream failure, and only for those.
+ *
+ * Some hosts answer the same cover URL inconsistently under repeated hits —
+ * archive.org in particular alternates between 200 and a reset/timeout, which
+ * arrived here as a 502 and, in the UI, as a permanent "capa indisponível":
+ * SafeImage gives up on a cover for good once its attempts fail, so a blip
+ * lasting one request cost the cover for the whole visit.
+ *
+ * Deliberately narrow. A 4xx is the upstream's settled answer (hotlink block,
+ * dead URL) and retrying only doubles the load for the same reply, so those
+ * pass straight through. A 5xx or a connection error is the kind that goes
+ * away on its own. The pause is there because retrying instantly usually just
+ * catches the far end in the same bad moment.
+ *
+ * The second attempt gets its own, shorter budget rather than a fresh 15s:
+ * the function is capped at 30s (vercel.json), so two full-length attempts
+ * back to back could be killed mid-response and turn a recoverable blip into
+ * a hard failure — the opposite of the point.
+ */
+const RETRY_TIMEOUT_MS = 8_000;
+
+async function fetchOnceRetried(url: string, headers: any): Promise<{ status: number; headers: any; buffer: Buffer }> {
+  // Called after the pause, so the budget starts from that moment.
+  const retry = () => fetchImage(url, headers, 0, Date.now() + RETRY_TIMEOUT_MS);
+  try {
+    const first = await fetchImage(url, headers);
+    if (first.status < 500) return first;
+    logger.info({ url, status: first.status }, "image proxy: upstream 5xx, retrying once");
+    await new Promise(r => setTimeout(r, 250));
+    return await retry();
+  } catch (err) {
+    logger.info({ url, err }, "image proxy: upstream error, retrying once");
+    await new Promise(r => setTimeout(r, 250));
+    return await retry();
+  }
+}
+
 // GET /api/image-proxy?url=<encoded_url>
 // Proxies cover images from external CDNs that block hotlinking.
 router.get("/image-proxy", async (req: Request, res: Response) => {
@@ -235,7 +273,7 @@ router.get("/image-proxy", async (req: Request, res: Response) => {
       "Referer": `${targetUrl.protocol}//${targetUrl.hostname}/`,
     };
 
-    const result = await fetchImage(targetUrl.toString(), headers);
+    const result = await fetchOnceRetried(targetUrl.toString(), headers);
 
     if (result.status >= 400) {
       res.status(result.status).json({ error: "upstream_error", message: `Upstream retornou ${result.status}` });

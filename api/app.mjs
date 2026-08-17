@@ -101466,6 +101466,21 @@ function fetchImage(url, headers, redirects = 0, deadline) {
     }).catch(reject);
   });
 }
+var RETRY_TIMEOUT_MS = 8e3;
+async function fetchOnceRetried(url, headers) {
+  const retry = () => fetchImage(url, headers, 0, Date.now() + RETRY_TIMEOUT_MS);
+  try {
+    const first = await fetchImage(url, headers);
+    if (first.status < 500) return first;
+    logger.info({ url, status: first.status }, "image proxy: upstream 5xx, retrying once");
+    await new Promise((r2) => setTimeout(r2, 250));
+    return await retry();
+  } catch (err) {
+    logger.info({ url, err }, "image proxy: upstream error, retrying once");
+    await new Promise((r2) => setTimeout(r2, 250));
+    return await retry();
+  }
+}
 router4.get("/image-proxy", async (req, res) => {
   const rawUrl = req.query.url;
   if (!rawUrl) {
@@ -101495,7 +101510,7 @@ router4.get("/image-proxy", async (req, res) => {
       "Accept-Language": "en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7",
       "Referer": `${targetUrl.protocol}//${targetUrl.hostname}/`
     };
-    const result = await fetchImage(targetUrl.toString(), headers);
+    const result = await fetchOnceRetried(targetUrl.toString(), headers);
     if (result.status >= 400) {
       res.status(result.status).json({ error: "upstream_error", message: `Upstream retornou ${result.status}` });
       return;

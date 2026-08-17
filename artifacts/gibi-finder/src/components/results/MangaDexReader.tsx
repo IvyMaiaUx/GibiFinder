@@ -1385,7 +1385,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                     className="flex items-center gap-3 p-3 border-2 border-black hover:bg-muted/30 text-left font-sans font-bold transition-colors bg-white"
                   >
                     {r.coverUrl ? (
-                      <SafeImage src={r.coverUrl} alt={r.title} className="w-10 h-14 object-cover border border-black shrink-0" />
+                      <SafeImage src={r.coverUrl} alt={r.title} width={320} className="w-10 h-14 object-cover border border-black shrink-0" />
                     ) : (
                       <div className="w-10 h-14 bg-muted border border-black shrink-0 flex items-center justify-center">?</div>
                     )}
@@ -1407,6 +1407,16 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                   <SafeImage
                     src={selectedResult.coverUrl}
                     alt={selectedResult.title}
+                    // 320 is CatalogCard's width, deliberately, even though this
+                    // renders at 96px: same width means the same proxy URL, so
+                    // this reuses the exact response the grid already cached
+                    // instead of asking the upstream for the full-resolution
+                    // original all over again. Without a width it was the only
+                    // cover on the way in that went back to the source — which
+                    // is why a title could show its cover in the listing and
+                    // then land on "capa indisponível" here, on hosts that
+                    // throttle (archive.org 502s on and off under repeat hits).
+                    width={320}
                     className="w-24 h-36 object-cover border-4 border-black shrink-0 mx-auto sm:mx-0"
                   />
                 )}
@@ -1819,6 +1829,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                   <SafeImage
                     src={coverUrl || selectedResult?.coverUrl}
                     alt={mangaTitle}
+                    width={320}
                     className="w-8 h-11 sm:w-10 sm:h-14 object-cover border border-white/40 shrink-0 rounded"
                   />
                 )}
