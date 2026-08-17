@@ -132,6 +132,9 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   const prefetchedPagesRef = useRef<Record<string, Page[]>>({});
   // Swipe tracking for page mode.
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  // Stays true from the moment a gesture goes multi-touch until every finger is
+  // up, so a pinch can never be mistaken for a page-turning swipe.
+  const pinchingRef = useRef(false);
   // Bounds automatic provider fallback (see tryFallbackSource) so a work whose
   // every source is unreadable doesn't chain through dozens of requests.
   const fallbackAttemptsRef = useRef(0);
@@ -2095,13 +2098,31 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                     else toggleChrome();
                   }}
                   onTouchStart={(e) => {
-                    swipeStartRef.current = e.touches.length === 1
-                      ? { x: e.touches[0].clientX, y: e.touches[0].clientY }
-                      : null;
+                    // A second finger means this is a pinch, and a pinch must
+                    // never be read as a swipe afterwards — see onTouchEnd.
+                    if (e.touches.length > 1) {
+                      pinchingRef.current = true;
+                      swipeStartRef.current = null;
+                      return;
+                    }
+                    swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
                   }}
                   onTouchEnd={(e) => {
                     const s = swipeStartRef.current;
                     swipeStartRef.current = null;
+                    // Only once every finger is off does the gesture really end;
+                    // lifting the first of two still leaves a pinch in progress.
+                    if (pinchingRef.current) {
+                      if (e.touches.length === 0) pinchingRef.current = false;
+                      return;
+                    }
+                    // `zoom !== 1` alone was not enough to keep a pinch out of
+                    // here: pinching *outwards* at 1x is clamped back to 1, so
+                    // the zoom never changes and the two fingers spreading apart
+                    // read as a perfectly good horizontal swipe — which is why
+                    // the page still turned under a pinch now and then. The
+                    // hook's click-swallowing does not cover this: `touchend`
+                    // is not the synthesised click it watches for.
                     if (!s || zoom !== 1) return; // when zoomed, let the user pan
                     const t = e.changedTouches[0];
                     const dx = t.clientX - s.x;
