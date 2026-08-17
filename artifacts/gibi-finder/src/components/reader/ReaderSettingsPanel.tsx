@@ -48,8 +48,14 @@ function Row({ label, children, soon, platform, hint }: {
   if (platform === "mobile" && !isMobile) return null;
   if (query && !label.toLowerCase().includes(query) && !(hint || "").toLowerCase().includes(query)) return null;
   return (
-    <div className={cn("flex items-start justify-between gap-3", soon && "opacity-40")}>
-      <div className="min-w-0">
+    // Wraps instead of overflowing: the control never shrinks (a segmented with
+    // four options is ~210px on its own), and neither does a label, so on a
+    // phone the two together ran past the drawer — which only scrolls
+    // vertically, so whatever spilled sideways was simply cut off and
+    // untappable. Given a floor of 10rem for the label, a control that no
+    // longer fits beside it drops to its own line rather than off the edge.
+    <div className={cn("flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5", soon && "opacity-40")}>
+      <div className="min-w-0 flex-1 basis-40">
         <span className="font-sans text-sm text-white/85 flex items-center gap-1.5">
           {label}
           {platform === "desktop" && <Monitor className="w-3 h-3 text-white/40" />}
@@ -74,7 +80,9 @@ function Segmented<T extends string | number>({
           disabled={disabled || opt.disabled}
           onClick={() => onChange(opt.value)}
           className={cn(
-            "px-2.5 py-1.5 font-sans font-bold text-2xs transition-colors disabled:opacity-30 disabled:cursor-not-allowed",
+            // Taller only where it is touched: 1.5 of padding gives a ~28px
+            // button, fine under a cursor and a coin toss under a thumb.
+            "px-2.5 py-2.5 sm:py-1.5 font-sans font-bold text-2xs transition-colors disabled:opacity-30 disabled:cursor-not-allowed",
             value === opt.value ? "bg-primary text-white" : "text-white/70 hover:bg-white/10",
           )}
         >
@@ -139,12 +147,31 @@ export function ReaderSettingsPanel({
     <PanelCtx.Provider value={{ query: query.trim().toLowerCase(), isDesktop: platform.isDesktop, isMobile: platform.isMobile }}>
     <div className="fixed inset-0 z-[130] flex justify-end" role="dialog" aria-label="Configurações do leitor">
       <div className="absolute inset-0 bg-black/60 animate-in fade-in duration-150" onClick={onClose} />
-      <div className="relative w-full max-w-sm h-full bg-zinc-950 border-l-2 border-white/10 shadow-2xl overflow-y-auto overscroll-contain animate-in slide-in-from-right duration-200">
+      <div
+        className="relative w-full max-w-sm h-full bg-zinc-950 border-l-2 border-white/10 shadow-2xl overflow-y-auto overscroll-contain animate-in slide-in-from-right duration-200"
+        // The drawer is edge-to-edge over a `viewport-fit=cover` page, so in
+        // landscape on a notched phone its right edge — the whole width of the
+        // panel — lands under the cutout without this.
+        style={{ paddingRight: "env(safe-area-inset-right)" }}
+      >
         {/* Header + search */}
-        <div className="sticky top-0 z-10 bg-zinc-950/95 backdrop-blur px-5 py-4 border-b border-white/10 space-y-3">
+        <div
+          className="sticky top-0 z-10 bg-zinc-950/95 backdrop-blur px-5 pb-4 border-b border-white/10 space-y-3"
+          // Same reason the reader's own top bar does it: the title and the
+          // close button sit at the very top of the screen, i.e. under the
+          // status bar / notch.
+          style={{ paddingTop: "max(1rem, env(safe-area-inset-top))" }}
+        >
           <div className="flex items-center justify-between">
             <h3 className="font-display text-lg text-white uppercase tracking-wide">Configurações</h3>
-            <button onClick={onClose} className="text-white/60 hover:text-white p-1" aria-label="Fechar">
+            {/* -mr-2 keeps it visually where it was while the tap target grows
+                to 44px — the icon alone gave about 28px, which is a miss as
+                often as a hit with a thumb. */}
+            <button
+              onClick={onClose}
+              className="text-white/60 hover:text-white -mr-2 w-11 h-11 flex items-center justify-center shrink-0"
+              aria-label="Fechar"
+            >
               <X className="w-5 h-5" strokeWidth={3} />
             </button>
           </div>
@@ -159,7 +186,8 @@ export function ReaderSettingsPanel({
           </div>
         </div>
 
-        <div className="px-5 pb-10">
+        {/* The last rows would otherwise end under the home indicator. */}
+        <div className="px-5" style={{ paddingBottom: "calc(2.5rem + env(safe-area-inset-bottom))" }}>
           {/* Reading profiles / presets */}
           {!query && (
             <div className="py-4 border-b border-white/10">
@@ -302,7 +330,7 @@ export function ReaderSettingsPanel({
               <div className="flex rounded-lg overflow-hidden border border-white/15">
                 {[0, 1, 2].map(i => (
                   <button key={i} onClick={() => cycleTap(i)}
-                    className="px-2.5 py-1.5 text-2xs font-bold text-white/80 hover:bg-white/10 border-r border-white/10 last:border-r-0">
+                    className="px-2.5 py-2.5 sm:py-1.5 text-2xs font-bold text-white/80 hover:bg-white/10 border-r border-white/10 last:border-r-0">
                     {tapLabel(settings.tapZones[i])}
                   </button>
                 ))}

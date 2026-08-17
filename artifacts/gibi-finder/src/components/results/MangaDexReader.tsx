@@ -1932,8 +1932,13 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                   {/* Close Button (in the header, next to the chapter selector) */}
                   <button
                     onClick={() => setShowReader(false)}
-                    className="bg-primary hover:bg-red-600 text-white p-1.5 sm:p-2 border-2 border-white rounded transition-colors"
+                    // The button a reader hits to get out has to be hittable:
+                    // `p-1.5` around a 16px icon is a ~32px target on a phone,
+                    // under the 44px a thumb needs, and it sits in the corner
+                    // where the notch and the palm crowd it further.
+                    className="bg-primary hover:bg-red-600 text-white w-11 h-11 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center border-2 border-white rounded transition-colors shrink-0"
                     title="Fechar Leitor"
+                    aria-label="Fechar leitor"
                   >
                     <X className="w-4 h-4 sm:w-5 sm:h-5" strokeWidth={3} />
                   </button>
