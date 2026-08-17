@@ -977,10 +977,16 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     ? Math.round(vMeasured.reduce((a, b) => a + b, 0) / vMeasured.length)
     : Math.round((scrollContainerRef.current?.clientWidth || 700) * 1.4);
 
-  // ---- Smart double-page (page mode, big screens, not zoomed) ----
+  // ---- Smart double-page (page mode, big screens) ----
   // A page counts as a "spread" (panorama / wide scan / cover) when it is wider
   // than tall; those are shown solo, and only genuine portrait pages get paired.
-  const doubleActive = readerMode === "page" && settings.doublePage !== "never" && isLargeScreen && zoom === 1;
+  //
+  // Pairing used to switch off as soon as `zoom > 1`, which meant the very first
+  // frame of a pinch tore the spread in half: the second page unmounted and the
+  // first was re-laid-out under the fingers, while the gesture went on being
+  // resolved against the geometry measured a moment earlier. The pair now scales
+  // as one piece (the transform sits on their shared wrapper), so it can stay.
+  const doubleActive = readerMode === "page" && settings.doublePage !== "never" && isLargeScreen;
   const isWidePage = useCallback(
     (idx: number) => (pageAspectRef.current[idx] ?? 0) > 1.15,
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1945,7 +1951,23 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
             className={cn("flex-1 overflow-auto overscroll-contain flex p-0 sm:p-4", zoom > 1 ? "justify-start" : "justify-center")}
             // Promote to its own GPU layer + reserve scrollbar space so passing a
             // page doesn't repaint-jitter (iOS) or shift horizontally (desktop).
-            style={{ transform: "translateZ(0)", scrollbarGutter: "stable" }}
+            style={{
+              transform: "translateZ(0)",
+              scrollbarGutter: "stable",
+              // Who owns a one-finger drag. Left at the default, the browser
+              // decides — and on any page taller than the viewport it decides
+              // "scroll", cancelling our pointer stream mid-drag, so a zoomed
+              // page could not be panned at all. Only pages that fit on screen
+              // whole (a cover) had nothing to scroll and were spared.
+              //
+              // Zoomed in page mode we take the whole gesture: the layout box
+              // does not grow with `transform`, so scrolling has nothing left to
+              // reach and panning is the only way around the page. The cascade
+              // keeps `pan-y`, where scrolling down the column *is* the reading
+              // gesture — the browser keeps the vertical, we get the horizontal.
+              // At 1x nothing is overridden: normal scrolling everywhere.
+              touchAction: zoom > 1 ? (readerMode === "page" ? "none" : "pan-y") : undefined,
+            }}
           >
             {getEmbedUrl(pages[currentPage]?.url) ? (
               <div className="w-full max-w-5xl h-full min-h-[70vh] border-4 border-white/20 bg-zinc-900 rounded-lg overflow-hidden">
@@ -2049,7 +2071,6 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               /* Page by Page Mode (single or smart double-page) */
               <div className={cn("w-full h-full flex flex-col justify-between items-center gap-4", doubleActive ? "max-w-6xl" : "max-w-xl")}>
                 <div
-                  ref={zoomContentRef}
                   className={cn(
                     "flex-1 flex w-full gap-0.5 relative group cursor-pointer",
                     zoom > 1 ? "justify-start" : "justify-center",
@@ -2119,24 +2140,38 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                       );
                     })()
                   ) : (
-                    (doubleActive && currentGroup
-                      ? (rtl ? [...currentGroup].reverse() : currentGroup)
-                      : [currentPage]
-                    ).map((pi) => (
-                      <SafeImage
-                        key={pi}
-                        src={pages[pi]?.url}
-                        alt={`Página ${pages[pi]?.pageNumber}`}
-                        className={cn(
-                          "border-4 border-white/20 select-none pointer-events-none",
-                          doubleActive && currentGroup && currentGroup.length === 2
-                            ? "max-h-[88vh] max-w-[50%] object-contain" // double: keep proportion, no stretch
-                            : fitClass(fitFor(pi)),
-                        )}
-                        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
-                        onLoad={(e) => recordAspect(pi, e.currentTarget as HTMLImageElement)}
-                      />
-                    ))
+                    // The zoom transform belongs to this wrapper, not to each
+                    // <img>: it is the element `useReaderZoom` measures, and the
+                    // focal point and pan bounds are only right if what it
+                    // measures is what actually moves. Transforming the images
+                    // instead left the hook reading the full-height flex box
+                    // around them — so on a page taller than the viewport the
+                    // pan stopped short of the bottom, and a double spread got
+                    // two independent transforms pulling its halves apart.
+                    // It also keeps a spread scaling as one piece.
+                    <div
+                      ref={zoomContentRef}
+                      className={cn("w-full flex gap-0.5", zoom > 1 ? "justify-start" : "justify-center")}
+                      style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+                    >
+                      {(doubleActive && currentGroup
+                        ? (rtl ? [...currentGroup].reverse() : currentGroup)
+                        : [currentPage]
+                      ).map((pi) => (
+                        <SafeImage
+                          key={pi}
+                          src={pages[pi]?.url}
+                          alt={`Página ${pages[pi]?.pageNumber}`}
+                          className={cn(
+                            "border-4 border-white/20 select-none pointer-events-none",
+                            doubleActive && currentGroup && currentGroup.length === 2
+                              ? "max-h-[88vh] max-w-[50%] object-contain" // double: keep proportion, no stretch
+                              : fitClass(fitFor(pi)),
+                          )}
+                          onLoad={(e) => recordAspect(pi, e.currentTarget as HTMLImageElement)}
+                        />
+                      ))}
+                    </div>
                   )}
 
                   {/* Left Edge Overlay Hint */}

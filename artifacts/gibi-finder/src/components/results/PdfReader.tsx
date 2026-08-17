@@ -430,6 +430,12 @@ export function PdfReader({
         // the layout box past the container. With a transform the box never
         // changes, so the page stays centred and `pan` reaches the overhang.
         className={`flex-1 overflow-auto overscroll-contain flex justify-center ${bodyPad}`}
+        // Once zoomed, the drag has to reach us instead of being taken as a
+        // scroll: `transform` never grows the layout box, so scrolling cannot
+        // reach the overhang and only the pan can. Page mode hands us the whole
+        // gesture; the cascade keeps the vertical, where scrolling down the
+        // column is the reading gesture, and gives us the horizontal.
+        style={{ touchAction: zoom > 1 ? (readerMode === "page" ? "none" : "pan-y") : undefined }}
         onClick={readerMode === "scroll" && zoom === 1 ? toggleChrome : undefined}
       >
         {loadError ? (

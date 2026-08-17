@@ -41,6 +41,11 @@ interface Geom {
   /** Unscaled content size, for the pan bounds. */
   w: number;
   h: number;
+  /** Viewport edges of the visible box the content is panned inside. */
+  cl: number;
+  cr: number;
+  ct: number;
+  cb: number;
 }
 
 /**
@@ -120,6 +125,8 @@ export function useReaderZoom(
     const w = selfScaled ? rect.width / z : rect.width;
     const h = selfScaled ? rect.height / z : rect.height;
 
+    const crect = (scrollRef.current || el).getBoundingClientRect();
+
     return {
       lx: rect.left - x - ox * (1 - z),
       ly: rect.top - y - oy * (1 - z),
@@ -127,17 +134,46 @@ export function useReaderZoom(
       oy,
       w,
       h,
+      cl: crect.left,
+      cr: crect.right,
+      ct: crect.top,
+      cb: crect.bottom,
     };
-  }, [target]);
+  }, [target, scrollRef]);
 
-  /** Once zoomed, the overhang is content*(z-1); half of it in each direction. */
+  /**
+   * Bound the pan by where the scaled content's own edges land relative to the
+   * container: every part of it has to be reachable, and no edge may be dragged
+   * inside the container leaving a gap. With the transform written as
+   * `translate(pan) scale(z)` about origin `O`, an edge sits at
+   *
+   *     top    = L + pan + O*(1 - z)          bottom = L + pan + O + (size - O)*z
+   *
+   * so `top <= container.top` and `bottom >= container.bottom` give the range
+   * directly. When the scaled content is smaller than the container the two
+   * bounds cross — nothing overflows, so it stays put at 0.
+   *
+   * This replaces `content*(z-1)/2`, which measured the content's overhang
+   * against *itself* at 1x and assumed a centred origin. Both assumptions break
+   * on a real page: a comic page is fitted to the width and is usually taller
+   * than the viewport, so the old bound stopped the pan well short of the
+   * bottom — zooming worked, dragging to the part you zoomed for did not. A
+   * cover that fits on screen whole was the one case it got right, which is why
+   * it alone behaved. The cascade and the PDF scale about `center top`, where a
+   * symmetric bound is wrong in the other direction: it offered travel upwards,
+   * where there is nothing, and cut it short downwards, where the page is.
+   */
   const clampPan = useCallback((p: { x: number; y: number }, z: number, g: Geom | null) => {
     if (!g) return p;
-    const maxX = Math.max(0, (g.w * (z - 1)) / 2);
-    const maxY = Math.max(0, (g.h * (z - 1)) / 2);
+    const axis = (v: number, l: number, o: number, size: number, near: number, far: number) => {
+      const upper = near - l - o * (1 - z);
+      const lower = far - l - o - (size - o) * z;
+      if (lower > upper) return 0;
+      return Math.min(upper, Math.max(lower, v));
+    };
     return {
-      x: Math.min(maxX, Math.max(-maxX, p.x)),
-      y: Math.min(maxY, Math.max(-maxY, p.y)),
+      x: axis(p.x, g.lx, g.ox, g.w, g.cl, g.cr),
+      y: axis(p.y, g.ly, g.oy, g.h, g.ct, g.cb),
     };
   }, []);
 
