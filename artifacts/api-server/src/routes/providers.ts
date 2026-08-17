@@ -420,7 +420,13 @@ function unique<T>(items: T[]): T[] {
 // Agent/connector; left as a known, documented gap given the admin-only
 // trust level here (see the fully pinned version in lib/urlSafety.ts +
 // imageProxy.ts/pdfProxy.ts for the public, higher-risk routes).
-async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 12000, redirects = 0): Promise<Response> {
+// `globalThis.Response`, not the bare name: this file imports Express's
+// `Response` for its handlers, and that shadows the fetch one at the type
+// level. The value returned here has always been a real fetch Response --
+// only the type was wrong -- but it made every `.ok` on a call site an
+// error, and those 23 errors were most of the noise burying anything real
+// in `pnpm typecheck`.
+async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 12000, redirects = 0): Promise<globalThis.Response> {
   if (redirects > 5) throw new Error("too_many_redirects");
 
   const parsed = new URL(url);
@@ -428,7 +434,7 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs =
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  let res: Response;
+  let res: globalThis.Response;
   try {
     res = await fetch(url, { ...init, redirect: "manual", signal: controller.signal });
   } finally {
