@@ -78,7 +78,13 @@ export function useSearchActions() {
 
   const searchByImage = async (files: File[]) => {
     try {
-      const base64Images = await Promise.all(files.map(fileToBase64));
+      // `.map(fileToBase64)` handed the callback its extra arguments: the
+      // index landed in `maxPx` and the array in `quality`. The first photo
+      // therefore got maxPx=0, which makes fileToBase64 scale it to a 0x0
+      // canvas -- the identification request went out carrying an empty
+      // image. The second got 1px, the third 2px. Wrapping the call keeps the
+      // function's own defaults (1280 / 0.78), which is what it always meant.
+      const base64Images = await Promise.all(files.map(file => fileToBase64(file)));
       identifyMutation.mutate(
         { data: { images: base64Images } },
         { onSuccess: handleSuccess, onError: handleError }
