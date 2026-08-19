@@ -300,7 +300,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
   // In-reader zoom (pinch) — extracted into a reusable hook (Phase 1),
   // now driven by the user's zoom settings.
-  const { zoom, setZoom, pan } = useReaderZoom(scrollContainerRef, {
+  const { zoom, setZoom, pan, isAnimating } = useReaderZoom(scrollContainerRef, {
     enabled: showReader,
     // When "remember zoom" is on, keep a stable key so zoom persists across pages.
     resetKey: settings.rememberZoom ? "keep" : `${selectedChapter?.id}-${readerMode}`,
@@ -2073,7 +2073,12 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                 // so it stays smooth continuously tracking a pinch instead of
                 // reflowing layout on every touchmove. pan comes from the
                 // same gesture (see useReaderZoom).
-                style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "center top" }}
+                style={{
+                  transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
+                  transformOrigin: "center top",
+                  transition: isAnimating ? "transform 260ms cubic-bezier(0.2, 0, 0.2, 1)" : "none",
+                  willChange: "transform",
+                }}
               >
                 {pages.map((p, idx) => {
                   // Virtualized: only pages in the active window mount their image.
@@ -2232,7 +2237,12 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                     <div
                       ref={zoomContentRef}
                       className="w-full flex gap-0.5 justify-center"
-                      style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "center center" }}
+                      style={{
+                        transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
+                        transformOrigin: "center center",
+                        transition: isAnimating ? "transform 260ms cubic-bezier(0.2, 0, 0.2, 1)" : "none",
+                        willChange: "transform",
+                      }}
                     >
                       {(doubleActive && currentGroup
                         ? (rtl ? [...currentGroup].reverse() : currentGroup)

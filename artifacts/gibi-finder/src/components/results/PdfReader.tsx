@@ -84,7 +84,7 @@ export function PdfReader({
   // bounds are derived from.
   const zoomContentRef = useRef<HTMLDivElement>(null);
 
-  const { zoom, setZoom, pan } = useReaderZoom(scrollRef, {
+  const { zoom, setZoom, pan, isAnimating } = useReaderZoom(scrollRef, {
     enabled: true,
     resetKey: settings.rememberZoom ? "keep" : `${readerMode}`,
     max: settings.maxZoom,
@@ -494,13 +494,11 @@ export function PdfReader({
         ) : (
           <div
             ref={zoomContentRef}
-            // Was CSS `zoom`, which reflows the whole page tree on every frame
-            // of a pinch and cannot hold a focal point. `transform` is
-            // compositor-only and keeps the placeholder heights measured by the
-            // cascade virtualiser valid, since layout no longer changes at all.
             style={{
-              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
               transformOrigin: "center top",
+              transition: isAnimating ? "transform 260ms cubic-bezier(0.2, 0, 0.2, 1)" : "none",
+              willChange: "transform",
             }}
           >
             <Document

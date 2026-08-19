@@ -97,8 +97,11 @@ export function useReaderZoom(
   { enabled, resetKey, max = 4, doubleTap = true, doubleTapScale = 2.5, contentRef }: UseReaderZoomOptions,
 ) {
   const [tr, setTr] = useState<Tr>({ z: 1, x: 0, y: 0 });
+  const [isAnimating, setIsAnimating] = useState(false);
   const trRef = useRef<Tr>({ z: 1, x: 0, y: 0 });
   const raf = useRef<number | null>(null);
+  const animTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flingRaf = useRef<number | null>(null);
 
   const clampZoom = useCallback((v: number) => Math.min(max, Math.max(1, v)), [max]);
 
@@ -107,7 +110,7 @@ export function useReaderZoom(
     [contentRef, scrollRef],
   );
 
-  /** Measure the content once — see the Performance note above. */
+  /** Measure the content once per gesture */
   const measure = useCallback((): Geom | null => {
     const el = target();
     if (!el) return null;
@@ -118,9 +121,6 @@ export function useReaderZoom(
     const ox = parseFloat(origin[0] ?? "0") || 0;
     const oy = parseFloat(origin[1] ?? "0") || 0;
 
-    // Some callers put the transform on this very element (its rect is already
-    // scaled), others point `contentRef` at a stable wrapper around the scaled
-    // child (rect is natural size). Back the scale out only in the first case.
     const selfScaled = el.style.transform.includes("scale(");
     const w = selfScaled ? rect.width / z : rect.width;
     const h = selfScaled ? rect.height / z : rect.height;
@@ -141,28 +141,7 @@ export function useReaderZoom(
     };
   }, [target, scrollRef]);
 
-  /**
-   * Bound the pan by where the scaled content's own edges land relative to the
-   * container: every part of it has to be reachable, and no edge may be dragged
-   * inside the container leaving a gap. With the transform written as
-   * `translate(pan) scale(z)` about origin `O`, an edge sits at
-   *
-   *     top    = L + pan + O*(1 - z)          bottom = L + pan + O + (size - O)*z
-   *
-   * so `top <= container.top` and `bottom >= container.bottom` give the range
-   * directly. When the scaled content is smaller than the container the two
-   * bounds cross — nothing overflows, so it stays put at 0.
-   *
-   * This replaces `content*(z-1)/2`, which measured the content's overhang
-   * against *itself* at 1x and assumed a centred origin. Both assumptions break
-   * on a real page: a comic page is fitted to the width and is usually taller
-   * than the viewport, so the old bound stopped the pan well short of the
-   * bottom — zooming worked, dragging to the part you zoomed for did not. A
-   * cover that fits on screen whole was the one case it got right, which is why
-   * it alone behaved. The cascade and the PDF scale about `center top`, where a
-   * symmetric bound is wrong in the other direction: it offered travel upwards,
-   * where there is nothing, and cut it short downwards, where the page is.
-   */
+  /** Clamped pan bounds so image edges cannot be dragged into empty screen space */
   const clampPan = useCallback((p: { x: number; y: number }, z: number, g: Geom | null) => {
     if (!g) return p;
     const axis = (v: number, l: number, o: number, size: number, near: number, far: number) => {
@@ -177,39 +156,59 @@ export function useReaderZoom(
     };
   }, []);
 
-  /** Update the ref synchronously; coalesce the React render to one per frame. */
-  const commit = useCallback((next: Tr) => {
+  const triggerAnimation = useCallback((duration = 260) => {
+    if (animTimer.current) clearTimeout(animTimer.current);
+    setIsAnimating(true);
+    animTimer.current = setTimeout(() => {
+      setIsAnimating(false);
+      animTimer.current = null;
+    }, duration);
+  }, []);
+
+  const commit = useCallback((next: Tr, animate = false) => {
+    if (flingRaf.current) {
+      cancelAnimationFrame(flingRaf.current);
+      flingRaf.current = null;
+    }
+    if (animate) {
+      triggerAnimation(260);
+    }
     trRef.current = next;
     if (raf.current !== null) return;
     raf.current = requestAnimationFrame(() => {
       raf.current = null;
       setTr(trRef.current);
     });
-  }, []);
+  }, [triggerAnimation]);
 
-  /** Scale about a viewport-space focal point, keeping that point anchored. */
-  const zoomAbout = useCallback((nextZ: number, focal: { x: number; y: number } | null, g: Geom | null) => {
-    const cur = trRef.current;
-    const z2 = clampZoom(nextZ);
-    if (!g || !focal) {
-      commit({ z: z2, ...clampPan({ x: cur.x, y: cur.y }, z2, g) });
-      return;
-    }
-    const px = g.ox + (focal.x - g.lx - cur.x - g.ox) / cur.z;
-    const py = g.oy + (focal.y - g.ly - cur.y - g.oy) / cur.z;
-    const x = focal.x - g.lx - g.ox - (px - g.ox) * z2;
-    const y = focal.y - g.ly - g.oy - (py - g.oy) * z2;
-    commit({ z: z2, ...clampPan({ x, y }, z2, g) });
-  }, [clampZoom, clampPan, commit]);
+  /** Scale about a viewport-space focal point, keeping that point anchored */
+  const zoomAbout = useCallback(
+    (nextZ: number, focal: { x: number; y: number } | null, g: Geom | null, animate = false) => {
+      const cur = trRef.current;
+      const z2 = clampZoom(nextZ);
+      if (z2 <= 1.001) {
+        commit({ z: 1, x: 0, y: 0 }, animate);
+        return;
+      }
+      if (!g || !focal) {
+        commit({ z: z2, ...clampPan({ x: cur.x, y: cur.y }, z2, g) }, animate);
+        return;
+      }
+      const px = g.ox + (focal.x - g.lx - cur.x - g.ox) / cur.z;
+      const py = g.oy + (focal.y - g.ly - cur.y - g.oy) / cur.z;
+      const x = focal.x - g.lx - g.ox - (px - g.ox) * z2;
+      const y = focal.y - g.ly - g.oy - (py - g.oy) * z2;
+      commit({ z: z2, ...clampPan({ x, y }, z2, g) }, animate);
+    },
+    [clampZoom, clampPan, commit],
+  );
 
-  // Public setters. Kept in the original `{ zoom, setZoom, pan, setPan }` shape
-  // so the readers' markup does not change.
+  // Public setters
   const setZoom = useCallback((v: number | ((z: number) => number)) => {
     const next = typeof v === "function" ? v(trRef.current.z) : v;
-    // Toolbar zooming has no finger to anchor to, so hold the content centre.
     const g = measure();
     const focal = g ? { x: g.lx + g.ox, y: g.ly + g.oy } : null;
-    zoomAbout(next, focal, g);
+    zoomAbout(next, focal, g, true);
   }, [measure, zoomAbout]);
 
   const setPan = useCallback((v: { x: number; y: number } | ((p: { x: number; y: number }) => { x: number; y: number })) => {
@@ -222,6 +221,7 @@ export function useReaderZoom(
   useEffect(() => {
     trRef.current = { z: 1, x: 0, y: 0 };
     setTr({ z: 1, x: 0, y: 0 });
+    setIsAnimating(false);
   }, [resetKey]);
 
   useEffect(() => {
@@ -240,11 +240,10 @@ export function useReaderZoom(
     let lastTapAt = 0;
     let lastTapPos = { x: 0, y: 0 };
     let moved = false;
-    // A pinch or a drag ends with the browser synthesising a `click` from the
-    // last finger lifted. Both readers turn the page from a click on their tap
-    // zones, so without this every pinch — in *or* out — also flipped the page.
     let gestured = false;
     let swallowClickUntil = 0;
+
+    let lastMoves: { x: number; y: number; t: number }[] = [];
 
     const two = () => {
       const [a, b] = [...pts.values()];
@@ -256,6 +255,11 @@ export function useReaderZoom(
     };
 
     const beginPinch = () => {
+      if (flingRaf.current) {
+        cancelAnimationFrame(flingRaf.current);
+        flingRaf.current = null;
+      }
+      setIsAnimating(false);
       const g = two();
       if (!g) return;
       geom = measure();
@@ -267,44 +271,60 @@ export function useReaderZoom(
     };
 
     const onDown = (e: PointerEvent) => {
-      // Secondary mouse buttons keep opening the context menu.
       if (e.pointerType === "mouse" && e.button !== 0) return;
+      if (flingRaf.current) {
+        cancelAnimationFrame(flingRaf.current);
+        flingRaf.current = null;
+      }
+      setIsAnimating(false);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       moved = false;
+      lastMoves = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
 
       if (pts.size === 1) gestured = false;
       if (pts.size === 2) {
         gestured = true;
         beginPinch();
-      } else if (pts.size === 1 && trRef.current.z > 1) {
+      } else if (pts.size === 1 && trRef.current.z > 1.01) {
         geom = measure();
         dragFrom = { x: e.clientX, y: e.clientY };
         dragPan = { x: trRef.current.x, y: trRef.current.y };
-        try { el.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
+        try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
       }
     };
 
     const onMove = (e: PointerEvent) => {
       const prev = pts.get(e.pointerId);
       if (!prev) return;
-      if (Math.hypot(e.clientX - prev.x, e.clientY - prev.y) > 6) moved = true;
+      if (Math.hypot(e.clientX - prev.x, e.clientY - prev.y) > 4) moved = true;
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      const now = performance.now();
+      lastMoves.push({ x: e.clientX, y: e.clientY, t: now });
+      if (lastMoves.length > 5) lastMoves.shift();
 
       if (pts.size >= 2 && startDist > 0) {
         const g = two();
         if (!g) return;
-        // Non-passive, so the browser's own pinch never competes with ours.
         e.preventDefault();
-        const z2 = clampZoom(startZoom * (g.dist / startDist));
+
+        // Rubber-band resistance when pinching past limits
+        const rawScale = startZoom * (g.dist / startDist);
+        let z2 = rawScale;
+        if (rawScale < 1) {
+          z2 = 1 - (1 - rawScale) * 0.4;
+        } else if (rawScale > max) {
+          z2 = max + (rawScale - max) * 0.3;
+        }
+
         if (!geom) { commit({ z: z2, x: startPan.x, y: startPan.y }); return; }
-        // Anchor on the ORIGINAL midpoint's content point, re-projected onto
-        // where the fingers are now: pinch and drag then compose in one gesture.
+
         const px = geom.ox + (startMid.x - geom.lx - startPan.x - geom.ox) / startZoom;
         const py = geom.oy + (startMid.y - geom.ly - startPan.y - geom.oy) / startZoom;
         const x = g.mid.x - geom.lx - geom.ox - (px - geom.ox) * z2;
         const y = g.mid.y - geom.ly - geom.oy - (py - geom.oy) * z2;
-        commit({ z: z2, ...clampPan({ x, y }, z2, geom) });
-      } else if (dragFrom && trRef.current.z > 1) {
+        commit({ z: z2, x, y });
+      } else if (dragFrom && trRef.current.z > 1.01) {
         e.preventDefault();
         if (moved) gestured = true;
         const x = dragPan.x + (e.clientX - dragFrom.x);
@@ -315,13 +335,32 @@ export function useReaderZoom(
 
     const onUp = (e: PointerEvent) => {
       const had = pts.delete(e.pointerId);
-      try { el.releasePointerCapture(e.pointerId); } catch { /* was not captured */ }
+      try { el.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
 
-      if (pts.size < 2) startDist = 0;
+      if (pts.size < 2 && startDist > 0) {
+        startDist = 0;
+        // Rubber-band snapback on pinch release
+        const curZ = trRef.current.z;
+        if (curZ < 1.05) {
+          commit({ z: 1, x: 0, y: 0 }, true);
+          gestured = true;
+          swallowClickUntil = Date.now() + 450;
+        } else if (curZ > max) {
+          const g = geom || measure();
+          zoomAbout(max, null, g, true);
+          gestured = true;
+          swallowClickUntil = Date.now() + 450;
+        } else {
+          const g = geom || measure();
+          const curPan = { x: trRef.current.x, y: trRef.current.y };
+          const clamped = clampPan(curPan, curZ, g);
+          if (clamped.x !== curPan.x || clamped.y !== curPan.y) {
+            commit({ z: curZ, ...clamped }, true);
+          }
+        }
+      }
 
-      if (pts.size === 1 && trRef.current.z > 1) {
-        // Lifting one finger out of a pinch leaves one touch down — continue as
-        // a drag from here so panning is not interrupted.
+      if (pts.size === 1 && trRef.current.z > 1.01) {
         const [only] = [...pts.values()];
         if (only) {
           geom = geom || measure();
@@ -329,41 +368,64 @@ export function useReaderZoom(
           dragPan = { x: trRef.current.x, y: trRef.current.y };
         }
       } else if (pts.size === 0) {
+        // Fling momentum on drag release
+        if (dragFrom && moved && trRef.current.z > 1.05 && lastMoves.length >= 2) {
+          const first = lastMoves[0];
+          const last = lastMoves[lastMoves.length - 1];
+          const dt = (last.t - first.t) / 1000;
+          if (dt > 0.01 && dt < 0.3) {
+            let vx = ((last.x - first.x) / dt) * 0.35;
+            let vy = ((last.y - first.y) / dt) * 0.35;
+            const speed = Math.hypot(vx, vy);
+            if (speed > 150) {
+              const g = geom || measure();
+              const flingStep = () => {
+                vx *= 0.92;
+                vy *= 0.92;
+                if (Math.hypot(vx, vy) < 15) {
+                  flingRaf.current = null;
+                  return;
+                }
+                const cur = trRef.current;
+                const nextPan = clampPan({ x: cur.x + vx * 0.016, y: cur.y + vy * 0.016 }, cur.z, g);
+                commit({ z: cur.z, ...nextPan });
+                flingRaf.current = requestAnimationFrame(flingStep);
+              };
+              flingRaf.current = requestAnimationFrame(flingStep);
+            }
+          }
+        }
+
         dragFrom = null;
 
-        // Double-tap: zoom in to doubleTapScale (at tap position) when at 1x,
-        // or reset to 1x when already zoomed in.
+        // Double-tap zoom toggle with Google Photos / FB smooth animation
         if (had && doubleTap && !moved) {
           const now = Date.now();
           const p = { x: e.clientX, y: e.clientY };
           const near = Math.hypot(p.x - lastTapPos.x, p.y - lastTapPos.y) < 45;
           if (now - lastTapAt < 320 && near) {
             const nextZ = trRef.current.z > 1.05 ? 1 : Math.min(max, doubleTapScale);
-            zoomAbout(nextZ, nextZ > 1 ? p : null, measure());
+            zoomAbout(nextZ, nextZ > 1 ? p : null, measure(), true);
             gestured = true;
             lastTapAt = 0;
+            swallowClickUntil = Date.now() + 450;
           } else {
             lastTapAt = now;
             lastTapPos = p;
           }
         }
 
-        // The synthesised click arrives right after this; give it a window.
         if (gestured) swallowClickUntil = Date.now() + 450;
         gestured = false;
       }
     };
 
-    // Trackpad pinch arrives as wheel+ctrlKey. A plain wheel is left alone so
-    // the cascade keeps scrolling normally.
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       zoomAbout(trRef.current.z * Math.exp(-e.deltaY * 0.0022), { x: e.clientX, y: e.clientY }, measure());
     };
 
-    // Swallow the click a gesture leaves behind, before it reaches the tap
-    // zones. Capture phase, so it never gets to the reader's own handler.
     const onClickCapture = (ev: MouseEvent) => {
       if (Date.now() >= swallowClickUntil) return;
       swallowClickUntil = 0;
@@ -371,7 +433,6 @@ export function useReaderZoom(
       ev.preventDefault();
     };
 
-    // Safari raises these for a pinch and would zoom the whole overlay.
     const stopGesture = (ev: Event) => ev.preventDefault();
 
     el.addEventListener("click", onClickCapture, true);
@@ -392,11 +453,12 @@ export function useReaderZoom(
       el.removeEventListener("gesturestart", stopGesture);
       el.removeEventListener("gesturechange", stopGesture);
       if (raf.current !== null) cancelAnimationFrame(raf.current);
+      if (animTimer.current !== null) clearTimeout(animTimer.current);
+      if (flingRaf.current !== null) cancelAnimationFrame(flingRaf.current);
     };
   }, [enabled, resetKey, scrollRef, max, doubleTap, doubleTapScale, measure, clampZoom, clampPan, commit, zoomAbout]);
 
-  // Stable identity so consumers can depend on `pan` without re-running effects.
   const pan = useMemo(() => ({ x: tr.x, y: tr.y }), [tr.x, tr.y]);
 
-  return { zoom: tr.z, setZoom, pan, setPan };
+  return { zoom: tr.z, setZoom, pan, setPan, isAnimating };
 }
