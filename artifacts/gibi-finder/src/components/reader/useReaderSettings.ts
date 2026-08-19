@@ -29,6 +29,7 @@ export interface ReaderSettings {
   // Zoom
   rememberZoom: boolean;
   maxZoom: number;
+  doubleTapZoom: boolean;
   // Interface
   autoHideMs: number; // 0 = never hide
   showPageNumber: boolean;
@@ -67,6 +68,7 @@ export const READER_SETTINGS_DEFAULTS: ReaderSettings = {
   splitMode: "manual",
   rememberZoom: false,
   maxZoom: 4,
+  doubleTapZoom: true,
   autoHideMs: 4000,
   showPageNumber: true,
   showProgress: true,
@@ -246,7 +248,7 @@ export const BUILTIN_PROFILES: ReaderProfile[] = [
 const PROFILES_KEY = "gibi-finder:reader-profiles";
 const PROFILE_FIELDS: (keyof ReaderSettings)[] = [
   "readingMode", "direction", "fitMode", "doublePage", "splitMode", "theme",
-  "autoHideMs", "maxZoom", "rememberZoom", "preloadAhead",
+  "autoHideMs", "maxZoom", "rememberZoom", "doubleTapZoom", "preloadAhead",
   "immersion", "customBg", "customUi", "barOpacity", "shadow",
 ];
 

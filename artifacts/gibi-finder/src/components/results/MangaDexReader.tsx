@@ -305,6 +305,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     // When "remember zoom" is on, keep a stable key so zoom persists across pages.
     resetKey: settings.rememberZoom ? "keep" : `${selectedChapter?.id}-${readerMode}`,
     max: settings.maxZoom,
+    doubleTap: settings.doubleTapZoom,
     contentRef: zoomContentRef,
   });
 
@@ -1167,6 +1168,35 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readerMode, currentPage, prevChapter, spreads, splitSide, splitSet, settings.splitMode, settings.haptics]);
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleTapZone = useCallback((action: string) => {
+    if (tapTimerRef.current) {
+      clearTimeout(tapTimerRef.current);
+      tapTimerRef.current = null;
+    }
+
+    if (zoom > 1.01) {
+      toggleChrome();
+      return;
+    }
+
+    if (action === "menu") {
+      toggleChrome();
+      return;
+    }
+
+    if (settings.doubleTapZoom) {
+      tapTimerRef.current = setTimeout(() => {
+        tapTimerRef.current = null;
+        if (action === "prev") goToPrevPage();
+        else if (action === "next") goToNextPage();
+      }, 220);
+    } else {
+      if (action === "prev") goToPrevPage();
+      else if (action === "next") goToNextPage();
+    }
+  }, [zoom, settings.doubleTapZoom, toggleChrome, goToPrevPage, goToNextPage]);
 
   const [chapterDownload, setChapterDownload] = useState<{ done: number; total: number } | null>(null);
   // Fetches every page of the current chapter through the image proxy
@@ -2113,29 +2143,20 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               <div className={cn("w-full h-full flex flex-col justify-between items-center gap-4", doubleActive ? "max-w-6xl" : "max-w-xl")}>
                 <div
                   className={cn(
-                    "flex-1 flex w-full gap-0.5 relative group cursor-pointer",
-                    zoom > 1 ? "justify-start" : "justify-center",
-                    // Width-fit tall pages align to the top so they scroll cleanly;
-                    // height/whole fits are centred in the viewport — unless zoomed,
-                    // in which case centering would clip the overflowing side and
-                    // make part of the page unreachable by scroll.
-                    zoom > 1 ? "items-start" : (!doubleActive && fitFor(currentPage) === "width" ? "items-start" : "items-center"),
+                    "flex-1 flex w-full gap-0.5 relative group cursor-pointer justify-center",
+                    !doubleActive && fitFor(currentPage) === "width" ? "items-start" : "items-center",
                   )}
                   onClick={(e) => {
-                    // While magnified a tap is far more likely to be "let me see
-                    // the controls" than "next page" — and turning the page would
-                    // throw away the spot the reader just zoomed into.
-                    if (zoom > 1.01) { toggleChrome(); return; }
-                    // Configurable 3 tap zones (default flips prev/next in RTL).
                     const rect = e.currentTarget.getBoundingClientRect();
                     const x = e.clientX - rect.left;
                     const zone = x < rect.width * 0.33 ? 0 : x > rect.width * 0.67 ? 2 : 1;
-                    const action = tapZones[zone];
-                    if (action === "prev") goToPrevPage();
-                    else if (action === "next") goToNextPage();
-                    else toggleChrome();
+                    handleTapZone(tapZones[zone]);
                   }}
                   onTouchStart={(e) => {
+                    if (tapTimerRef.current) {
+                      clearTimeout(tapTimerRef.current);
+                      tapTimerRef.current = null;
+                    }
                     // A second finger means this is a pinch, and a pinch must
                     // never be read as a swipe afterwards — see onTouchEnd.
                     if (e.touches.length > 1) {
@@ -2210,8 +2231,8 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                     // It also keeps a spread scaling as one piece.
                     <div
                       ref={zoomContentRef}
-                      className={cn("w-full flex gap-0.5", zoom > 1 ? "justify-start" : "justify-center")}
-                      style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+                      className="w-full flex gap-0.5 justify-center"
+                      style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "center center" }}
                     >
                       {(doubleActive && currentGroup
                         ? (rtl ? [...currentGroup].reverse() : currentGroup)

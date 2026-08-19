@@ -331,16 +331,15 @@ export function useReaderZoom(
       } else if (pts.size === 0) {
         dragFrom = null;
 
-        // Double-tap only while already magnified, as a quick way back to fit.
-        // Enabling it at 1x too would fight the tap zones: the *first* tap of
-        // the pair lands as an ordinary click and turns the page before the
-        // second one arrives. Zooming in stays on pinch and the toolbar.
-        if (had && doubleTap && !moved && trRef.current.z > 1.01) {
+        // Double-tap: zoom in to doubleTapScale (at tap position) when at 1x,
+        // or reset to 1x when already zoomed in.
+        if (had && doubleTap && !moved) {
           const now = Date.now();
           const p = { x: e.clientX, y: e.clientY };
-          const near = Math.hypot(p.x - lastTapPos.x, p.y - lastTapPos.y) < 40;
-          if (now - lastTapAt < 300 && near) {
-            zoomAbout(1, p, measure());
+          const near = Math.hypot(p.x - lastTapPos.x, p.y - lastTapPos.y) < 45;
+          if (now - lastTapAt < 320 && near) {
+            const nextZ = trRef.current.z > 1.05 ? 1 : Math.min(max, doubleTapScale);
+            zoomAbout(nextZ, nextZ > 1 ? p : null, measure());
             gestured = true;
             lastTapAt = 0;
           } else {
@@ -350,7 +349,7 @@ export function useReaderZoom(
         }
 
         // The synthesised click arrives right after this; give it a window.
-        if (gestured) swallowClickUntil = Date.now() + 500;
+        if (gestured) swallowClickUntil = Date.now() + 450;
         gestured = false;
       }
     };
