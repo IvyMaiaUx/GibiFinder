@@ -3,7 +3,7 @@ import { useEffect } from "react";
 const SITE_NAME = "Gibi Finder";
 const SITE_ORIGIN = "https://gibi-finder.vercel.app";
 const DEFAULT_TITLE = "Gibi Finder";
-const DEFAULT_DESCRIPTION = "O buscador e leitor definitivo de quadrinhos e mangás. Encontre, salve em sua estante e leia de forma limpa e sem anúncios.";
+const DEFAULT_DESCRIPTION = "O buscador e leitor definitivo de quadrinhos e mangás. Encontre, salve em sua estante e leia de forma limpa e organizada.";
 
 export interface DocumentMetaOptions {
   /** Page title, WITHOUT the "| Gibi Finder" suffix — it's appended automatically. */
