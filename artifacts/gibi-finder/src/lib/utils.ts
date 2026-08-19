@@ -74,7 +74,7 @@ export function buildStoreZip(files: { name: string; data: Uint8Array }[]): Blob
     local.setUint32(22, size, true);
     local.setUint16(26, nameBytes.length, true);
     local.setUint16(28, 0, true);
-    localParts.push(local.buffer, nameBytes, file.data);
+    localParts.push(local.buffer, nameBytes as any, file.data as any);
 
     const central = new DataView(new ArrayBuffer(46));
     central.setUint32(0, 0x02014b50, true);
@@ -198,7 +198,7 @@ export function buildImagesPdf(pages: { width: number; height: number; bytes: Ui
 
   const write = (data: string | Uint8Array) => {
     const bytes = typeof data === "string" ? encoder.encode(data) : data;
-    parts.push(bytes);
+    parts.push(bytes as any);
     pos += bytes.length;
   };
   const beginObj = (num: number) => {

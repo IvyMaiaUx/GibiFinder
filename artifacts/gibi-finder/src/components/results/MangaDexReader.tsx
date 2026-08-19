@@ -1035,10 +1035,32 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // Keep the current page aligned to the start of its spread so the scrubber and
   // navigation stay consistent when double-page turns on or regroups.
   useEffect(() => {
-    if (doubleActive && currentGroup && currentPage !== currentGroup[0]) {
+    if (doubleActive && currentGroup && currentGroup.length > 1 && currentPage === currentGroup[1]) {
       setCurrentPage(currentGroup[0]);
     }
   }, [doubleActive, currentGroup, currentPage]);
+
+  // Preserve scroll position and prevent virtualization collapse when zoom changes in cascade mode
+  const prevZoomRef = useRef(zoom);
+  useEffect(() => {
+    if (readerMode !== "scroll" || !showReader) {
+      prevZoomRef.current = zoom;
+      return;
+    }
+    const oldZoom = prevZoomRef.current;
+    prevZoomRef.current = zoom;
+    if (oldZoom !== zoom && oldZoom > 0) {
+      const container = scrollContainerRef.current;
+      if (container) {
+        resumingRef.current = true;
+        const targetPageEl = pageRefs.current[currentPage];
+        if (targetPageEl) {
+          targetPageEl.scrollIntoView({ behavior: "auto", block: "start" });
+        }
+        window.setTimeout(() => { resumingRef.current = false; }, 350);
+      }
+    }
+  }, [zoom, readerMode, showReader, currentPage]);
 
   // ---- Split-spread (manual) ----
   // Renders two virtual pages (A/B) from the SAME <img> via a CSS crop — no new

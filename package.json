@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "license": "MIT",
   "engines": {
-    "node": "22.x"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "build": "pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/gibi-finder run build",

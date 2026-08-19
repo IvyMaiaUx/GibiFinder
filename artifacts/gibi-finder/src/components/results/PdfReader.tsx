@@ -270,6 +270,28 @@ export function PdfReader({
     return () => { container.removeEventListener("scroll", onScroll); if (raf) cancelAnimationFrame(raf); };
   }, [readerMode, numPages]);
 
+  // Preserve scroll position when zoom changes in cascade mode
+  const prevZoomRef = useRef(zoom);
+  useEffect(() => {
+    if (readerMode !== "scroll" || numPages === 0) {
+      prevZoomRef.current = zoom;
+      return;
+    }
+    const oldZoom = prevZoomRef.current;
+    prevZoomRef.current = zoom;
+    if (oldZoom !== zoom && oldZoom > 0) {
+      const container = scrollRef.current;
+      if (container) {
+        resumingRef.current = true;
+        const targetPageEl = pageRefs.current[currentPage];
+        if (targetPageEl) {
+          targetPageEl.scrollIntoView({ behavior: "auto", block: "start" });
+        }
+        window.setTimeout(() => { resumingRef.current = false; }, 350);
+      }
+    }
+  }, [zoom, readerMode, numPages, currentPage]);
+
   // Resume: once pages are laid out, scroll to the saved page, then release.
   useEffect(() => {
     if (numPages === 0 || !resumingRef.current || didResumeRef.current) return;
