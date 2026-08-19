@@ -136,7 +136,7 @@ export function CatalogRow({ title, children, onSeeAll }: { title: string; child
     if (el) el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: "smooth" });
   };
   return (
-    <section className="space-y-2">
+    <section className="space-y-2 [content-visibility:auto] [contain-intrinsic-size:260px]">
       <div className="flex items-center justify-between gap-2">
         <h3 className="font-display text-xl sm:text-2xl text-black uppercase truncate">{title}</h3>
         <div className="flex items-center gap-1 shrink-0">
