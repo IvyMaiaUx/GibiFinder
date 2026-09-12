@@ -369,12 +369,32 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
       if (gestureActiveRef.current) return;
       setIsFullscreen(prev => (prev ? false : prev));
     };
+    // Mouse only, deliberately. A cursor moving across the page is someone
+    // reaching for a control; a finger landing on it is someone *reading* —
+    // turning a page, or starting to scroll the cascade. Bound to `touchstart`
+    // as well, every one of those taps pulled the whole header back over the
+    // page a second after it had finally gone away. On touch the way back is a
+    // tap that means it: the centre zone in page mode, a tap on the column in
+    // the cascade (both call toggleChrome), or the corner buttons, which never
+    // leave. Nothing here re-arms the hide timer from a reading gesture either,
+    // so the chrome still goes away on its own while you read.
     window.addEventListener("mousemove", poke, { passive: true });
-    window.addEventListener("touchstart", poke, { passive: true });
-    return () => {
-      window.removeEventListener("mousemove", poke);
-      window.removeEventListener("touchstart", poke);
-    };
+    return () => window.removeEventListener("mousemove", poke);
+  }, [showReader]);
+
+  // The reader opens windowed: the chapter header, and the close button in it,
+  // have to be on screen when you arrive. `isFullscreen` is component state
+  // that outlives closing the reader, so a session that ended with the chrome
+  // auto-hidden used to reopen straight into hidden chrome. Nobody noticed
+  // while any touch anywhere pulled the header back; the moment reading stopped
+  // doing that, opening a chapter landed you in a bare page with three small
+  // buttons in a corner. Resetting the idle clock too, so the freshly shown
+  // header gets its full `autoHideMs` rather than inheriting a stale timestamp
+  // and blinking away immediately.
+  useEffect(() => {
+    if (!showReader) return;
+    setIsFullscreen(false);
+    lastActivityRef.current = Date.now();
   }, [showReader]);
 
   useEffect(() => {
@@ -2288,6 +2308,14 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               // it stays available everywhere outside the reader overlay.
               touchAction: readerMode === "page" ? "none" : "pan-y",
             }}
+            // The cascade's way back to the chrome. Page mode has the centre tap
+            // zone for this; the cascade had nothing of its own and leaned on the
+            // global `touchstart` reveal, which is exactly what made the header
+            // reappear on every scroll. A `click` is the right signal: the
+            // browser does not synthesise one after a finger that scrolled, so
+            // reading does not trigger it and a deliberate tap does. Only at 1x
+            // — magnified, the same tap belongs to the image underneath.
+            onClick={usesViewport || zoom > 1 ? undefined : toggleChrome}
           >
             {getEmbedUrl(pages[currentPage]?.url) ? (
               <div className="w-full max-w-5xl h-full min-h-[70vh] border-4 border-white/20 bg-zinc-900 rounded-lg overflow-hidden">
