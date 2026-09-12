@@ -1,5 +1,5 @@
 import { useState, createContext, useContext } from "react";
-import { X, RotateCcw, Sparkles, Search, Save, Trash2, Monitor, Smartphone } from "lucide-react";
+import { X, RotateCcw, Sparkles, Search, Save, Trash2, Monitor, Smartphone, Download, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   useReaderSettings, BUILTIN_PROFILES, getCustomProfiles,
@@ -25,6 +25,13 @@ interface ReaderSettingsPanelProps {
   /** Called (from the click gesture) when the user selects the Immersion level,
    *  so the reader can request native fullscreen while still in a user gesture. */
   onEnterImmersion?: () => void;
+  /** Chapter download. The bottom bar only has room for these from `sm` up, so
+   *  on a phone this panel is the only way in — it is not a duplicate there. */
+  onDownloadChapter?: (format: "cbz" | "pdf") => void;
+  /** `{ done, total }` while a download is running, `null` otherwise. */
+  downloadProgress?: { done: number; total: number } | null;
+  /** No pages loaded yet (or a download-only/embed chapter): nothing to build. */
+  downloadDisabled?: boolean;
 }
 
 /* ---- tiny presentational controls (reader-dark themed) ---- */
@@ -112,6 +119,7 @@ function Toggle({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean
 
 export function ReaderSettingsPanel({
   open, onClose, workId, workTitle, readingMode, onSetReadingMode, onEnterImmersion,
+  onDownloadChapter, downloadProgress, downloadDisabled,
 }: ReaderSettingsPanelProps) {
   const { settings, update, clearWork, hasWorkOverride } = useReaderSettings(workId);
   const platform = usePlatform();
@@ -238,6 +246,37 @@ export function ReaderSettingsPanel({
             </div>
           )}
 
+          {/* Chapter download. An action, not a preference — but the reader has
+              exactly one drawer, and on a phone the bottom bar has no room for
+              the CBZ/PDF pair (the scrubber alone takes a full row there), so
+              this is where the two live below `sm`. */}
+          {onDownloadChapter && (
+            <Section title="Capítulo">
+              <Row
+                label="Baixar capítulo"
+                hint={downloadProgress
+                  ? `Baixando ${downloadProgress.done}/${downloadProgress.total} páginas…`
+                  : "Salva as páginas deste capítulo no aparelho."}
+              >
+                <div className="flex items-center gap-2">
+                  {(["cbz", "pdf"] as const).map(format => (
+                    <button
+                      key={format}
+                      onClick={() => onDownloadChapter(format)}
+                      disabled={!!downloadProgress || downloadDisabled}
+                      className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:hover:bg-white/10 border border-white/20 rounded px-2.5 min-h-11 sm:min-h-0 sm:py-1.5 font-sans font-bold text-2xs uppercase text-white/85"
+                    >
+                      {downloadProgress
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <Download className="w-3.5 h-3.5" />}
+                      {format}
+                    </button>
+                  ))}
+                </div>
+              </Row>
+            </Section>
+          )}
+
           <Section title="Leitura">
             <Row label="Modo">
               <Segmented<ReadingMode>
@@ -301,7 +340,7 @@ export function ReaderSettingsPanel({
               <Segmented
                 value={settings.maxZoom}
                 onChange={(v) => set("maxZoom", v)}
-                options={[{ label: "2x", value: 2 }, { label: "3x", value: 3 }, { label: "4x", value: 4 }, { label: "5x", value: 5 }]}
+                options={[{ label: "2x", value: 2 }, { label: "4x", value: 4 }, { label: "6x", value: 6 }, { label: "8x", value: 8 }]}
               />
             </Row>
           </Section>

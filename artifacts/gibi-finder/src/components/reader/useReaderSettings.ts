@@ -63,7 +63,12 @@ export interface ReaderSettings {
 export const READER_SETTINGS_DEFAULTS: ReaderSettings = {
   readingMode: "scroll",
   direction: "ltr",
-  fitMode: "width",
+  // Fit Page by default: a western comic page is composed to be read whole, and
+  // the viewport now makes closing in on a panel a wheel notch or a double
+  // click away. (Only affects a reader with no saved preferences — an existing
+  // one keeps whatever is already persisted.) "auto" still drops to Fit Width
+  // on phones, where a whole page is too small to read.
+  fitMode: "whole",
   doublePage: "auto",
   splitMode: "manual",
   rememberZoom: false,
@@ -140,11 +145,24 @@ function readJson<T>(key: string, fallback: T): T {
   }
 }
 
-// First-run-only nudge: touch devices default straight to the "cinema" immersion
-// level (chrome hidden, tap to reveal) instead of "clean" (chrome visible, then
-// auto-hides after autoHideMs). Only applies before any preference is persisted —
-// the instant a user changes any reader setting, that saved blob takes over and
-// this has no further effect, mobile or not.
+// First-run-only nudge for touch devices.
+//
+// This used to start phones at the "cinema" immersion level — chrome hidden,
+// tap to reveal — for the extra screen. The cost turned out to be the way out
+// of the reader: at "cinema" `chromeVisible` is hard `false`, the header never
+// renders, and the header is where the close button lives. What was left was a
+// translucent 44px circle in a corner, which a reader on an iPhone reported
+// three times running as simply not being there. A reading app that is hard to
+// close is not a more immersive reading app.
+//
+// So phones now start at "clean", like everything else: the header is on screen
+// when the reader opens, auto-hides after `autoHideMs` like a video player's
+// controls, and any tap brings it back. Immersion is still one tap away in the
+// settings panel for whoever actually wants it — it is just no longer the state
+// someone lands in without having asked for it.
+//
+// Kept as an explicit value rather than an empty object so the intent survives:
+// this is a decision about phones, not an absence of one.
 //
 // Gated on the GLOBAL_KEY entirely missing, not on spread precedence (i.e. not
 // "apply this, then let a saved blob overwrite immersion if it has one") — a
@@ -156,7 +174,7 @@ function firstRunDefaults(): Partial<ReaderSettings> {
   const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
   const ua = navigator.userAgent || "";
   const isMobile = coarse || /iP(hone|ad|od)|Android/.test(ua);
-  return isMobile ? { immersion: "cinema" } : {};
+  return isMobile ? { immersion: "clean" } : {};
 }
 
 // readJson() already wraps the storage read in try/catch (blocked/denied Web

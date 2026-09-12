@@ -25,6 +25,9 @@ import {
 import { cn, proxyPdfUrl, proxyCoverUrl, buildStoreZip, toPdfPageImage, buildImagesPdf, mapWithConcurrency } from "@/lib/utils";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { useReaderZoom } from "@/components/reader/useReaderZoom";
+import { MediaViewport, type MediaViewportHandle, type ViewportFit, type ViewportItem } from "@/components/reader/MediaViewport";
+import { NavigationZones } from "@/components/reader/NavigationZones";
+import { clearPageImages, loadPageImage, preloadPages } from "@/components/reader/imageCache";
 import { useReaderSettings, readerThemeVars, type TapAction } from "@/components/reader/useReaderSettings";
 import { ReaderSettingsPanel } from "@/components/reader/ReaderSettingsPanel";
 import { ReaderDiagnostics, type DiagInfo } from "@/components/reader/ReaderDiagnostics";
@@ -102,6 +105,16 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // Fullscreen States & Handlers
   const readerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // Page mode's dedicated image surface (OpenSeadragon). The host element is
+  // also what NavigationZones tracks the pointer over, and the label node is
+  // written to directly by the engine so the live zoom readout costs no render.
+  const viewportRef = useRef<MediaViewportHandle>(null);
+  const viewportHostRef = useRef<HTMLDivElement>(null);
+  const zoomLabelRef = useRef<HTMLSpanElement>(null);
+  // True while a pointer is down inside the viewport — the auto-hiding chrome
+  // must not react to the mouse movement a pan or a pinch produces.
+  const gestureActiveRef = useRef(false);
+  const lastActivityRef = useRef(Date.now());
   // Whichever reader mode is actually rendering the zoomed content (the
   // scroll-mode column or the page-mode image row) — tighter bounds for
   // useReaderZoom's pan clamping than scrollContainerRef, which is the
@@ -130,11 +143,6 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // Preloader: pages fetched ahead for the next chapter, keyed by chapter id, so
   // advancing is instant and no loading spinner shows.
   const prefetchedPagesRef = useRef<Record<string, Page[]>>({});
-  // Swipe tracking for page mode.
-  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
-  // Stays true from the moment a gesture goes multi-touch until every finger is
-  // up, so a pinch can never be mistaken for a page-turning swipe.
-  const pinchingRef = useRef(false);
   // Bounds automatic provider fallback (see tryFallbackSource) so a work whose
   // every source is unreadable doesn't chain through dozens of requests.
   const fallbackAttemptsRef = useRef(0);
@@ -164,6 +172,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
   // which half is currently shown (0 = first in reading order, 1 = second).
   const [splitSet, setSplitSet] = useState<Set<number>>(new Set());
   const [splitSide, setSplitSide] = useState<0 | 1>(0);
+  // Whether page mode's viewport is sitting at its fit level. It flips at most
+  // once per gesture (never per frame), which is why it can be React state:
+  // navigation zones only exist while it is true.
+  const [atFit, setAtFit] = useState(true);
 
   // Reader preferences (global + per-work overrides) — Phase 4, Priority 1.
   const workId = selectedResult?.id || mangaTitle || undefined;
@@ -298,10 +310,14 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // In-reader zoom (pinch) — extracted into a reusable hook (Phase 1),
-  // now driven by the user's zoom settings.
+  // In-reader zoom (pinch) for CASCADE mode only, driven by the user's zoom
+  // settings. Page mode is driven by <MediaViewport>, which runs its own engine
+  // on its own canvas — leaving this hook bound there too would put two gesture
+  // handlers on the same pointer stream, one of them transforming an element
+  // the other does not own. (PdfReader still uses this hook for its own scroll
+  // column.) `isAnimating` drives the eased transition on the cascade column.
   const { zoom, setZoom, pan, isAnimating } = useReaderZoom(scrollContainerRef, {
-    enabled: showReader,
+    enabled: showReader && readerMode === "scroll",
     // When "remember zoom" is on, keep a stable key so zoom persists across pages.
     resetKey: settings.rememberZoom ? "keep" : `${selectedChapter?.id}-${readerMode}`,
     max: settings.maxZoom,
@@ -337,13 +353,40 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     };
   }, [showReader, settings.keepAwake]);
 
-  // Auto-hide the interface: whenever the chrome (header/bottom bar) is showing,
-  // fade it out after a few seconds so the reading area is unobstructed. A tap
-  // brings it back. `isFullscreen === true` means chrome hidden (immersive).
+  // Auto-hide the interface, the way a media player does: the chrome fades out
+  // after a quiet stretch and comes back the moment the reader moves the mouse
+  // or taps. `isFullscreen === true` means chrome hidden (immersive).
+  //
+  // Idle time is tracked in a ref and the timer re-arms itself instead of being
+  // restarted from React state: movement has to postpone the hide *without*
+  // re-rendering a component this size several times a second.
+  useEffect(() => {
+    if (!showReader) return;
+    const poke = () => {
+      lastActivityRef.current = Date.now();
+      // Never during a pan/pinch — the movement a gesture produces is not the
+      // reader asking for the controls, and reacting to it makes them blink.
+      if (gestureActiveRef.current) return;
+      setIsFullscreen(prev => (prev ? false : prev));
+    };
+    window.addEventListener("mousemove", poke, { passive: true });
+    window.addEventListener("touchstart", poke, { passive: true });
+    return () => {
+      window.removeEventListener("mousemove", poke);
+      window.removeEventListener("touchstart", poke);
+    };
+  }, [showReader]);
+
   useEffect(() => {
     if (!showReader || isFullscreen || !settings.autoHideMs || immersion !== "clean") return;
-    const t = setTimeout(() => setIsFullscreen(true), settings.autoHideMs);
-    return () => clearTimeout(t);
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      const idle = Date.now() - lastActivityRef.current;
+      if (idle >= settings.autoHideMs) setIsFullscreen(true);
+      else timer = setTimeout(tick, settings.autoHideMs - idle);
+    };
+    timer = setTimeout(tick, settings.autoHideMs);
+    return () => clearTimeout(timer);
   }, [showReader, isFullscreen, settings.autoHideMs, immersion]);
 
   const toggleChrome = useCallback(() => setIsFullscreen(prev => !prev), []);
@@ -911,10 +954,15 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
         const el = pageRefs.current[i];
         if (!el) continue;
         const rect = el.getBoundingClientRect();
-        // Ignore pages that haven't laid out yet (images still loading, height ~0),
-        // otherwise they all stack at the top and the last one gets picked —
-        // which would falsely mark the chapter as fully read on open.
-        if (rect.height < 40) continue;
+        // Stop at the first page that has not laid out yet (image still
+        // loading, height ~0) rather than skipping past it. A page's position
+        // only means anything once everything above it has a real height, and
+        // the window's images finish in whatever order the network returns
+        // them: with page 8 loaded and pages 1-7 still empty 8px boxes, page 8
+        // sits near the top of the column and "the last page above the marker"
+        // is page 8 — which is how opening a chapter nobody had scrolled could
+        // land on page 8, and mark seven pages read on the way.
+        if (rect.height < 40) break;
         if (rect.top <= marker) bestIdx = i;
         else break;
       }
@@ -1014,24 +1062,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
 
   // Tap zones (page mode): [left, centre, right] → action. The default layout
   // flips prev/next in RTL; a customized layout is used literally.
-  const isDefaultZones = settings.tapZones[0] === "prev" && settings.tapZones[1] === "menu" && settings.tapZones[2] === "next";
-  const tapZones: readonly TapAction[] = (isDefaultZones && rtl) ? ["next", "menu", "prev"] : settings.tapZones;
-
-  // ---- Auto-fit (page mode) ----
-  // Phones always fit width (no horizontal bars); larger screens respect the
-  // setting. "auto" fits whole for landscape/spreads, width for portrait/tall.
-  const fitFor = (idx: number): "width" | "height" | "whole" => {
-    if (!isLargeScreen) return "width";
-    if (settings.fitMode !== "auto") return settings.fitMode;
-    const a = pageAspectRef.current[idx] ?? 0.68;
-    return a > 1.15 ? "whole" : "width";
-  };
-  const fitClass = (fit: "width" | "height" | "whole") =>
-    fit === "width"
-      ? "w-full h-auto"
-      : fit === "height"
-        ? "h-[90dvh] w-auto max-w-full object-contain"
-        : "max-h-[90dvh] max-w-full object-contain"; // whole page
+  const tapZones: readonly TapAction[] = useMemo(() => {
+    const isDefaultZones = settings.tapZones[0] === "prev" && settings.tapZones[1] === "menu" && settings.tapZones[2] === "next";
+    return (isDefaultZones && rtl) ? (["next", "menu", "prev"] as const) : settings.tapZones;
+  }, [settings.tapZones, rtl]);
 
   // Keep the current page aligned to the start of its spread so the scrubber and
   // navigation stay consistent when double-page turns on or regroups.
@@ -1041,7 +1075,19 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     }
   }, [doubleActive, currentGroup, currentPage]);
 
-  // Preserve scroll position and prevent virtualization collapse when zoom changes in cascade mode
+  // Re-anchor the cascade after a zoom change, so the virtualization can't
+  // collapse the column and drop the reader somewhere else.
+  //
+  // Two things were wrong with doing it on every `zoom` tick. A pinch commits a
+  // new zoom once per animation frame, so this ran ~60x a second, each pass
+  // yanking the scroll to a page top and holding `resumingRef` (which mutes the
+  // page tracker) for another 350ms — you could not pinch and stay put. And it
+  // anchored on `currentPage`, which the tracker had just been muted from
+  // updating: near the start of a chapter that is still 0, and page 0 is the
+  // cover. That is the "pinched and got thrown back to the cover" report.
+  //
+  // Now it waits for the zoom to settle and anchors on the page actually at the
+  // top of the viewport, measured at that moment rather than taken on trust.
   const prevZoomRef = useRef(zoom);
   useEffect(() => {
     if (readerMode !== "scroll" || !showReader) {
@@ -1050,18 +1096,31 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     }
     const oldZoom = prevZoomRef.current;
     prevZoomRef.current = zoom;
-    if (oldZoom !== zoom && oldZoom > 0) {
-      const container = scrollContainerRef.current;
-      if (container) {
-        resumingRef.current = true;
-        const targetPageEl = pageRefs.current[currentPage];
-        if (targetPageEl) {
-          targetPageEl.scrollIntoView({ behavior: "auto", block: "start" });
-        }
-        window.setTimeout(() => { resumingRef.current = false; }, 350);
+    if (oldZoom === zoom || !(oldZoom > 0)) return;
+
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const settle = window.setTimeout(() => {
+      const top = container.getBoundingClientRect().top;
+      // The page straddling the top edge is the one being read; fall back to
+      // the first page still on screen, and only then to the tracked index.
+      let anchor = -1;
+      for (let i = 0; i < pages.length; i++) {
+        const el = pageRefs.current[i];
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        if (rect.bottom > top + 1) { anchor = i; break; }
       }
-    }
-  }, [zoom, readerMode, showReader, currentPage]);
+      const el = pageRefs.current[anchor >= 0 ? anchor : currentPage];
+      if (!el) return;
+      resumingRef.current = true;
+      el.scrollIntoView({ behavior: "auto", block: "start" });
+      window.setTimeout(() => { resumingRef.current = false; }, 350);
+    }, 220);
+
+    return () => window.clearTimeout(settle);
+  }, [zoom, readerMode, showReader, currentPage, pages.length]);
 
   // ---- Split-spread (manual) ----
   // Renders two virtual pages (A/B) from the SAME <img> via a CSS crop — no new
@@ -1100,14 +1159,12 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
         const data = await res.json() as Page[];
         if (cancelled || data.length === 0) return;
         prefetchedPagesRef.current[nextChapter.id] = data;
-        // Warm the first images (skip pdf/embed/external markers).
+        // Warm the first images (skip pdf/embed/external markers). Through the
+        // same cache the viewport reads from, so the request CORS mode matches
+        // and the warm-up is actually reused instead of re-downloaded.
         for (const pg of data.slice(0, 4)) {
           if (pg.url && /^https?:/i.test(pg.url)) {
-            const proxied = proxyCoverUrl(pg.url);
-            if (proxied) {
-              const img = new Image();
-              img.src = proxied;
-            }
+            loadPageImage(pg.url).catch(() => { /* the reader reports its own failure */ });
           }
         }
       } catch { /* best-effort */ }
@@ -1115,18 +1172,25 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     return () => { cancelled = true; };
   }, [showReader, currentPage, pages.length, nextChapter]);
 
-  // Page mode: warm the neighbouring pages so turning is instant — no flash/jitter
-  // from a page loading from scratch.
+  // Page mode preloader: a sliding window around the current page, kept decoded
+  // so a turn is a swap rather than a load. It goes through the shared page
+  // cache rather than a bare `new Image()` — the viewport requests its pages
+  // with `crossOrigin="anonymous"`, and a warm-up fetched under a different CORS
+  // mode is a different cache entry, i.e. the page downloaded twice and the
+  // preload buying nothing.
+  //
+  // The window is deliberately small and bounded: behind by one (going back a
+  // page is instant), ahead by the user's preload setting capped low. A whole
+  // 40-page chapter held decoded would be hundreds of MB.
   useEffect(() => {
     if (!showReader || readerMode !== "page" || pages.length === 0) return;
-    for (const i of [currentPage + 1, currentPage + 2, currentPage - 1]) {
-      const url = pages[i]?.url;
-      if (url && /^https?:/i.test(url)) {
-        const proxied = proxyCoverUrl(url);
-        if (proxied) { const img = new Image(); img.src = proxied; }
-      }
+    const ahead = settings.memorySaver ? 1 : Math.min(Math.max(settings.preloadAhead, 1), 3);
+    const window: (string | undefined)[] = [];
+    for (let i = currentPage - 1; i <= currentPage + ahead; i++) {
+      if (i >= 0 && i < pages.length) window.push(pages[i]?.url);
     }
-  }, [showReader, readerMode, currentPage, pages]);
+    preloadPages(window, settings.memorySaver ? 4 : 6);
+  }, [showReader, readerMode, currentPage, pages, settings.preloadAhead, settings.memorySaver]);
 
   // Page navigation shared by keyboard, swipe and the bottom bar. In double-page
   // mode it advances a whole spread at a time.
@@ -1284,18 +1348,142 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     setChapterDownload(null);
   };
 
+  /* ==================== PAGE MODE: MEDIA VIEWPORT WIRING ==================== */
+
+  const embedUrl = getEmbedUrl(pages[currentPage]?.url);
+  const externalPage = isExternalLink(pages[currentPage]?.url);
+  // The dedicated viewport takes over only for real image pages in page mode.
+  // Cascade, embeds and download-only entries keep the markup they already had.
+  const usesViewport = readerMode === "page" && !embedUrl && !externalPage && pages.length > 0;
+
+  /**
+   * What the viewport is showing right now: one page, the two pages of a
+   * spread, or one half of a page the reader chose to split. This is the only
+   * thing that changes when turning a page — the viewport instance itself is
+   * never rebuilt.
+   */
+  const viewportItems = useMemo<ViewportItem[]>(() => {
+    if (!usesViewport) return [];
+    if (isSplitActive(currentPage)) {
+      const showFirstHalf = rtl ? splitSide === 1 : splitSide === 0;
+      const url = pages[currentPage]?.url;
+      return url ? [{ key: String(currentPage), url, half: showFirstHalf ? "first" : "second" }] : [];
+    }
+    const group = doubleActive && currentGroup
+      ? (rtl ? [...currentGroup].reverse() : currentGroup)
+      : [currentPage];
+    return group
+      .filter(index => !!pages[index]?.url)
+      .map(index => ({ key: String(index), url: pages[index].url }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usesViewport, pages, currentPage, doubleActive, currentGroup, rtl, splitSide, splitSet, settings.splitMode]);
+
+  /**
+   * Fit Page vs Fit Width. A spread or a split half is always shown whole —
+   * fitting either to the width would cut off the very thing the reader asked
+   * to see. "auto" keeps the old rule: panoramas whole, ordinary portrait pages
+   * whole on a desktop and width-filling on a phone, where a whole page is too
+   * small to read.
+   */
+  const viewportFit = useMemo<ViewportFit>(() => {
+    if (viewportItems.length > 1 || isSplitActive(currentPage)) return "page";
+    switch (settings.fitMode) {
+      case "whole": return "page";
+      case "height": return "height";
+      case "width": return "width";
+      default: {
+        const aspect = pageAspectRef.current[currentPage] ?? 0.68;
+        if (aspect > 1.15) return "page";
+        return isLargeScreen ? "page" : "width";
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewportItems.length, settings.fitMode, settings.splitMode, splitSet, currentPage, isLargeScreen, aspectVersion]);
+
+  // A quick click on a third of the viewport, only ever delivered while the
+  // image is at its fit level (magnified, the gesture belongs to the image).
+  const handleZone = useCallback((zone: 0 | 1 | 2) => {
+    const action = tapZones[zone];
+    if (action === "prev") goToPrevPage();
+    else if (action === "next") goToNextPage();
+    else toggleChrome();
+  }, [tapZones, goToPrevPage, goToNextPage, toggleChrome]);
+
+  // dir === 1 is a swipe towards the left, i.e. "forward" in LTR.
+  const handleSwipe = useCallback((dir: -1 | 1) => {
+    if (dir === 1) (rtl ? goToPrevPage : goToNextPage)();
+    else (rtl ? goToNextPage : goToPrevPage)();
+  }, [rtl, goToNextPage, goToPrevPage]);
+
+  // The viewport already had to measure the page to lay it out, so the aspect
+  // bookkeeping the spread detector and "auto" fit rely on comes from there
+  // instead of from a second <img> load.
+  const handleViewportMeta = useCallback((key: string, width: number, height: number) => {
+    const index = Number(key);
+    if (!Number.isFinite(index) || !width || !height) return;
+    pageDimsRef.current[index] = { w: width, h: height };
+    const aspect = width / height;
+    if (Math.abs((pageAspectRef.current[index] ?? 0) - aspect) > 0.01) {
+      pageAspectRef.current[index] = aspect;
+      setAspectVersion(v => v + 1);
+    }
+  }, []);
+
+  const handleGesture = useCallback((active: boolean) => {
+    gestureActiveRef.current = active;
+    lastActivityRef.current = Date.now();
+  }, []);
+
+  // Leaving page mode retires the viewport, so the fit flag must not stay stuck
+  // on whatever it was when the reader switched away.
+  useEffect(() => {
+    if (!usesViewport) setAtFit(true);
+  }, [usesViewport]);
+
+  // Zoom actions shared by the toolbar buttons and the +/-/0 shortcuts. Page
+  // mode drives the engine; cascade keeps the transform-based hook.
+  const zoomInAction = useCallback(() => {
+    if (usesViewport) viewportRef.current?.zoomIn();
+    else setZoom(z => Math.min(settings.maxZoom, +(z + 0.5).toFixed(2)));
+  }, [usesViewport, setZoom, settings.maxZoom]);
+
+  const zoomOutAction = useCallback(() => {
+    if (usesViewport) viewportRef.current?.zoomOut();
+    else setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)));
+  }, [usesViewport, setZoom]);
+
+  const resetZoomAction = useCallback(() => {
+    if (usesViewport) viewportRef.current?.reset();
+    else setZoom(1);
+  }, [usesViewport, setZoom]);
+
+  const canGoBack = currentPage > 0 || !!prevChapter;
+  const canGoForward = currentPage < pages.length - 1 || !!nextChapter;
+  const zoneLeads = (zone: 0 | 2) =>
+    tapZones[zone] === "prev" ? canGoBack : tapZones[zone] === "next" ? canGoForward : true;
+
   // Keyboard shortcuts: ← → ↑ ↓ Space Home End Esc.
   useEffect(() => {
     if (!showReader || pages.length === 0) return;
     const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      // Never steal a keystroke from something the user is typing into.
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || target?.isContentEditable) return;
       const container = scrollContainerRef.current;
       switch (e.key) {
         case "ArrowRight":
+        case "d": case "D":
           e.preventDefault(); (rtl ? goToPrevPage : goToNextPage)(); break;
         case "ArrowLeft":
+        case "a": case "A":
           e.preventDefault(); (rtl ? goToNextPage : goToPrevPage)(); break;
+        case "+": case "=":
+          e.preventDefault(); zoomInAction(); break;
+        case "-": case "_":
+          e.preventDefault(); zoomOutAction(); break;
+        case "0":
+          e.preventDefault(); resetZoomAction(); break;
         case "ArrowDown":
         case " ":
           e.preventDefault(); goToNextPage(); break;
@@ -1334,13 +1522,21 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
           else requestReaderFullscreen();
           break;
         }
-        case "Escape":
-          setShowReader(false); break;
+        case "Escape": {
+          // One step out at a time: leave fullscreen first, close the reader
+          // only when there is no fullscreen left to leave. (Most browsers
+          // handle Escape for fullscreen themselves and never dispatch this;
+          // the branch is for the ones that do.)
+          const anyDoc = document as Document & { webkitFullscreenElement?: Element };
+          if (anyDoc.fullscreenElement || anyDoc.webkitFullscreenElement) exitReaderFullscreen();
+          else setShowReader(false);
+          break;
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [showReader, pages.length, readerMode, goToNextPage, goToPrevPage, rtl, immersion, workId, updateSettings, requestReaderFullscreen, exitReaderFullscreen]);
+  }, [showReader, pages.length, readerMode, goToNextPage, goToPrevPage, rtl, immersion, workId, updateSettings, requestReaderFullscreen, exitReaderFullscreen, zoomInAction, zoomOutAction, resetZoomAction]);
 
   // Jump to a page from the bottom scrubber.
   const goToPage = useCallback((idx: number) => {
@@ -1901,10 +2097,17 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               </div>
 
               {/* Right Column: Controls */}
-              <div className="flex items-center justify-between sm:justify-end gap-2.5 sm:gap-4 shrink-0 border-t border-white/10 pt-2.5 sm:pt-0 sm:border-t-0">
+              {/* `flex-wrap` is the safety net, not the layout: the controls
+                  below are sized to fit one row on a 360px phone, but a longer
+                  chapter label (or a future button) has to push the row down,
+                  never off the right edge — the reader overlay is `fixed
+                  inset-0` with nothing to scroll, so anything past the edge is
+                  simply gone. That is how the close button disappeared on
+                  phones: it sat at x=447 on a 390px screen. */}
+              <div className="flex flex-wrap sm:flex-nowrap items-center justify-between sm:justify-end gap-2.5 sm:gap-4 shrink-0 border-t border-white/10 pt-2.5 sm:pt-0 sm:border-t-0">
                 
                 {/* Chapter Selector */}
-                <div className="flex items-center gap-1 bg-zinc-900 border-2 border-white/20 p-0.5 rounded text-white text-xs font-sans font-bold">
+                <div className="flex items-center gap-1 min-w-0 bg-zinc-900 border-2 border-white/20 p-0.5 rounded text-white text-xs font-sans font-bold">
                   <button
                     disabled={!prevChapter}
                     onClick={() => prevChapter && readChapter(prevChapter)}
@@ -1921,7 +2124,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                         const targetCh = filteredChapters.find(ch => ch.id === e.target.value);
                         if (targetCh) readChapter(targetCh);
                       }}
-                      className="bg-black text-white font-sans text-2xs sm:text-xs font-bold border border-white/25 px-1 py-0.5 rounded outline-none cursor-pointer max-w-[80px] xs:max-w-[120px] sm:max-w-[140px] truncate"
+                      className="bg-black text-white font-sans text-2xs sm:text-xs font-bold border border-white/25 px-1 py-0.5 rounded outline-none cursor-pointer max-w-[80px] sm:max-w-[140px] truncate"
                     >
                       {filteredChapters.map(ch => (
                         <option key={ch.id} value={ch.id}>
@@ -1943,7 +2146,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                   </button>
                 </div>
 
-                <div className="flex items-center gap-1.5 sm:gap-3">
+                <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
                   {/* Layout Switcher — only meaningful for image chapters, not
                       single-document PDF/embeds where both modes look identical. */}
                   {!getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && (
@@ -1956,7 +2159,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                         )}
                         title="Modo Cascata"
                       >
-                        <Layers className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden xs:inline">Cascata</span>
+                        <Layers className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden sm:inline">Cascata</span>
                       </button>
                       <button
                         onClick={() => setReaderMode("page")}
@@ -1966,7 +2169,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                         )}
                         title="Modo Página"
                       >
-                        <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden xs:inline">Página</span>
+                        <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden sm:inline">Página</span>
                       </button>
                     </div>
                   )}
@@ -2014,30 +2217,76 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
           {/* Reader Body */}
           <div
             ref={scrollContainerRef}
-            // justify-center clips the side that "overflows" once pinch-zoom
-            // makes the page bigger than this scrollable container — you'd
-            // zoom in and be unable to scroll to whatever got centered past
-            // the edge. Same fix PdfReader.tsx already uses: drop centering
-            // while zoomed so every part of the page stays reachable.
-            className={cn("flex-1 overflow-auto overscroll-contain flex p-0 sm:p-4", zoom > 1 ? "justify-start" : "justify-center")}
+            // Page mode hands this box entirely to <MediaViewport>: no padding,
+            // no scrolling, no centring. Zoom there happens inside a canvas and
+            // never grows a layout box, so there is nothing left for this
+            // container to scroll — and an `overflow: auto` that can never have
+            // anything to show is exactly how stray scrollbars appear.
+            //
+            // Cascade keeps its scrollable column. justify-center clips the side
+            // that "overflows" once pinch-zoom makes the page bigger than this
+            // container — you'd zoom in and be unable to scroll to whatever got
+            // centered past the edge. Same fix PdfReader.tsx already uses: drop
+            // centering while zoomed so every part of the page stays reachable.
+            className={cn(
+              "flex-1 flex min-h-0",
+              // Reserve the bottom bar's height. In page mode it keeps Fit Page
+              // from tucking the last centimetre of the page under the bar; in
+              // cascade it just adds that much scrollable run after the final
+              // page, which the bar used to cover. Two rows on a phone, one
+              // from `sm` up — the same breakpoint the bar itself wraps at.
+              //
+              // A static class, not a measurement: the reserve has to come from
+              // the *setting*, not from whether the bar happens to be on screen,
+              // or the chrome auto-hiding would resize the viewport and re-fit
+              // the page underneath it. On a dark reader the reserved strip is
+              // the background colour anyway.
+              settings.showBottomBar &&
+                "pb-[calc(6rem+env(safe-area-inset-bottom,0px))] sm:pb-[calc(4rem+env(safe-area-inset-bottom,0px))]",
+              usesViewport
+                ? "overflow-hidden"
+                : cn(
+                    // Sides and top only: the `p-4` shorthand would reset the
+                    // bottom reserve above, and which of the two wins is left to
+                    // stylesheet order rather than stated here.
+                    "overflow-auto overscroll-contain px-0 pt-0 sm:px-4 sm:pt-4",
+                    zoom > 1 ? "justify-start" : "justify-center",
+                  ),
+            )}
             // Promote to its own GPU layer + reserve scrollbar space so passing a
             // page doesn't repaint-jitter (iOS) or shift horizontally (desktop).
             style={{
               transform: "translateZ(0)",
-              scrollbarGutter: "stable",
-              // Who owns a one-finger drag. Left at the default, the browser
-              // decides — and on any page taller than the viewport it decides
-              // "scroll", cancelling our pointer stream mid-drag, so a zoomed
-              // page could not be panned at all. Only pages that fit on screen
-              // whole (a cover) had nothing to scroll and were spared.
+              scrollbarGutter: usesViewport ? undefined : "stable",
+              // Who owns a touch gesture here. Left at the default the browser
+              // decides, and it decides in its own favour on both counts:
               //
-              // Zoomed in page mode we take the whole gesture: the layout box
-              // does not grow with `transform`, so scrolling has nothing left to
-              // reach and panning is the only way around the page. The cascade
-              // keeps `pan-y`, where scrolling down the column *is* the reading
-              // gesture — the browser keeps the vertical, we get the horizontal.
-              // At 1x nothing is overridden: normal scrolling everywhere.
-              touchAction: zoom > 1 ? (readerMode === "page" ? "none" : "pan-y") : undefined,
+              // One finger, on any page taller than the viewport, it calls
+              // "scroll" and cancels our pointer stream mid-drag, so a zoomed
+              // page could not be panned at all.
+              //
+              // Two fingers it calls "pinch-zoom" — `index.html` ships
+              // `user-scalable=yes, maximum-scale=5` on purpose, so the rest of
+              // the site can be magnified. Measured on a phone: a pinch in the
+              // cascade delivered ZERO pointer events to this element and took
+              // `visualViewport.scale` straight from 1 to 5. The reader's own
+              // zoom never ran. What the reader sees is the browser magnifying
+              // a slice of the layout viewport, and any reflow underneath it
+              // (an image finishing above, the chrome auto-hiding) re-anchoring
+              // that slice to the top — "pinched and got thrown back to the
+              // cover". The old `zoom > 1` guard could never help: at 1x the
+              // browser took the gesture, so the zoom that would have lifted
+              // the guard was exactly the one that could not happen.
+              //
+              // So the override is unconditional now. Page mode takes the whole
+              // gesture: the layout box does not grow with `transform`, so
+              // scrolling has nothing left to reach and panning is the only way
+              // around the page. The cascade keeps `pan-y` — scrolling down the
+              // column *is* the reading gesture, so the browser keeps the
+              // vertical and we get the pinch and the horizontal. Neither value
+              // includes `pinch-zoom`, which is what shuts the native zoom out;
+              // it stays available everywhere outside the reader overlay.
+              touchAction: readerMode === "page" ? "none" : "pan-y",
             }}
           >
             {getEmbedUrl(pages[currentPage]?.url) ? (
@@ -2144,136 +2393,45 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                 </div>
               </div>
             ) : (
-              /* Page by Page Mode (single or smart double-page) */
-              <div className={cn("w-full h-full flex flex-col justify-between items-center gap-4", doubleActive ? "max-w-6xl" : "max-w-xl")}>
-                <div
-                  className={cn(
-                    "flex-1 flex w-full gap-0.5 relative group cursor-pointer justify-center",
-                    !doubleActive && fitFor(currentPage) === "width" ? "items-start" : "items-center",
-                  )}
-                  onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const zone = x < rect.width * 0.33 ? 0 : x > rect.width * 0.67 ? 2 : 1;
-                    handleTapZone(tapZones[zone]);
-                  }}
-                  onTouchStart={(e) => {
-                    if (tapTimerRef.current) {
-                      clearTimeout(tapTimerRef.current);
-                      tapTimerRef.current = null;
-                    }
-                    // A second finger means this is a pinch, and a pinch must
-                    // never be read as a swipe afterwards — see onTouchEnd.
-                    if (e.touches.length > 1) {
-                      pinchingRef.current = true;
-                      swipeStartRef.current = null;
-                      return;
-                    }
-                    swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-                  }}
-                  onTouchEnd={(e) => {
-                    const s = swipeStartRef.current;
-                    swipeStartRef.current = null;
-                    // Only once every finger is off does the gesture really end;
-                    // lifting the first of two still leaves a pinch in progress.
-                    if (pinchingRef.current) {
-                      if (e.touches.length === 0) pinchingRef.current = false;
-                      return;
-                    }
-                    // `zoom !== 1` alone was not enough to keep a pinch out of
-                    // here: pinching *outwards* at 1x is clamped back to 1, so
-                    // the zoom never changes and the two fingers spreading apart
-                    // read as a perfectly good horizontal swipe — which is why
-                    // the page still turned under a pinch now and then. The
-                    // hook's click-swallowing does not cover this: `touchend`
-                    // is not the synthesised click it watches for.
-                    if (!s || zoom !== 1) return; // when zoomed, let the user pan
-                    const t = e.changedTouches[0];
-                    const dx = t.clientX - s.x;
-                    const dy = t.clientY - s.y;
-                    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-                      // Swipe left: next in LTR, previous in RTL (and vice-versa).
-                      if (dx < 0) (rtl ? goToPrevPage : goToNextPage)();
-                      else (rtl ? goToNextPage : goToPrevPage)();
-                    }
-                  }}
-                >
-                  {isSplitActive(currentPage) ? (
-                    // Split-spread: two virtual pages from the SAME image via a CSS
-                    // crop (translateX on a 2x-wide image inside an overflow box).
-                    (() => {
-                      const A = pageAspectRef.current[currentPage] || 1.4;
-                      const showLeft = rtl ? splitSide === 1 : splitSide === 0;
-                      return (
-                        <div className="relative overflow-hidden border-4 border-white/20" style={{ height: "88vh", width: `min(96vw, calc(88vh * ${A / 2}))` }}>
-                          <SafeImage
-                            src={pages[currentPage]?.url}
-                            alt={`Página ${pages[currentPage]?.pageNumber} (${showLeft ? "esquerda" : "direita"})`}
-                            className="absolute top-0 left-0 h-full max-w-none select-none pointer-events-none"
-                            // Scale via transform (smooth, see useReaderZoom) composed with the
-                            // existing crop translateX — pan is skipped here since panning would
-                            // shift which half of the double-wide image the crop window shows.
-                            // Order matters: scale() must be listed first (CSS transform lists
-                            // apply right-to-left, so translateX runs on the pre-scale local
-                            // coordinates to pick the half, and scale() then zooms that already-
-                            // cropped view — the reverse order shifts by half the *unscaled*
-                            // width regardless of zoom, cropping the wrong pixels once zoomed).
-                            style={{ transform: `scale(${zoom}) translateX(${showLeft ? "0%" : "-50%"})`, transformOrigin: "left top" }}
-                            onLoad={(e) => recordAspect(currentPage, e.currentTarget as HTMLImageElement)}
-                          />
-                        </div>
-                      );
-                    })()
-                  ) : (
-                    // The zoom transform belongs to this wrapper, not to each
-                    // <img>: it is the element `useReaderZoom` measures, and the
-                    // focal point and pan bounds are only right if what it
-                    // measures is what actually moves. Transforming the images
-                    // instead left the hook reading the full-height flex box
-                    // around them — so on a page taller than the viewport the
-                    // pan stopped short of the bottom, and a double spread got
-                    // two independent transforms pulling its halves apart.
-                    // It also keeps a spread scaling as one piece.
-                    <div
-                      ref={zoomContentRef}
-                      className="w-full flex gap-0.5 justify-center"
-                      style={{
-                        transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
-                        transformOrigin: "center center",
-                        transition: isAnimating ? "transform 260ms cubic-bezier(0.2, 0, 0.2, 1)" : "none",
-                        willChange: "transform",
-                      }}
-                    >
-                      {(doubleActive && currentGroup
-                        ? (rtl ? [...currentGroup].reverse() : currentGroup)
-                        : [currentPage]
-                      ).map((pi) => (
-                        <SafeImage
-                          key={pi}
-                          src={pages[pi]?.url}
-                          alt={`Página ${pages[pi]?.pageNumber}`}
-                          className={cn(
-                            "border-4 border-white/20 select-none pointer-events-none",
-                            doubleActive && currentGroup && currentGroup.length === 2
-                              ? "max-h-[88vh] max-w-[50%] object-contain" // double: keep proportion, no stretch
-                              : fitClass(fitFor(pi)),
-                          )}
-                          onLoad={(e) => recordAspect(pi, e.currentTarget as HTMLImageElement)}
-                        />
-                      ))}
-                    </div>
-                  )}
+              /* ---------- Page mode: the dedicated media viewport ----------
+                 One page, a smart double spread, or one half of a split page —
+                 whichever it is, it is the *content* of a viewport instance
+                 that stays mounted for the whole reading session. Turning a
+                 page swaps the image inside the engine; it never tears the
+                 viewer down and builds a new one. */
+              <div ref={viewportHostRef} className="relative flex-1 w-full min-h-0">
+                <MediaViewport
+                  ref={viewportRef}
+                  items={viewportItems}
+                  fit={viewportFit}
+                  maxZoomRatio={settings.maxZoom}
+                  preserveView={settings.rememberZoom}
+                  onZone={handleZone}
+                  onSwipe={handleSwipe}
+                  onFitChange={setAtFit}
+                  onGesture={handleGesture}
+                  onMeta={handleViewportMeta}
+                  zoomLabelRef={zoomLabelRef}
+                  ariaLabel={`Página ${currentPage + 1} de ${pages.length}`}
+                />
 
-                  {/* Left Edge Overlay Hint */}
-                  <div className="absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-black/20 to-transparent opacity-0 group-hover:opacity-100 flex items-center pl-2 transition-opacity">
-                    <ChevronLeft className="w-12 h-12 text-white drop-shadow-md" />
-                  </div>
-                  {/* Right Edge Overlay Hint */}
-                  <div className="absolute inset-y-0 right-0 w-1/4 bg-gradient-to-l from-black/20 to-transparent opacity-0 group-hover:opacity-100 flex items-center justify-end pr-2 transition-opacity">
-                    <ChevronRight className="w-12 h-12 text-white drop-shadow-md" />
-                  </div>
-                </div>
+                {/* Discreet edge affordance. Only meaningful at fit — magnified,
+                    a drag on the same spot belongs to the image. */}
+                <NavigationZones
+                  containerRef={viewportHostRef}
+                  enabled={atFit}
+                  leftActive={zoneLeads(0)}
+                  rightActive={zoneLeads(2)}
+                />
 
+                {settings.showPageNumber && (
+                  <div
+                    className="absolute bottom-3 right-3 z-[6] px-2 py-0.5 rounded font-sans text-2xs font-bold pointer-events-none tabular-nums"
+                    style={{ background: "var(--rd-surface)", color: "var(--rd-muted)" }}
+                  >
+                    Pág. {pages[currentPage]?.pageNumber ?? currentPage + 1}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2329,15 +2487,29 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               `!chromeVisible` (why the toolbar is actually hidden, not which
               level caused it) does. */}
           {!chromeVisible && (
-            <div className={cn(
-              "fixed top-4 right-4 z-[113] flex gap-2 transition-opacity duration-300",
-              uiActive ? "opacity-100" : "opacity-40"
-            )}>
+            <div
+              className="fixed z-[113] flex gap-2 items-center"
+              style={{
+                // The reader is `fixed inset-0` under `viewport-fit=cover`, so
+                // the layout viewport starts behind the status bar. A flat
+                // `top-4` put these three 44px buttons at y=16..60 — which on an
+                // iPhone 14 is exactly the Dynamic Island. Reported as "the
+                // close button still isn't visible", and it wasn't: it was
+                // underneath the cutout. The header already insets itself this
+                // way; this strip was the one that didn't.
+                top: "calc(env(safe-area-inset-top, 0px) + 0.75rem)",
+                right: "calc(env(safe-area-inset-right, 0px) + 0.75rem)",
+              }}
+            >
               <button
                 onClick={() => setShowSettings(true)}
-                className="p-2 rounded-full border backdrop-blur-sm"
+                className={cn(
+                  "w-11 h-11 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center rounded-full border backdrop-blur-sm transition-opacity duration-300",
+                  uiActive ? "opacity-100" : "opacity-70",
+                )}
                 style={{ background: "var(--rd-surface)", color: "var(--rd-text)", borderColor: "var(--rd-border)" }}
                 title="Configurações"
+                aria-label="Configurações"
               >
                 <Settings className="w-4 h-4" strokeWidth={2.5} />
               </button>
@@ -2346,22 +2518,57 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                   if (immersion !== "clean") updateSettings({ immersion: "clean" }, workId ? "work" : "global");
                   else toggleChrome(); // clean level, chrome just auto-hid — bring it back instead
                 }}
-                className="p-2 rounded-full border backdrop-blur-sm"
+                className={cn(
+                  "w-11 h-11 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center rounded-full border backdrop-blur-sm transition-opacity duration-300",
+                  uiActive ? "opacity-100" : "opacity-70",
+                )}
                 style={{ background: "var(--rd-surface)", color: "var(--rd-text)", borderColor: "var(--rd-border)" }}
                 title={immersion !== "clean" ? "Sair da imersão" : "Mostrar controles"}
+                aria-label={immersion !== "clean" ? "Sair da imersão" : "Mostrar controles"}
               >
                 <Minimize2 className="w-4 h-4" strokeWidth={2.5} />
+              </button>
+              {/* Leaving the reader was reachable only through the header's X —
+                  and on a phone the header is never on screen to begin with:
+                  `firstRunDefaults()` starts touch devices at the "cinema"
+                  immersion level, where `chromeVisible` is hard `false`. So the
+                  way out was: notice the dim Minimize2, tap it to fall back to
+                  "clean", wait for the header, then find the X. Three steps to
+                  close a reader, none of them labelled "close". The exit now
+                  lives wherever the chrome is hidden, for the same reason the
+                  two buttons above do. */}
+              <button
+                onClick={() => setShowReader(false)}
+                // Deliberately the one control here that never fades and never
+                // borrows the theme: solid red, white ring, its own shadow, 44px
+                // at every size. Reported three times running as "the close
+                // button still isn't there" on an iPhone — whatever else is
+                // going on, a translucent dark circle on a dark page was never
+                // going to survive that, and the way out of a reader is not the
+                // place to be tasteful about contrast.
+                className="w-11 h-11 flex items-center justify-center rounded-full bg-primary text-white border-2 border-white shadow-lg hover:bg-red-600 transition-colors"
+                title="Fechar Leitor"
+                aria-label="Fechar leitor"
+              >
+                <X className="w-5 h-5" strokeWidth={3} />
               </button>
             </div>
           )}
 
-          {/* Cinema: extremely discrete page indicator that fades with inactivity. */}
-          {immersion === "cinema" && !getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && (
+          {/* Extremely discrete page counter, shown whenever the chrome is away —
+              the bottom bar carries the count while it is up, and losing track of
+              where you are in a chapter shouldn't be the price of hiding it. */}
+          {!chromeVisible && !getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && (
             <div
-              className={cn("fixed bottom-4 left-1/2 -translate-x-1/2 z-[112] px-3 py-1 rounded-full text-2xs font-sans font-bold pointer-events-none transition-opacity duration-300", uiActive ? "opacity-60" : "opacity-0")}
-              style={{ background: "var(--rd-surface)", color: "var(--rd-text)" }}
+              className={cn("fixed left-1/2 -translate-x-1/2 z-[112] px-3 py-1 rounded-full text-2xs font-sans font-bold pointer-events-none transition-opacity duration-300", uiActive ? "opacity-60" : "opacity-0")}
+              style={{
+                background: "var(--rd-surface)",
+                color: "var(--rd-text)",
+                // Clear of the iPhone home indicator, same reason as above.
+                bottom: "calc(env(safe-area-inset-bottom, 0px) + 1rem)",
+              }}
             >
-              Página {currentPage + 1} • Cap. {selectedChapter?.chapterNum}
+              <span className="tabular-nums">{currentPage + 1} / {pages.length}</span> • Cap. {selectedChapter?.chapterNum}
             </div>
           )}
 
@@ -2369,7 +2576,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               auto-hiding interface; a tap on the reading area brings it back. */}
           {settings.showBottomBar && chromeVisible && !getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && (
             <div
-              className="fixed bottom-0 inset-x-0 z-[110] backdrop-blur-sm border-t-2 px-2 sm:px-5 py-2 flex items-center gap-1.5 sm:gap-3 select-none animate-in fade-in slide-in-from-bottom duration-200"
+              className="fixed bottom-0 inset-x-0 z-[110] backdrop-blur-sm border-t-2 px-2 sm:px-5 py-2 flex flex-wrap sm:flex-nowrap items-center gap-1.5 sm:gap-3 select-none animate-in fade-in slide-in-from-bottom duration-200"
               style={{
                 background: "var(--rd-surface)",
                 color: "var(--rd-text)",
@@ -2379,41 +2586,65 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                 paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))",
               }}
             >
-              <button
-                onClick={() => prevChapter && readChapter(prevChapter)}
-                disabled={!prevChapter}
-                className="opacity-70 hover:opacity-100 disabled:opacity-20 shrink-0 p-1"
-                title="Capítulo anterior"
-              >
-                <ChevronsLeft className="w-5 h-5" strokeWidth={3} />
-              </button>
-              <span className="font-sans font-bold text-2xs sm:text-xs tabular-nums w-7 sm:w-8 text-right shrink-0">{currentPage + 1}</span>
-              <input
-                type="range"
-                dir={rtl ? "rtl" : "ltr"}
-                min={0}
-                max={Math.max(0, pages.length - 1)}
-                value={currentPage}
-                onChange={(e) => goToPage(Number(e.target.value))}
-                className="flex-1 h-1.5 accent-primary cursor-pointer"
-                aria-label="Navegar pelas páginas"
-              />
-              <span className="opacity-50 font-sans font-bold text-2xs sm:text-xs tabular-nums w-7 sm:w-8 shrink-0">{pages.length}</span>
+              {/* The scrubber run takes a row to itself on a phone. Everything
+                  in this bar is `shrink-0` except the range input, and an
+                  <input type=range> will not shrink past its intrinsic width —
+                  so on one row the four 44px zoom targets left the slider about
+                  50px of track, and the rest of the bar ran off the screen
+                  edge. `min-w-0` lets the track give way inside its own row. */}
+              <div className="flex items-center gap-1.5 sm:gap-3 w-full sm:w-auto sm:flex-1 min-w-0">
+                <button
+                  onClick={() => prevChapter && readChapter(prevChapter)}
+                  disabled={!prevChapter}
+                  className="opacity-70 hover:opacity-100 disabled:opacity-20 shrink-0 p-1"
+                  title="Capítulo anterior"
+                >
+                  <ChevronsLeft className="w-5 h-5" strokeWidth={3} />
+                </button>
+                <span className="font-sans font-bold text-2xs sm:text-xs tabular-nums w-7 sm:w-8 text-right shrink-0">{currentPage + 1}</span>
+                <input
+                  type="range"
+                  dir={rtl ? "rtl" : "ltr"}
+                  min={0}
+                  max={Math.max(0, pages.length - 1)}
+                  value={currentPage}
+                  onChange={(e) => goToPage(Number(e.target.value))}
+                  className="flex-1 min-w-0 h-1.5 accent-primary cursor-pointer"
+                  aria-label="Navegar pelas páginas"
+                />
+                <span className="opacity-50 font-sans font-bold text-2xs sm:text-xs tabular-nums w-7 sm:w-8 shrink-0">{pages.length}</span>
+              </div>
               {!pages[currentPage]?.url?.startsWith("pdf:") && (
                 /* Shown at every width: these are the only route in for anyone
                    who cannot pinch, and `xs` (360px) still excluded a 320px
                    iPhone SE. Targets raised to 44px. */
                 <div className="flex items-center shrink-0 border-l pl-1 sm:pl-2 ml-0.5 sm:ml-1" style={{ borderColor: "var(--rd-border)" }}>
-                  <button onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} disabled={zoom <= 1} className="opacity-70 hover:opacity-100 disabled:opacity-20 min-w-11 min-h-11 flex items-center justify-center" aria-label="Menos zoom" title="Menos zoom"><ZoomOut className="w-4 h-4" strokeWidth={3} /></button>
-                  <button onClick={() => setZoom(1)} className="text-3xs font-bold tabular-nums min-w-11 min-h-11 flex items-center justify-center" aria-label="Ajustar à tela" title="Ajustar à tela">{Math.round(zoom * 100)}%</button>
-                  <button onClick={() => setZoom(z => Math.min(settings.maxZoom, +(z + 0.5).toFixed(2)))} disabled={zoom >= settings.maxZoom} className="opacity-70 hover:opacity-100 disabled:opacity-20 min-w-11 min-h-11 flex items-center justify-center" aria-label="Mais zoom" title="Mais zoom"><ZoomIn className="w-4 h-4" strokeWidth={3} /></button>
+                  <button onClick={zoomOutAction} disabled={!usesViewport && zoom <= 1} className="opacity-70 hover:opacity-100 disabled:opacity-20 min-w-11 min-h-11 flex items-center justify-center" aria-label="Menos zoom" title="Menos zoom"><ZoomOut className="w-4 h-4" strokeWidth={3} /></button>
+                  <button onClick={resetZoomAction} className="text-3xs font-bold tabular-nums min-w-11 min-h-11 flex items-center justify-center" aria-label="Redefinir zoom" title="Redefinir zoom">
+                    {/* In page mode the engine writes the live percentage straight
+                        into this node — re-rendering the reader on every frame of
+                        a pinch just to update three digits is exactly the kind of
+                        work that makes a gesture stutter. */}
+                    {usesViewport ? <span ref={zoomLabelRef}>100%</span> : `${Math.round(zoom * 100)}%`}
+                  </button>
+                  <button onClick={zoomInAction} disabled={!usesViewport && zoom >= settings.maxZoom} className="opacity-70 hover:opacity-100 disabled:opacity-20 min-w-11 min-h-11 flex items-center justify-center" aria-label="Mais zoom" title="Mais zoom"><ZoomIn className="w-4 h-4" strokeWidth={3} /></button>
+                  {usesViewport && (
+                    <button
+                      onClick={() => updateSettings({ fitMode: settings.fitMode === "width" ? "whole" : "width" }, workId ? "work" : "global")}
+                      className="text-3xs font-bold min-w-11 min-h-11 flex items-center justify-center opacity-70 hover:opacity-100"
+                      aria-label={settings.fitMode === "width" ? "Ajustar página inteira" : "Ajustar à largura"}
+                      title={settings.fitMode === "width" ? "Ajustar página inteira" : "Ajustar à largura"}
+                    >
+                      {settings.fitMode === "width" ? "LARG" : "PÁG"}
+                    </button>
+                  )}
                 </div>
               )}
               {/* PDF/external sources already have their own direct download
                   link (the "Somente download" panel) — this is only for
                   image-page chapters, which never had one. */}
               {!pages[currentPage]?.url?.startsWith("pdf:") && (
-                <div className="hidden xs:flex items-center gap-1 shrink-0 border-l pl-2 ml-1" style={{ borderColor: "var(--rd-border)" }}>
+                <div className="hidden sm:flex items-center gap-1 shrink-0 border-l pl-2 ml-1" style={{ borderColor: "var(--rd-border)" }}>
                   {chapterDownload && (
                     <span className="text-3xs font-bold tabular-nums opacity-70">{chapterDownload.done}/{chapterDownload.total}</span>
                   )}
@@ -2440,7 +2671,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               <button
                 onClick={() => nextChapter && readChapter(nextChapter)}
                 disabled={!nextChapter}
-                className="opacity-70 hover:opacity-100 disabled:opacity-20 shrink-0 p-1"
+                className="opacity-70 hover:opacity-100 disabled:opacity-20 shrink-0 p-1 ml-auto sm:ml-0"
                 title="Próximo capítulo"
               >
                 <ChevronsRight className="w-5 h-5" strokeWidth={3} />
@@ -2475,6 +2706,11 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
             readingMode={readerMode}
             onSetReadingMode={setReaderMode}
             onEnterImmersion={requestReaderFullscreen}
+            // Same guard the bottom-bar buttons use: a PDF entry has no image
+            // pages to pack, and an empty chapter has nothing at all.
+            onDownloadChapter={pages[currentPage]?.url?.startsWith("pdf:") ? undefined : downloadChapter}
+            downloadProgress={chapterDownload}
+            downloadDisabled={pages.length === 0}
           />
 
           {/* Engineering diagnostics (Ctrl+Shift+D) */}
@@ -2530,6 +2766,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               pageHeightsRef.current = {};
               pageAspectRef.current = {};
               pageDimsRef.current = {};
+              clearPageImages();
             }}
             onTestProvider={() => {
               if (selectedSource) {
