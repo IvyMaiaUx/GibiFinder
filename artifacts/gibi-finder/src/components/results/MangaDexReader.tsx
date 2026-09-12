@@ -1073,7 +1073,19 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     }
   }, [doubleActive, currentGroup, currentPage]);
 
-  // Preserve scroll position and prevent virtualization collapse when zoom changes in cascade mode
+  // Re-anchor the cascade after a zoom change, so the virtualization can't
+  // collapse the column and drop the reader somewhere else.
+  //
+  // Two things were wrong with doing it on every `zoom` tick. A pinch commits a
+  // new zoom once per animation frame, so this ran ~60x a second, each pass
+  // yanking the scroll to a page top and holding `resumingRef` (which mutes the
+  // page tracker) for another 350ms — you could not pinch and stay put. And it
+  // anchored on `currentPage`, which the tracker had just been muted from
+  // updating: near the start of a chapter that is still 0, and page 0 is the
+  // cover. That is the "pinched and got thrown back to the cover" report.
+  //
+  // Now it waits for the zoom to settle and anchors on the page actually at the
+  // top of the viewport, measured at that moment rather than taken on trust.
   const prevZoomRef = useRef(zoom);
   useEffect(() => {
     if (readerMode !== "scroll" || !showReader) {
@@ -1082,18 +1094,31 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     }
     const oldZoom = prevZoomRef.current;
     prevZoomRef.current = zoom;
-    if (oldZoom !== zoom && oldZoom > 0) {
-      const container = scrollContainerRef.current;
-      if (container) {
-        resumingRef.current = true;
-        const targetPageEl = pageRefs.current[currentPage];
-        if (targetPageEl) {
-          targetPageEl.scrollIntoView({ behavior: "auto", block: "start" });
-        }
-        window.setTimeout(() => { resumingRef.current = false; }, 350);
+    if (oldZoom === zoom || !(oldZoom > 0)) return;
+
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const settle = window.setTimeout(() => {
+      const top = container.getBoundingClientRect().top;
+      // The page straddling the top edge is the one being read; fall back to
+      // the first page still on screen, and only then to the tracked index.
+      let anchor = -1;
+      for (let i = 0; i < pages.length; i++) {
+        const el = pageRefs.current[i];
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        if (rect.bottom > top + 1) { anchor = i; break; }
       }
-    }
-  }, [zoom, readerMode, showReader, currentPage]);
+      const el = pageRefs.current[anchor >= 0 ? anchor : currentPage];
+      if (!el) return;
+      resumingRef.current = true;
+      el.scrollIntoView({ behavior: "auto", block: "start" });
+      window.setTimeout(() => { resumingRef.current = false; }, 350);
+    }, 220);
+
+    return () => window.clearTimeout(settle);
+  }, [zoom, readerMode, showReader, currentPage, pages.length]);
 
   // ---- Split-spread (manual) ----
   // Renders two virtual pages (A/B) from the SAME <img> via a CSS crop — no new
@@ -2202,19 +2227,35 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
             style={{
               transform: "translateZ(0)",
               scrollbarGutter: usesViewport ? undefined : "stable",
-              // Who owns a one-finger drag. Left at the default, the browser
-              // decides — and on any page taller than the viewport it decides
-              // "scroll", cancelling our pointer stream mid-drag, so a zoomed
-              // page could not be panned at all. Only pages that fit on screen
-              // whole (a cover) had nothing to scroll and were spared.
+              // Who owns a touch gesture here. Left at the default the browser
+              // decides, and it decides in its own favour on both counts:
               //
-              // Zoomed in page mode we take the whole gesture: the layout box
-              // does not grow with `transform`, so scrolling has nothing left to
-              // reach and panning is the only way around the page. The cascade
-              // keeps `pan-y`, where scrolling down the column *is* the reading
-              // gesture — the browser keeps the vertical, we get the horizontal.
-              // At 1x nothing is overridden: normal scrolling everywhere.
-              touchAction: zoom > 1 ? (readerMode === "page" ? "none" : "pan-y") : undefined,
+              // One finger, on any page taller than the viewport, it calls
+              // "scroll" and cancels our pointer stream mid-drag, so a zoomed
+              // page could not be panned at all.
+              //
+              // Two fingers it calls "pinch-zoom" — `index.html` ships
+              // `user-scalable=yes, maximum-scale=5` on purpose, so the rest of
+              // the site can be magnified. Measured on a phone: a pinch in the
+              // cascade delivered ZERO pointer events to this element and took
+              // `visualViewport.scale` straight from 1 to 5. The reader's own
+              // zoom never ran. What the reader sees is the browser magnifying
+              // a slice of the layout viewport, and any reflow underneath it
+              // (an image finishing above, the chrome auto-hiding) re-anchoring
+              // that slice to the top — "pinched and got thrown back to the
+              // cover". The old `zoom > 1` guard could never help: at 1x the
+              // browser took the gesture, so the zoom that would have lifted
+              // the guard was exactly the one that could not happen.
+              //
+              // So the override is unconditional now. Page mode takes the whole
+              // gesture: the layout box does not grow with `transform`, so
+              // scrolling has nothing left to reach and panning is the only way
+              // around the page. The cascade keeps `pan-y` — scrolling down the
+              // column *is* the reading gesture, so the browser keeps the
+              // vertical and we get the pinch and the horizontal. Neither value
+              // includes `pinch-zoom`, which is what shuts the native zoom out;
+              // it stays available everywhere outside the reader overlay.
+              touchAction: readerMode === "page" ? "none" : "pan-y",
             }}
           >
             {getEmbedUrl(pages[currentPage]?.url) ? (
@@ -2410,10 +2451,25 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               `!chromeVisible` (why the toolbar is actually hidden, not which
               level caused it) does. */}
           {!chromeVisible && (
-            <div className={cn(
-              "fixed top-4 right-4 z-[113] flex gap-2 transition-opacity duration-300",
-              uiActive ? "opacity-100" : "opacity-40"
-            )}>
+            <div
+              className={cn(
+                "fixed z-[113] flex gap-2 transition-opacity duration-300",
+                // On a phone this strip is the ONLY way out of the reader, so it
+                // does not get to be decorative-dim at rest.
+                uiActive ? "opacity-100" : "opacity-70",
+              )}
+              style={{
+                // The reader is `fixed inset-0` under `viewport-fit=cover`, so
+                // the layout viewport starts behind the status bar. A flat
+                // `top-4` put these three 44px buttons at y=16..60 — which on an
+                // iPhone 14 is exactly the Dynamic Island. Reported as "the
+                // close button still isn't visible", and it wasn't: it was
+                // underneath the cutout. The header already insets itself this
+                // way; this strip was the one that didn't.
+                top: "calc(env(safe-area-inset-top, 0px) + 0.75rem)",
+                right: "calc(env(safe-area-inset-right, 0px) + 0.75rem)",
+              }}
+            >
               <button
                 onClick={() => setShowSettings(true)}
                 className="w-11 h-11 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center rounded-full border backdrop-blur-sm"
@@ -2461,8 +2517,13 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               where you are in a chapter shouldn't be the price of hiding it. */}
           {!chromeVisible && !getEmbedUrl(pages[currentPage]?.url) && !isExternalLink(pages[currentPage]?.url) && (
             <div
-              className={cn("fixed bottom-4 left-1/2 -translate-x-1/2 z-[112] px-3 py-1 rounded-full text-2xs font-sans font-bold pointer-events-none transition-opacity duration-300", uiActive ? "opacity-60" : "opacity-0")}
-              style={{ background: "var(--rd-surface)", color: "var(--rd-text)" }}
+              className={cn("fixed left-1/2 -translate-x-1/2 z-[112] px-3 py-1 rounded-full text-2xs font-sans font-bold pointer-events-none transition-opacity duration-300", uiActive ? "opacity-60" : "opacity-0")}
+              style={{
+                background: "var(--rd-surface)",
+                color: "var(--rd-text)",
+                // Clear of the iPhone home indicator, same reason as above.
+                bottom: "calc(env(safe-area-inset-bottom, 0px) + 1rem)",
+              }}
             >
               <span className="tabular-nums">{currentPage + 1} / {pages.length}</span> • Cap. {selectedChapter?.chapterNum}
             </div>

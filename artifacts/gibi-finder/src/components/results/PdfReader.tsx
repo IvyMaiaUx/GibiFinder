@@ -452,12 +452,18 @@ export function PdfReader({
         // the layout box past the container. With a transform the box never
         // changes, so the page stays centred and `pan` reaches the overhang.
         className={`flex-1 overflow-auto overscroll-contain flex justify-center ${bodyPad}`}
-        // Once zoomed, the drag has to reach us instead of being taken as a
-        // scroll: `transform` never grows the layout box, so scrolling cannot
-        // reach the overhang and only the pan can. Page mode hands us the whole
-        // gesture; the cascade keeps the vertical, where scrolling down the
-        // column is the reading gesture, and gives us the horizontal.
-        style={{ touchAction: zoom > 1 ? (readerMode === "page" ? "none" : "pan-y") : undefined }}
+        // The drag has to reach us instead of being taken as a scroll:
+        // `transform` never grows the layout box, so scrolling cannot reach the
+        // overhang and only the pan can. Page mode hands us the whole gesture;
+        // the cascade keeps the vertical, where scrolling down the column is
+        // the reading gesture, and gives us the pinch and the horizontal.
+        //
+        // Unconditional, not `zoom > 1`: neither value includes `pinch-zoom`,
+        // and that is the point — `index.html` allows native page zoom site-
+        // wide, so at 1x the browser swallowed every two-finger gesture before
+        // this hook saw a single pointer event. See the longer note in
+        // MangaDexReader.tsx.
+        style={{ touchAction: readerMode === "page" ? "none" : "pan-y" }}
         onClick={readerMode === "scroll" && zoom === 1 ? toggleChrome : undefined}
       >
         {loadError ? (
@@ -578,9 +584,15 @@ export function PdfReader({
           the immersion level also covers plain "clean" after `autoHideMs`. */}
       {!chromeVisible && (
         <div className={cn(
-          "fixed bottom-5 left-1/2 -translate-x-1/2 z-[122] flex items-center gap-1 sm:gap-2 px-3 py-2 rounded-full border transition-opacity duration-300",
-          uiActive ? "opacity-100" : "opacity-40",
-        )} style={barStyle}>
+          "fixed left-1/2 -translate-x-1/2 z-[122] flex items-center gap-1 sm:gap-2 px-3 py-2 rounded-full border transition-opacity duration-300",
+          // Only way out of the reader on a phone — not dim at rest.
+          uiActive ? "opacity-100" : "opacity-70",
+        )} style={{
+          ...barStyle,
+          // `viewport-fit=cover` puts the layout viewport behind the home
+          // indicator; a flat `bottom-5` lands this pill on top of it.
+          bottom: "calc(env(safe-area-inset-bottom, 0px) + 1.25rem)",
+        }}>
           <button onClick={prevPage} disabled={currentPage === 0} className="disabled:opacity-30 min-w-9 min-h-9 sm:min-w-0 sm:min-h-0 flex items-center justify-center" aria-label="Página anterior" style={{ color: "var(--rd-text)" }}><ChevronLeft className="w-5 h-5" strokeWidth={3} /></button>
           <span className="font-display text-sm px-1" style={{ color: "var(--rd-text)" }}>{currentPage + 1}/{numPages || "…"}</span>
           <button onClick={nextPage} disabled={numPages > 0 && currentPage >= numPages - 1} className="disabled:opacity-30 min-w-9 min-h-9 sm:min-w-0 sm:min-h-0 flex items-center justify-center" aria-label="Próxima página" style={{ color: "var(--rd-text)" }}><ChevronRight className="w-5 h-5" strokeWidth={3} /></button>
