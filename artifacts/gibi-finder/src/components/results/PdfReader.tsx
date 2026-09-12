@@ -423,12 +423,12 @@ export function PdfReader({
                 <button onClick={() => setReaderMode("scroll")} title="Modo Cascata"
                   className={cn("px-2 sm:px-3 py-1 font-sans font-bold text-2xs sm:text-xs flex items-center gap-1", readerMode === "scroll" ? "bg-white text-black" : "")}
                   style={readerMode !== "scroll" ? { color: "var(--rd-text)" } : undefined}>
-                  <Layers className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden xs:inline">Cascata</span>
+                  <Layers className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden sm:inline">Cascata</span>
                 </button>
                 <button onClick={() => setReaderMode("page")} title="Modo Página"
                   className={cn("px-2 sm:px-3 py-1 font-sans font-bold text-2xs sm:text-xs flex items-center gap-1", readerMode === "page" ? "bg-white text-black" : "")}
                   style={readerMode !== "page" ? { color: "var(--rd-text)" } : undefined}>
-                  <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden xs:inline">Página</span>
+                  <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> <span className="hidden sm:inline">Página</span>
                 </button>
               </div>
             )}
@@ -566,16 +566,37 @@ export function PdfReader({
         </div>
       )}
 
-      {/* Floating control (cinema / immersion) */}
-      {immersion !== "clean" && uiActive && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[122] flex items-center gap-2 px-3 py-2 rounded-full border animate-in fade-in duration-150" style={barStyle}>
-          <button onClick={prevPage} disabled={currentPage === 0} className="disabled:opacity-30" style={{ color: "var(--rd-text)" }}><ChevronLeft className="w-5 h-5" strokeWidth={3} /></button>
+      {/* Floating control — mounted whenever the chrome is away, which on a
+          phone is from the moment the reader opens: `firstRunDefaults()` starts
+          touch devices at the "cinema" immersion level, where `chromeVisible`
+          is hard `false` and the header (with its X) never renders at all.
+
+          It used to be gated on `uiActive` as well, so it unmounted ~3s after
+          the last touch — the only way out of the reader, gone, on a device
+          with no Esc key. It now stays mounted and only dims, the same escape
+          hatch MangaDexReader keeps. Gating on `!chromeVisible` rather than on
+          the immersion level also covers plain "clean" after `autoHideMs`. */}
+      {!chromeVisible && (
+        <div className={cn(
+          "fixed bottom-5 left-1/2 -translate-x-1/2 z-[122] flex items-center gap-1 sm:gap-2 px-3 py-2 rounded-full border transition-opacity duration-300",
+          uiActive ? "opacity-100" : "opacity-40",
+        )} style={barStyle}>
+          <button onClick={prevPage} disabled={currentPage === 0} className="disabled:opacity-30 min-w-9 min-h-9 sm:min-w-0 sm:min-h-0 flex items-center justify-center" aria-label="Página anterior" style={{ color: "var(--rd-text)" }}><ChevronLeft className="w-5 h-5" strokeWidth={3} /></button>
           <span className="font-display text-sm px-1" style={{ color: "var(--rd-text)" }}>{currentPage + 1}/{numPages || "…"}</span>
-          <button onClick={nextPage} disabled={numPages > 0 && currentPage >= numPages - 1} className="disabled:opacity-30" style={{ color: "var(--rd-text)" }}><ChevronRight className="w-5 h-5" strokeWidth={3} /></button>
-          <span className="w-px h-5 mx-1" style={{ background: "var(--rd-border)" }} />
-          <button onClick={() => setShowSettings(true)} title="Configurações" style={{ color: "var(--rd-text)" }}><SlidersHorizontal className="w-4 h-4" /></button>
-          <button onClick={() => updateSettings({ immersion: "clean" }, workId ? "work" : "global")} title="Sair da imersão" style={{ color: "var(--rd-text)" }}><Minimize className="w-4 h-4" /></button>
-          <button onClick={handleClose} title="Fechar" className="text-primary"><X className="w-4 h-4" strokeWidth={3} /></button>
+          <button onClick={nextPage} disabled={numPages > 0 && currentPage >= numPages - 1} className="disabled:opacity-30 min-w-9 min-h-9 sm:min-w-0 sm:min-h-0 flex items-center justify-center" aria-label="Próxima página" style={{ color: "var(--rd-text)" }}><ChevronRight className="w-5 h-5" strokeWidth={3} /></button>
+          <span className="w-px h-5 mx-0.5 sm:mx-1" style={{ background: "var(--rd-border)" }} />
+          <button onClick={() => setShowSettings(true)} title="Configurações" aria-label="Configurações" className="min-w-9 min-h-9 sm:min-w-0 sm:min-h-0 flex items-center justify-center" style={{ color: "var(--rd-text)" }}><SlidersHorizontal className="w-4 h-4" /></button>
+          <button
+            onClick={() => {
+              if (immersion !== "clean") updateSettings({ immersion: "clean" }, workId ? "work" : "global");
+              else toggleChrome(); // clean level, chrome just auto-hid — bring it back
+            }}
+            title={immersion !== "clean" ? "Sair da imersão" : "Mostrar controles"}
+            aria-label={immersion !== "clean" ? "Sair da imersão" : "Mostrar controles"}
+            className="min-w-9 min-h-9 sm:min-w-0 sm:min-h-0 flex items-center justify-center"
+            style={{ color: "var(--rd-text)" }}
+          ><Minimize className="w-4 h-4" /></button>
+          <button onClick={handleClose} title="Fechar" aria-label="Fechar leitor" className="text-primary min-w-9 min-h-9 sm:min-w-0 sm:min-h-0 flex items-center justify-center"><X className="w-4 h-4" strokeWidth={3} /></button>
         </div>
       )}
 

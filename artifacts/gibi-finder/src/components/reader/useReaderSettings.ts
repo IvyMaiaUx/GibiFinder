@@ -62,7 +62,12 @@ export interface ReaderSettings {
 export const READER_SETTINGS_DEFAULTS: ReaderSettings = {
   readingMode: "scroll",
   direction: "ltr",
-  fitMode: "width",
+  // Fit Page by default: a western comic page is composed to be read whole, and
+  // the viewport now makes closing in on a panel a wheel notch or a double
+  // click away. (Only affects a reader with no saved preferences — an existing
+  // one keeps whatever is already persisted.) "auto" still drops to Fit Width
+  // on phones, where a whole page is too small to read.
+  fitMode: "whole",
   doublePage: "auto",
   splitMode: "manual",
   rememberZoom: false,
