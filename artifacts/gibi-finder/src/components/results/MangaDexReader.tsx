@@ -2452,12 +2452,7 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
               level caused it) does. */}
           {!chromeVisible && (
             <div
-              className={cn(
-                "fixed z-[113] flex gap-2 transition-opacity duration-300",
-                // On a phone this strip is the ONLY way out of the reader, so it
-                // does not get to be decorative-dim at rest.
-                uiActive ? "opacity-100" : "opacity-70",
-              )}
+              className="fixed z-[113] flex gap-2 items-center"
               style={{
                 // The reader is `fixed inset-0` under `viewport-fit=cover`, so
                 // the layout viewport starts behind the status bar. A flat
@@ -2472,7 +2467,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
             >
               <button
                 onClick={() => setShowSettings(true)}
-                className="w-11 h-11 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center rounded-full border backdrop-blur-sm"
+                className={cn(
+                  "w-11 h-11 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center rounded-full border backdrop-blur-sm transition-opacity duration-300",
+                  uiActive ? "opacity-100" : "opacity-70",
+                )}
                 style={{ background: "var(--rd-surface)", color: "var(--rd-text)", borderColor: "var(--rd-border)" }}
                 title="Configurações"
                 aria-label="Configurações"
@@ -2484,7 +2482,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                   if (immersion !== "clean") updateSettings({ immersion: "clean" }, workId ? "work" : "global");
                   else toggleChrome(); // clean level, chrome just auto-hid — bring it back instead
                 }}
-                className="w-11 h-11 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center rounded-full border backdrop-blur-sm"
+                className={cn(
+                  "w-11 h-11 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center rounded-full border backdrop-blur-sm transition-opacity duration-300",
+                  uiActive ? "opacity-100" : "opacity-70",
+                )}
                 style={{ background: "var(--rd-surface)", color: "var(--rd-text)", borderColor: "var(--rd-border)" }}
                 title={immersion !== "clean" ? "Sair da imersão" : "Mostrar controles"}
                 aria-label={immersion !== "clean" ? "Sair da imersão" : "Mostrar controles"}
@@ -2502,12 +2503,18 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                   two buttons above do. */}
               <button
                 onClick={() => setShowReader(false)}
-                className="w-11 h-11 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center rounded-full border backdrop-blur-sm bg-primary text-white hover:bg-red-600 transition-colors"
-                style={{ borderColor: "var(--rd-border)" }}
+                // Deliberately the one control here that never fades and never
+                // borrows the theme: solid red, white ring, its own shadow, 44px
+                // at every size. Reported three times running as "the close
+                // button still isn't there" on an iPhone — whatever else is
+                // going on, a translucent dark circle on a dark page was never
+                // going to survive that, and the way out of a reader is not the
+                // place to be tasteful about contrast.
+                className="w-11 h-11 flex items-center justify-center rounded-full bg-primary text-white border-2 border-white shadow-lg hover:bg-red-600 transition-colors"
                 title="Fechar Leitor"
                 aria-label="Fechar leitor"
               >
-                <X className="w-4 h-4" strokeWidth={3} />
+                <X className="w-5 h-5" strokeWidth={3} />
               </button>
             </div>
           )}
