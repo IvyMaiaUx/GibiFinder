@@ -96,8 +96,14 @@ export function Header({ minimal = false }: { minimal?: boolean } = {}) {
           </span>
         </Link>
 
-        {/* Desktop Navigation */}
-        <nav className="hidden lg:flex items-center gap-4">
+        {/* Desktop Navigation.
+            Tightened between `lg` and `xl`. At exactly 1024 — an iPad in
+            landscape, and any half-screen laptop window — the three groups in
+            this row needed 1074px of the 1009px they had, and `justify-between`
+            does not wrap or scroll: the right-hand group ended at x=1126, so the
+            +18 toggle and the LOGIN button were simply off the screen, on every
+            page of the site. Roomy spacing comes back at `xl`. */}
+        <nav className="hidden lg:flex items-center gap-1.5 xl:gap-4 min-w-0">
           {navItems.map((item) => {
             const isActive = location === item.path;
             const Icon = item.icon;
@@ -106,7 +112,7 @@ export function Header({ minimal = false }: { minimal?: boolean } = {}) {
                 key={item.path}
                 href={item.path}
                 className={cn(
-                  "flex items-center gap-2 font-display text-xl px-4 py-2 border-4 border-black rounded-lg transition-all comic-shadow-sm comic-hover comic-active",
+                  "flex items-center gap-1.5 xl:gap-2 font-display text-lg xl:text-xl px-2.5 xl:px-4 py-2 border-4 border-black rounded-lg transition-all comic-shadow-sm comic-hover comic-active whitespace-nowrap",
                   isActive
                     ? "bg-white text-black translate-y-[-2px] shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
                     : "bg-transparent text-black hover:bg-white/50"
@@ -120,7 +126,7 @@ export function Header({ minimal = false }: { minimal?: boolean } = {}) {
         </nav>
 
         {/* Auth Actions (Desktop) */}
-        <div className="hidden lg:flex items-center gap-2 border-l-4 border-black/10 pl-4 ml-2">
+        <div className="hidden lg:flex items-center gap-2 border-l-4 border-black/10 pl-2 ml-1 xl:pl-4 xl:ml-2 shrink-0">
           {/* +18 Mode Toggle (Desktop). Active state used to be bg-[#f43f5e] —
               visually almost identical to the site's own --primary red used
               on every other CTA (header/buttons), so "ativo" didn't read as
