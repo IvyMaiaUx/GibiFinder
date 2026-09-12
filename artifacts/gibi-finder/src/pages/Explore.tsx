@@ -11,6 +11,13 @@ import { pickBestSource } from "@/lib/pick-best-source";
 import { useAuth } from "@/hooks/use-auth";
 import { useDocumentMeta } from "@/hooks/use-document-meta";
 import { CatalogCard, CatalogCardSkeleton, CatalogRow as Row, CatalogRowSkeleton, type CatalogItem as UnifiedCatalogItem } from "@/components/results/CatalogCard";
+import {
+  getCachedData,
+  setCachedData,
+  getCatalogCacheKey,
+  getRecentUpdatesCacheKey,
+  getCuratedRowsCacheKey,
+} from "@/lib/catalog-cache";
 
 interface RowData {
   key: string;
@@ -234,14 +241,16 @@ export default function Explore() {
     description: "Explore o catálogo completo de gibis, mangás e HQs do Gibi Finder por tipo, editora e gênero.",
     path: "/explorar",
   });
-  const [popular, setPopular] = useState<UnifiedCatalogItem[]>([]);
-  const [latest, setLatest] = useState<UnifiedCatalogItem[]>([]);
+  const [isNsfw, setIsNsfw] = useState(() => (typeof document !== "undefined" ? document.documentElement.classList.contains("nsfw") : false));
+
+  const [popular, setPopular] = useState<UnifiedCatalogItem[]>(() => getCachedData<UnifiedCatalogItem[]>(getCatalogCacheKey("popular", isNsfw)) || []);
+  const [latest, setLatest] = useState<UnifiedCatalogItem[]>(() => getCachedData<UnifiedCatalogItem[]>(getCatalogCacheKey("latest", isNsfw)) || []);
   const [typeFilter, setTypeFilter] = useState<"all" | "manga" | "hq" | "gibi">(() => {
     // Restore the tab when returning from a work detail ("Voltar para Explorar").
     const t = new URLSearchParams(window.location.search).get("tab");
     return (t === "hq" || t === "gibi" || t === "manga") ? t : "all";
   });
-  const [curatedRows, setCuratedRows] = useState<RowData[]>([]);
+  const [curatedRows, setCuratedRows] = useState<RowData[]>(() => getCachedData<RowData[]>(getCuratedRowsCacheKey(typeFilter, isNsfw)) || []);
   const [curatedLoading, setCuratedLoading] = useState(false);
   // Restored the same way typeFilter above already is, so returning from a
   // title opened inside a franchise "Ver tudo" (see buildReturnTo/openItem
@@ -341,11 +350,13 @@ export default function Explore() {
   const CATALOG_PAGE_SIZE = 60;
 
   const [continueItems, setContinueItems] = useState<{ providerId: string; mangaId: string; title: string; coverUrl?: string; chapterNum?: string; updatedAt: number }[]>([]);
-  const [recentUpdates, setRecentUpdates] = useState<RecentUpdateItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [recentUpdates, setRecentUpdates] = useState<RecentUpdateItem[]>(() => getCachedData<RecentUpdateItem[]>(getRecentUpdatesCacheKey(isNsfw)) || []);
+  const [loading, setLoading] = useState(() => {
+    const hasPop = getCachedData<UnifiedCatalogItem[]>(getCatalogCacheKey("popular", isNsfw));
+    return !(hasPop && hasPop.length > 0);
+  });
   const [error, setError] = useState<string | null>(null);
   const [favVersion, setFavVersion] = useState(0);
-  const [isNsfw, setIsNsfw] = useState(() => document.documentElement.classList.contains("nsfw"));
 
   useEffect(() => {
     const onNsfw = () => setIsNsfw(document.documentElement.classList.contains("nsfw"));
@@ -380,32 +391,36 @@ export default function Explore() {
   }, []);
 
   const loadCatalog = useCallback(async (nsfw: boolean) => {
-    setLoading(true);
+    const cachedPop = getCachedData<UnifiedCatalogItem[]>(getCatalogCacheKey("popular", nsfw));
+    if (!cachedPop || cachedPop.length === 0) {
+      setLoading(true);
+    }
     setError(null);
-    // Backstop against a provider hanging: each provider is already capped at
-    // ~12s server-side, but this guarantees the UI always reaches a terminal
-    // state instead of spinning indefinitely if the request itself stalls.
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20000);
-    // The two lists are independent, but a Promise.all held the whole page on
-    // the slower of the pair — and they don't go cold together, so a warm
-    // "popular" would still sit behind a cold "latest" for its full fan-out.
-    // Paint each as it lands; "popular" is the first row on screen, so the page
-    // stops looking empty as soon as it arrives.
+
     const get = (listType: "popular" | "latest") =>
       fetch(`${BASE}/api/providers/catalog?listType=${listType}&nsfw=${nsfw}`, { signal: controller.signal })
         .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json() as Promise<UnifiedCatalogItem[]>; });
 
-    const pPopular = get("popular").then(items => { setPopular(items); return true; }, () => { setPopular([]); return false; });
-    const pLatest = get("latest").then(items => { setLatest(items); return true; }, () => { setLatest([]); return false; });
+    const pPopular = get("popular").then(items => {
+      const list = Array.isArray(items) ? items : [];
+      setPopular(list);
+      if (list.length > 0) setCachedData(getCatalogCacheKey("popular", nsfw), list);
+      return true;
+    }, () => { return false; });
 
-    // Release the spinner on the first row that arrives, not on both.
+    const pLatest = get("latest").then(items => {
+      const list = Array.isArray(items) ? items : [];
+      setLatest(list);
+      if (list.length > 0) setCachedData(getCatalogCacheKey("latest", nsfw), list);
+      return true;
+    }, () => { return false; });
+
     void pPopular.then(() => setLoading(false));
 
     const [okPopular, okLatest] = await Promise.all([pPopular, pLatest]);
-    // Only a total failure is worth an error banner; one list missing still
-    // leaves a usable page.
-    if (!okPopular && !okLatest) {
+    if (!okPopular && !okLatest && popular.length === 0 && latest.length === 0) {
       setError(
         controller.signal.aborted
           ? "O catálogo demorou demais para responder. Tente novamente."
@@ -414,19 +429,22 @@ export default function Explore() {
     }
     clearTimeout(timeout);
     setLoading(false);
-  }, []);
+  }, [popular.length, latest.length]);
 
   useEffect(() => { loadCatalog(isNsfw); }, [isNsfw, loadCatalog]);
 
-  // "Atualizações recentes" — MangaDex-only (see the backend's
-  // ProviderManager.getRecentUpdates for why: no other provider tracks a
-  // date per chapter today).
+  // "Atualizações recentes" — MangaDex-only
   useEffect(() => {
     let cancelled = false;
     fetch(`${BASE}/api/providers/recent-updates?nsfw=${isNsfw}`)
       .then(r => (r.ok ? r.json() : []))
-      .then((data: RecentUpdateItem[]) => { if (!cancelled) setRecentUpdates(Array.isArray(data) ? data : []); })
-      .catch(() => { if (!cancelled) setRecentUpdates([]); });
+      .then((data: RecentUpdateItem[]) => {
+        if (!cancelled && Array.isArray(data) && data.length > 0) {
+          setRecentUpdates(data);
+          setCachedData(getRecentUpdatesCacheKey(isNsfw), data);
+        }
+      })
+      .catch(() => { /* keep cached data */ });
     return () => { cancelled = true; };
   }, [isNsfw]);
 
@@ -440,48 +458,39 @@ export default function Explore() {
     }
   }, [typeFilter]);
 
-  // HQ / Gibi tabs: fetch curated series/character rows on demand (their catalog
-  // is sparse, so we search each one to build real rows).
+  // HQ / Gibi tabs: fetch curated series/character rows on demand (with SWR caching)
   useEffect(() => {
     if (typeFilter !== "hq" && typeFilter !== "gibi") { setCuratedRows([]); return; }
+    const cached = getCachedData<RowData[]>(getCuratedRowsCacheKey(typeFilter, isNsfw));
+    if (cached && cached.length > 0) {
+      setCuratedRows(cached);
+      setCuratedLoading(false);
+    } else {
+      setCuratedRows([]);
+      setCuratedLoading(true);
+    }
     const series = typeFilter === "hq" ? HQ_SERIES : GIBI_SERIES;
     let cancelled = false;
-    setCuratedRows([]);
-    setCuratedLoading(true);
 
-    // Completeness first: HQ rows include the HQ providers (Batcave, Jon Domingues,
-    // etc.) so franchises like Coringa / Lanterna Verde / Justiceiro — which live
-    // there, not in the Drive library — don't vanish. Gibi is Drive-only (fast).
     const scope = typeFilter === "hq"
       ? [...HQ_PROVIDER_IDS, ...GIBI_PROVIDER_IDS].join(",")
       : GIBI_PROVIDER_IDS.join(",");
 
-    // Lead with a "Todos os HQs / Gibis" row (the whole curated library of
-    // this type). Used to be a by-genre lookup for a literal "HQ"/"Gibi
-    // Nacional" tag — no provider actually tags anything with that exact
-    // compound string (real tags are "Nacional"/"Biblioteca"/publisher
-    // names/SEO strings), so this always silently returned 0 items and the
-    // row never rendered — the whole point of "see everything in this tab"
-    // never actually worked. Fetches the real catalog scoped to the same
-    // providers the per-series rows below already use instead. No "Ver
-    // tudo" on this one yet (a full paginated view scoped to these
-    // providers doesn't exist — separate follow-up, not silently dropped).
     const allTitle = typeFilter === "hq" ? "📚 Todos os HQs" : "📚 Todos os Gibis";
     fetch(`${BASE}/api/providers/catalog?listType=popular&nsfw=${isNsfw}&providers=${encodeURIComponent(scope)}`)
       .then(r => (r.ok ? r.json() : []))
       .then((items: UnifiedCatalogItem[]) => {
         if (cancelled) return;
-        // getCatalog(nsfw=true) returns safe+adult mixed (nsfw there just
-        // means "don't hide adult", not "adult only") — same exclusive
-        // safe-xor-adult split matchesNsfw already applies to every other
-        // row on this page, or +18 mode would show safe titles in this row
-        // too (CodeRabbit, PR #64).
         const list = (Array.isArray(items) ? items : []).filter(i => typeOf(i) === typeFilter && (isNsfw ? isAdultItem(i) : !isAdultItem(i)));
         if (list.length > 0) {
-          setCuratedRows(prev => [
-            { key: "all", title: allTitle, items: list.slice(0, ROW_DISPLAY_CAP) },
-            ...prev.filter(r => r.key !== "all"),
-          ]);
+          setCuratedRows(prev => {
+            const next = [
+              { key: "all", title: allTitle, items: list.slice(0, ROW_DISPLAY_CAP) },
+              ...prev.filter(r => r.key !== "all"),
+            ];
+            setCachedData(getCuratedRowsCacheKey(typeFilter, isNsfw), next);
+            return next;
+          });
         }
       })
       .catch(() => { /* ignore */ });
@@ -499,16 +508,15 @@ export default function Explore() {
         .catch(() => ({ key: `c-${term}`, title: term, items: [] as UnifiedCatalogItem[] }));
 
     (async () => {
-      // Bigger batches now that each search is cheap (scoped). Rows still stream in.
       const BATCH = 8;
       for (let i = 0; i < series.length && !cancelled; i += BATCH) {
         const rows = await Promise.all(series.slice(i, i + BATCH).map(fetchSeries));
         if (cancelled) return;
-        // Was `> 0` — a series search that only turns up 1-2 volumes made the
-        // same broken-looking sparse row as the franchise shelves below.
-        // Reuses MIN_ROW_ITEMS so every shelf on the page has one consistent
-        // minimum density instead of a separate threshold per row type.
-        setCuratedRows(prev => [...prev, ...rows.filter(r => r.items.length >= MIN_ROW_ITEMS)]);
+        setCuratedRows(prev => {
+          const next = [...prev, ...rows.filter(r => r.items.length >= MIN_ROW_ITEMS)];
+          setCachedData(getCuratedRowsCacheKey(typeFilter, isNsfw), next);
+          return next;
+        });
       }
       if (!cancelled) setCuratedLoading(false);
     })();

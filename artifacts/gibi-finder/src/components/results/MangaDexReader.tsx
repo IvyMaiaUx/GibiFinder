@@ -310,16 +310,18 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // In-reader zoom (pinch) for CASCADE mode only. Page mode is driven by
-  // <MediaViewport>, which runs its own engine on its own canvas — leaving this
-  // hook bound there too would put two gesture handlers on the same pointer
-  // stream, one of them transforming an element the other does not own.
-  // (PdfReader still uses this hook for its own scroll column.)
-  const { zoom, setZoom, pan } = useReaderZoom(scrollContainerRef, {
+  // In-reader zoom (pinch) for CASCADE mode only, driven by the user's zoom
+  // settings. Page mode is driven by <MediaViewport>, which runs its own engine
+  // on its own canvas — leaving this hook bound there too would put two gesture
+  // handlers on the same pointer stream, one of them transforming an element
+  // the other does not own. (PdfReader still uses this hook for its own scroll
+  // column.) `isAnimating` drives the eased transition on the cascade column.
+  const { zoom, setZoom, pan, isAnimating } = useReaderZoom(scrollContainerRef, {
     enabled: showReader && readerMode === "scroll",
     // When "remember zoom" is on, keep a stable key so zoom persists across pages.
     resetKey: settings.rememberZoom ? "keep" : `${selectedChapter?.id}-${readerMode}`,
     max: settings.maxZoom,
+    doubleTap: settings.doubleTapZoom,
     contentRef: zoomContentRef,
   });
 
@@ -1230,6 +1232,35 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readerMode, currentPage, prevChapter, spreads, splitSide, splitSet, settings.splitMode, settings.haptics]);
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleTapZone = useCallback((action: string) => {
+    if (tapTimerRef.current) {
+      clearTimeout(tapTimerRef.current);
+      tapTimerRef.current = null;
+    }
+
+    if (zoom > 1.01) {
+      toggleChrome();
+      return;
+    }
+
+    if (action === "menu") {
+      toggleChrome();
+      return;
+    }
+
+    if (settings.doubleTapZoom) {
+      tapTimerRef.current = setTimeout(() => {
+        tapTimerRef.current = null;
+        if (action === "prev") goToPrevPage();
+        else if (action === "next") goToNextPage();
+      }, 220);
+    } else {
+      if (action === "prev") goToPrevPage();
+      else if (action === "next") goToNextPage();
+    }
+  }, [zoom, settings.doubleTapZoom, toggleChrome, goToPrevPage, goToNextPage]);
 
   const [chapterDownload, setChapterDownload] = useState<{ done: number; total: number } | null>(null);
   // Fetches every page of the current chapter through the image proxy
@@ -2291,7 +2322,12 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
                 // so it stays smooth continuously tracking a pinch instead of
                 // reflowing layout on every touchmove. pan comes from the
                 // same gesture (see useReaderZoom).
-                style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "center top" }}
+                style={{
+                  transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
+                  transformOrigin: "center top",
+                  transition: isAnimating ? "transform 260ms cubic-bezier(0.2, 0, 0.2, 1)" : "none",
+                  willChange: "transform",
+                }}
               >
                 {pages.map((p, idx) => {
                   // Virtualized: only pages in the active window mount their image.

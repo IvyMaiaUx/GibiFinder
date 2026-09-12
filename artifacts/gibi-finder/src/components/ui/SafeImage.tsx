@@ -79,6 +79,7 @@ export function SafeImage({ src, alt, className, onLoad, onBroken, width, ...pro
       alt={alt}
       className={className}
       referrerPolicy="no-referrer"
+      decoding="async"
       {...props}
       onLoad={(e) => { bumpStat("loaded"); onLoad?.(e); }}
       onError={handleError}

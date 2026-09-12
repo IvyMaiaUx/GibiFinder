@@ -84,10 +84,11 @@ export function PdfReader({
   // bounds are derived from.
   const zoomContentRef = useRef<HTMLDivElement>(null);
 
-  const { zoom, setZoom, pan } = useReaderZoom(scrollRef, {
+  const { zoom, setZoom, pan, isAnimating } = useReaderZoom(scrollRef, {
     enabled: true,
     resetKey: settings.rememberZoom ? "keep" : `${readerMode}`,
     max: settings.maxZoom,
+    doubleTap: settings.doubleTapZoom,
     contentRef: zoomContentRef,
   });
 
@@ -368,14 +369,31 @@ export function PdfReader({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [numPages, readerMode, rtl, immersion, showSettings, workId]);
 
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Tap zones (page mode): [left, centre, right] -> actions; rtl flips the default.
   const isDefaultZones = settings.tapZones[0] === "prev" && settings.tapZones[1] === "menu" && settings.tapZones[2] === "next";
   const tapZones = (isDefaultZones && rtl) ? (["next", "menu", "prev"] as const) : settings.tapZones;
   const doTap = (a: string) => {
+    if (tapTimerRef.current) {
+      clearTimeout(tapTimerRef.current);
+      tapTimerRef.current = null;
+    }
     // While magnified a tap means "show me the controls", not "next page" —
     // turning the page would discard the spot the reader just zoomed into.
     if (zoom > 1.01) { toggleChrome(); return; }
-    if (a === "prev") prevPage(); else if (a === "next") nextPage(); else toggleChrome();
+    if (a === "menu") { toggleChrome(); return; }
+
+    if (settings.doubleTapZoom) {
+      tapTimerRef.current = setTimeout(() => {
+        tapTimerRef.current = null;
+        if (a === "prev") prevPage();
+        else if (a === "next") nextPage();
+      }, 220);
+    } else {
+      if (a === "prev") prevPage();
+      else if (a === "next") nextPage();
+    }
   };
 
   const previewFallback = drivePreviewUrl(rawUrl);
@@ -482,13 +500,11 @@ export function PdfReader({
         ) : (
           <div
             ref={zoomContentRef}
-            // Was CSS `zoom`, which reflows the whole page tree on every frame
-            // of a pinch and cannot hold a focal point. `transform` is
-            // compositor-only and keeps the placeholder heights measured by the
-            // cascade virtualiser valid, since layout no longer changes at all.
             style={{
-              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
               transformOrigin: "center top",
+              transition: isAnimating ? "transform 260ms cubic-bezier(0.2, 0, 0.2, 1)" : "none",
+              willChange: "transform",
             }}
           >
             <Document
@@ -531,7 +547,16 @@ export function PdfReader({
                       <Page pageNumber={currentPage + 1} {...pageProps} renderTextLayer={false} renderAnnotationLayer={false} />
                     </div>
                     {/* Tap zones (page mode) */}
-                    <div className="absolute inset-0 flex" onClick={e => e.stopPropagation()}>
+                    <div
+                      className="absolute inset-0 flex"
+                      onClick={e => e.stopPropagation()}
+                      onTouchStart={() => {
+                        if (tapTimerRef.current) {
+                          clearTimeout(tapTimerRef.current);
+                          tapTimerRef.current = null;
+                        }
+                      }}
+                    >
                       <div className="h-full" style={{ width: "33%" }} onClick={() => doTap(tapZones[0])} />
                       <div className="h-full" style={{ width: "34%" }} onClick={() => doTap(tapZones[1])} />
                       <div className="h-full" style={{ width: "33%" }} onClick={() => doTap(tapZones[2])} />
