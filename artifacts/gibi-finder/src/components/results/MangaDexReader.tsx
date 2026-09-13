@@ -1095,23 +1095,32 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     }
   }, [doubleActive, currentGroup, currentPage]);
 
-  // Re-anchor the cascade after a zoom change, so the virtualization can't
-  // collapse the column and drop the reader somewhere else.
+  // Re-anchor the cascade after a zoom change — but ONLY if the column actually
+  // collapsed under it.
   //
-  // Two things were wrong with doing it on every `zoom` tick. A pinch commits a
-  // new zoom once per animation frame, so this ran ~60x a second, each pass
-  // yanking the scroll to a page top and holding `resumingRef` (which mutes the
-  // page tracker) for another 350ms — you could not pinch and stay put. And it
-  // anchored on `currentPage`, which the tracker had just been muted from
-  // updating: near the start of a chapter that is still 0, and page 0 is the
-  // cover. That is the "pinched and got thrown back to the cover" report.
+  // This started life guarding against the virtualization dropping mounted
+  // pages mid-zoom and clamping the scroll somewhere else ("zoom que reiniciava
+  // para a capa"). It guarded that by scrolling a page top to the viewport top
+  // every single time the zoom changed, which is its own kind of broken:
+  // measured on a real chapter, a pinch centred on a panel at 72% down page 2
+  // held that point perfectly through the gesture (72% -> 74%), and then this
+  // effect fired and moved it to 18% — the reader pinches in on a panel and,
+  // a moment later, gets thrown half a page away. A snap after every pinch is
+  // exactly the "cascata ainda ruim" report.
   //
-  // Now it waits for the zoom to settle and anchors on the page actually at the
-  // top of the viewport, measured at that moment rather than taken on trust.
+  // The collapse it was written for has a signature: the container's own
+  // `scrollTop` jumps. A pinch does not touch `scrollTop` at all — zoom is a
+  // `transform`, which never changes the layout box (measured: 4000 before,
+  // 4000 after). So remember where the column stood when the zoom started
+  // moving, and only intervene if it has drifted more than a screenful by the
+  // time the gesture settles. Otherwise leave the reader exactly where they
+  // put themselves.
   const prevZoomRef = useRef(zoom);
+  const zoomScrollAnchorRef = useRef<number | null>(null);
   useEffect(() => {
     if (readerMode !== "scroll" || !showReader) {
       prevZoomRef.current = zoom;
+      zoomScrollAnchorRef.current = null;
       return;
     }
     const oldZoom = prevZoomRef.current;
@@ -1121,7 +1130,16 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
     const container = scrollContainerRef.current;
     if (!container) return;
 
+    // First tick of this gesture: this is the position worth protecting.
+    if (zoomScrollAnchorRef.current === null) zoomScrollAnchorRef.current = container.scrollTop;
+
     const settle = window.setTimeout(() => {
+      const before = zoomScrollAnchorRef.current;
+      zoomScrollAnchorRef.current = null;
+      if (before === null) return;
+      // Under a screenful of drift is normal settling, not a collapse.
+      if (Math.abs(container.scrollTop - before) < container.clientHeight) return;
+
       const top = container.getBoundingClientRect().top;
       // The page straddling the top edge is the one being read; fall back to
       // the first page still on screen, and only then to the tracked index.
