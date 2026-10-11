@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
-import { PageItem, ReaderMode, ReaderDirection, ReaderLayout, ReaderFit } from "./readerTypes";
+import { PageItem, ReaderMode, ReaderDirection, ReaderLayout, ReaderFit, ReaderTheme } from "./readerTypes";
 import { useSpreadNavigation } from "./useSpreadNavigation";
 import { useGestureViewport } from "./useGestureViewport";
 import { usePagePreload } from "./usePagePreload";
@@ -13,6 +12,8 @@ interface ReaderViewportProps {
   direction: ReaderDirection;
   layout: ReaderLayout;
   fit: ReaderFit;
+  theme?: ReaderTheme;
+  brightness?: number;
   onPageChange: (newIndex: number) => void;
   onToggleChrome: () => void;
 }
@@ -24,6 +25,8 @@ export function ReaderViewport({
   direction,
   layout,
   fit,
+  theme = "black",
+  brightness = 100,
   onPageChange,
   onToggleChrome,
 }: ReaderViewportProps) {
@@ -225,11 +228,25 @@ export function ReaderViewport({
     };
   }, [mode, pages.length, containerRef]);
 
+  const getThemeBg = () => {
+    switch (theme) {
+      case "sepia":
+        return "bg-[#f4ecd8] text-[#5b4636]";
+      case "light":
+        return "bg-[#f5f5f5] text-zinc-900";
+      case "dark":
+        return "bg-[#18181b] text-zinc-100";
+      case "black":
+      default:
+        return "bg-black text-white";
+    }
+  };
+
   return (
     <div
       ref={containerRef}
       style={{ touchAction: mode === "webtoon" ? "pan-y" : "none" }}
-      className={`relative w-full h-full flex ${mode === "webtoon" ? "overflow-y-auto" : "items-center justify-center overflow-hidden"} select-none bg-black`}
+      className={`relative w-full h-full flex ${mode === "webtoon" ? "overflow-y-auto" : "items-center justify-center overflow-hidden"} select-none ${getThemeBg()}`}
     >
       {/* Subtle touch zone feedback flash (pointer-events-none) */}
       {zoneFlash && (
@@ -241,6 +258,7 @@ export function ReaderViewport({
       {/* Main Content viewport container */}
       <div
         ref={contentRef}
+        style={{ filter: brightness < 100 ? `brightness(${brightness}%)` : undefined }}
         className={`w-full h-full flex ${
           mode === "webtoon"
             ? "flex-col items-center p-2 sm:p-4"

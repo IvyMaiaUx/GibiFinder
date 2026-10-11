@@ -24,14 +24,18 @@ import {
   Download,
   Loader2,
   Check,
-  AlertCircle
+  AlertCircle,
+  Sun,
+  Moon,
+  Palette,
+  Sliders
 } from "lucide-react";
 import { cn, buildStoreZip, toPdfPageImage, buildImagesPdf, mapWithConcurrency, proxyCoverUrl } from "@/lib/utils";
 import { ReaderDiagnostics, DiagInfo } from "./ReaderDiagnostics";
 import { resetReaderStats, logRequest } from "./readerStats";
 import { saveReadingState, markChapterCompleted } from "@/lib/user-history";
 import { cacheChapterPages, isChapterCachedOffline } from "./offlineCache";
-import { ChapterItem } from "./readerTypes";
+import { ChapterItem, ReaderTheme } from "./readerTypes";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -126,11 +130,47 @@ export function IntegratedReader({
   const [direction, setDirection] = useState<ReaderDirection>("ltr");
   const [layout, setLayout] = useState<ReaderLayout>("auto");
   const [fit, setFit] = useState<ReaderFit>("fit-screen");
+  const [theme, setTheme] = useState<ReaderTheme>("black");
+  const [brightness, setBrightness] = useState<number>(100);
+  const [themeModalOpen, setThemeModalOpen] = useState(false);
   const [chromeVisible, setChromeVisible] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [diagOpen, setDiagOpen] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Phase 4.1: Screen Wake Lock API — keep screen awake while reader is active
+  useEffect(() => {
+    let wakeLockSentinel: any = null;
+    let released = false;
+
+    async function requestWakeLock() {
+      if (typeof navigator !== "undefined" && "wakeLock" in navigator) {
+        try {
+          wakeLockSentinel = await (navigator as any).wakeLock.request("screen");
+        } catch (err) {
+          // May fail if low battery or tab is in background
+        }
+      }
+    }
+
+    requestWakeLock();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && !released) {
+        requestWakeLock();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      released = true;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (wakeLockSentinel && typeof wakeLockSentinel.release === "function") {
+        wakeLockSentinel.release().catch(() => {});
+      }
+    };
+  }, []);
 
   // Phase 3.1: Fetch chapters from real provider if providerId and mangaId are present
   useEffect(() => {
@@ -260,6 +300,7 @@ export function IntegratedReader({
           if (prefs.direction) setDirection(prefs.direction);
           if (prefs.layout) setLayout(prefs.layout);
           if (prefs.fit) setFit(prefs.fit);
+          if (prefs.theme) setTheme(prefs.theme);
 
           const pParam = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("p") : null;
           if (!pParam) {
@@ -382,6 +423,11 @@ export function IntegratedReader({
   const updateFit = (newFit: ReaderFit) => {
     setFit(newFit);
     if (mangaId) saveReaderPreferences(mangaId, { fit: newFit });
+  };
+
+  const updateTheme = (newTheme: ReaderTheme) => {
+    setTheme(newTheme);
+    if (mangaId) saveReaderPreferences(mangaId, { theme: newTheme });
   };
 
   // Clamp current page
@@ -678,6 +724,19 @@ export function IntegratedReader({
             </button>
           )}
 
+          {/* Theme & Display Settings toggle */}
+          <button
+            type="button"
+            onClick={() => setThemeModalOpen(true)}
+            className={cn(
+              "p-1.5 rounded-lg border border-white/20 text-white touch-target-44 transition-colors",
+              themeModalOpen ? "bg-amber-500 text-black border-amber-300" : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+            )}
+            title="Ajuste de Tema e Brilho"
+          >
+            <Palette className="w-4 h-4" />
+          </button>
+
           {/* Fullscreen toggle */}
           {isFullscreenSupported && (
             <button
@@ -768,6 +827,8 @@ export function IntegratedReader({
             direction={direction}
             layout={layout}
             fit={fit}
+            theme={theme}
+            brightness={brightness}
             onPageChange={handlePageChange}
             onToggleChrome={toggleChrome}
           />
@@ -887,6 +948,70 @@ export function IntegratedReader({
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Theme and Brightness Adjustment Modal */}
+      {themeModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-zinc-950 border border-white/20 rounded-xl p-5 comic-shadow space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <h3 className="font-display text-lg text-white">TEMA E BRILHO</h3>
+              <button
+                type="button"
+                onClick={() => setThemeModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Themes Selector */}
+            <div className="space-y-2">
+              <label className="text-xs font-display text-zinc-400 tracking-wider">COR DE FUNDO</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: "black", label: "Preto AMOLED", bg: "bg-black border-zinc-700 text-white" },
+                  { id: "dark", label: "Escuro", bg: "bg-zinc-900 border-zinc-700 text-white" },
+                  { id: "sepia", label: "Sépia", bg: "bg-[#f4ecd8] border-[#dfd4bc] text-[#5b4636]" },
+                  { id: "light", label: "Claro", bg: "bg-zinc-100 border-zinc-300 text-zinc-900" },
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => updateTheme(t.id as ReaderTheme)}
+                    className={cn(
+                      "p-2.5 rounded-lg border text-xs font-display flex items-center justify-between transition-transform active:scale-95",
+                      t.bg,
+                      theme === t.id && "ring-2 ring-primary border-primary font-bold"
+                    )}
+                  >
+                    <span>{t.label}</span>
+                    {theme === t.id && <Check className="w-3.5 h-3.5 text-primary" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Brightness Adjustment Slider */}
+            <div className="space-y-2 pt-2 border-t border-white/10">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-display text-zinc-400 tracking-wider flex items-center gap-1.5">
+                  <Sun className="w-3.5 h-3.5 text-amber-400" />
+                  BRILHO DO LEITOR
+                </label>
+                <span className="text-xs font-mono text-zinc-400">{brightness}%</span>
+              </div>
+              <input
+                type="range"
+                min={20}
+                max={100}
+                value={brightness}
+                onChange={(e) => setBrightness(Number(e.target.value))}
+                className="w-full accent-primary h-2 bg-zinc-800 rounded-lg cursor-pointer"
+              />
+            </div>
           </div>
         </div>
       )}
