@@ -103,13 +103,9 @@ export function Header({ minimal = false }: { minimal?: boolean } = {}) {
         </Link>
 
         {/* Desktop Navigation.
-            Tightened between `lg` and `xl`. At exactly 1024 — an iPad in
-            landscape, and any half-screen laptop window — the three groups in
-            this row needed 1074px of the 1009px they had, and `justify-between`
-            does not wrap or scroll: the right-hand group ended at x=1126, so the
-            +18 toggle and the LOGIN button were simply off the screen, on every
-            page of the site. Roomy spacing comes back at `xl`. */}
-        <nav className="hidden lg:flex items-center gap-1.5 xl:gap-4 min-w-0">
+            Ajustado com classes mais responsivas (text-base até xl, padding menor) para evitar
+            que itens da barra de navegação invadam ou sobreponham o botão +18 e usuário */}
+        <nav className="hidden lg:flex items-center gap-1 xl:gap-3 min-w-0">
           {navItems.map((item) => {
             const isActive = location === item.path;
             const Icon = item.icon;
@@ -118,13 +114,13 @@ export function Header({ minimal = false }: { minimal?: boolean } = {}) {
                 key={item.path}
                 href={item.path}
                 className={cn(
-                  "flex items-center gap-1.5 xl:gap-2 font-display text-lg xl:text-xl px-2.5 xl:px-4 py-2 border-4 border-black rounded-lg transition-all comic-shadow-sm comic-hover comic-active whitespace-nowrap",
+                  "flex items-center gap-1 xl:gap-2 font-display text-sm xl:text-lg px-2 xl:px-3 py-1.5 xl:py-2 border-2 xl:border-4 border-black rounded-lg transition-all comic-shadow-sm comic-hover comic-active whitespace-nowrap",
                   isActive
-                    ? "bg-white text-black translate-y-[-2px] shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
+                    ? "bg-white text-black translate-y-[-2px] shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] xl:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
                     : "bg-transparent text-black hover:bg-white/50"
                 )}
               >
-                <Icon className="w-5 h-5" strokeWidth={3} />
+                <Icon className="w-4 h-4 xl:w-5 xl:h-5" strokeWidth={3} />
                 {item.label}
               </PrefetchLink>
             );
@@ -132,38 +128,33 @@ export function Header({ minimal = false }: { minimal?: boolean } = {}) {
         </nav>
 
         {/* Auth Actions (Desktop) */}
-        <div className="hidden lg:flex items-center gap-2 border-l-4 border-black/10 pl-2 ml-1 xl:pl-4 xl:ml-2 shrink-0">
-          {/* +18 Mode Toggle (Desktop). Active state used to be bg-[#f43f5e] —
-              visually almost identical to the site's own --primary red used
-              on every other CTA (header/buttons), so "ativo" didn't read as
-              a distinct/warning state. Now uses its own dedicated dark
-              palette (bg #0E0B0F / border #24151D / text #F5EDF1 / magenta
-              glow #E04478) instead of just another pink button. */}
+        <div className="hidden lg:flex items-center gap-1.5 xl:gap-2 border-l-2 xl:border-l-4 border-black/10 pl-2 ml-1 xl:pl-3 xl:ml-2 shrink-0">
+          {/* +18 Mode Toggle (Desktop) */}
           <button
             onClick={toggleNsfw}
             className={cn(
-              "font-display text-base border-4 border-black px-4 py-2 rounded-lg comic-shadow-sm transition-all select-none duration-150 uppercase flex items-center justify-center gap-1.5",
+              "font-display text-sm xl:text-base border-2 xl:border-4 border-black px-2.5 xl:px-3.5 py-1.5 xl:py-2 rounded-lg comic-shadow-sm transition-all select-none duration-150 uppercase flex items-center justify-center gap-1 shrink-0",
               isNsfw
                 ? "bg-[#0E0B0F] text-[#F5EDF1] hover:bg-[#1a1116] border-[#24151D] shadow-[0_0_10px_rgba(224,68,120,0.5)]"
                 : "bg-white text-black hover:bg-gray-100"
             )}
             title="Modo +18"
           >
-            <span className="text-lg">🔞</span>
-            {isNsfw ? "+18 ATIVO" : "+18"}
+            <span className="text-base xl:text-lg">🔞</span>
+            <span>{isNsfw ? "+18 ATIVO" : "+18"}</span>
           </button>
 
           {user ? (
-            <div className="flex items-center gap-3 animate-in fade-in duration-200">
+            <div className="flex items-center gap-1.5 xl:gap-2.5 animate-in fade-in duration-200 shrink-0">
               <Link href="/login" className="flex items-center gap-1.5 font-display text-sm text-black hover:translate-y-[-1px] transition-transform select-none">
-                <div className="w-8 h-8 rounded-full bg-primary border-2 border-black flex items-center justify-center text-white font-display text-sm leading-none">
+                <div className="w-7 h-7 xl:w-8 xl:h-8 rounded-full bg-primary border-2 border-black flex items-center justify-center text-white font-display text-xs xl:text-sm leading-none shrink-0">
                   {user.username.charAt(0).toUpperCase()}
                 </div>
-                <span className="font-sans font-bold text-black text-sm tracking-wide">{user.username}</span>
+                <span className="font-sans font-bold text-black text-xs xl:text-sm tracking-wide max-w-[90px] xl:max-w-none truncate">{user.username}</span>
               </Link>
               <button 
                 onClick={logout}
-                className="font-display text-base bg-white hover:bg-red-100 border-4 border-black px-3.5 py-1.5 rounded-lg transition-colors"
+                className="font-display text-sm xl:text-base bg-white hover:bg-red-100 border-2 xl:border-4 border-black px-2.5 xl:px-3 py-1 xl:py-1.5 rounded-lg transition-colors shrink-0"
               >
                 SAIR
               </button>
@@ -171,7 +162,7 @@ export function Header({ minimal = false }: { minimal?: boolean } = {}) {
           ) : (
             <Link 
               href="/login"
-              className="bg-primary text-white hover:bg-yellow-400 hover:text-black font-display text-base border-4 border-black px-4 py-2 rounded-lg comic-shadow-sm transition-colors uppercase flex items-center justify-center"
+              className="bg-primary text-white hover:bg-yellow-400 hover:text-black font-display text-sm xl:text-base border-2 xl:border-4 border-black px-3 xl:px-4 py-1.5 xl:py-2 rounded-lg comic-shadow-sm transition-colors uppercase flex items-center justify-center shrink-0"
             >
               LOGIN
             </Link>
