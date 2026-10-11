@@ -147,7 +147,8 @@ export class BodinhoYaoiProvider implements Provider {
         }
       }
 
-      const linkRegex = new RegExp(`/obras/${slug}/capitulo/(\\d+)`, 'gi');
+      // Bodinho has chapters like /obras/jinx/capitulo/102.5, /obras/jinx/capitulo/1, etc.
+      const linkRegex = new RegExp(`/obras/${slug}/capitulo/([0-9]+(?:\\.[0-9]+)?)`, 'gi');
       let linkMatch;
       while ((linkMatch = linkRegex.exec(html)) !== null) {
         const numStr = linkMatch[1];
@@ -163,7 +164,7 @@ export class BodinhoYaoiProvider implements Provider {
         }
       }
 
-      chapters.sort((a, b) => Number(b.chapterNum) - Number(a.chapterNum));
+      chapters.sort((a, b) => parseFloat(b.chapterNum) - parseFloat(a.chapterNum));
       return chapters;
     } catch (err) {
       logger.error({ err, id }, "BodinhoYaoi getChapters error");

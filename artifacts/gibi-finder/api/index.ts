@@ -15,8 +15,9 @@ app.get("/api/health", (_req, res) => {
 });
 
 // GET /api/providers - List all active providers
-app.get("/api/providers", (_req, res) => {
+app.get("/api/providers", async (_req, res) => {
   try {
+    await ProviderManager.ensureOverridesLoaded();
     const list = ProviderManager.listProviders();
     res.json(list);
   } catch (err) {
@@ -99,17 +100,70 @@ app.get("/api/providers/pages", async (req, res) => {
 });
 
 // POST /api/providers/toggle
-app.post("/api/providers/toggle", (req, res) => {
+app.post("/api/providers/toggle", async (req, res) => {
   const { providerId, active } = req.body;
   if (!providerId || active === undefined) {
     res.status(400).json({ error: "missing_params" });
     return;
   }
   try {
+    await ProviderManager.ensureOverridesLoaded();
     ProviderManager.toggleProvider(providerId, !!active);
     res.json({ success: true, providerId, active: !!active });
   } catch (err) {
     res.status(500).json({ error: "toggle_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// POST /api/providers/custom - Add a custom provider (requires admin key)
+app.post("/api/providers/custom", async (req, res) => {
+  const adminKey = (process.env["ADMIN_KEY"] || "").trim();
+  if (adminKey && req.headers["x-admin-key"] !== adminKey) {
+    res.status(401).json({ error: "unauthorized", message: "Chave de admin invalida." });
+    return;
+  }
+  const { name, language, baseUrl } = req.body;
+  if (!name || !language || !baseUrl) {
+    res.status(400).json({ error: "missing_params", message: "Os campos 'name', 'language' e 'baseUrl' são obrigatórios." });
+    return;
+  }
+  try {
+    await ProviderManager.ensureOverridesLoaded();
+    const provider = await ProviderManager.addCustomProvider(name, language, baseUrl);
+    res.json({
+      success: true,
+      provider: {
+        id: provider.id,
+        name: provider.name,
+        language: provider.language,
+        active: true,
+        isCustom: true,
+        baseUrl
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: "add_custom_failed", message: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// DELETE /api/providers/custom/:id - Delete a custom provider (requires admin key)
+app.delete("/api/providers/custom/:id", async (req, res) => {
+  const adminKey = (process.env["ADMIN_KEY"] || "").trim();
+  if (adminKey && req.headers["x-admin-key"] !== adminKey) {
+    res.status(401).json({ error: "unauthorized", message: "Chave de admin invalida." });
+    return;
+  }
+  const id = req.params.id as string;
+  if (!id) {
+    res.status(400).json({ error: "missing_id", message: "ID do provedor é obrigatório." });
+    return;
+  }
+  try {
+    await ProviderManager.ensureOverridesLoaded();
+    await ProviderManager.deleteCustomProvider(id);
+    res.json({ success: true, id });
+  } catch (err) {
+    res.status(500).json({ error: "delete_custom_failed", message: err instanceof Error ? err.message : String(err) });
   }
 });
 

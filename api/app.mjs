@@ -98675,7 +98675,7 @@ var BodinhoYaoiProvider = class {
           }
         }
       }
-      const linkRegex = new RegExp(`/obras/${slug}/capitulo/(\\d+)`, "gi");
+      const linkRegex = new RegExp(`/obras/${slug}/capitulo/([0-9]+(?:\\.[0-9]+)?)`, "gi");
       let linkMatch;
       while ((linkMatch = linkRegex.exec(html)) !== null) {
         const numStr = linkMatch[1];
@@ -98690,7 +98690,7 @@ var BodinhoYaoiProvider = class {
           });
         }
       }
-      chapters.sort((a2, b) => Number(b.chapterNum) - Number(a2.chapterNum));
+      chapters.sort((a2, b) => parseFloat(b.chapterNum) - parseFloat(a2.chapterNum));
       return chapters;
     } catch (err) {
       logger.error({ err, id }, "BodinhoYaoi getChapters error");
