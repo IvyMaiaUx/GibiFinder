@@ -1,0 +1,26 @@
+﻿export type ReaderMode = "paginated" | "webtoon";
+export type ReaderDirection = "ltr" | "rtl";
+export type ReaderLayout = "single" | "double" | "auto";
+export type ReaderTheme = "dark" | "black" | "light" | "sepia";
+export type ReaderFit = "fit-screen" | "fit-width" | "fit-height" | "original";
+
+export interface PageItem {
+  id?: string;
+  url: string;
+  width?: number;
+  height?: number;
+}
+
+export interface ReaderSettings {
+  mode: ReaderMode;
+  direction: ReaderDirection;
+  layout: ReaderLayout;
+  fit: ReaderFit;
+  theme: ReaderTheme;
+}
+
+export interface SpreadGroup {
+  pages: PageItem[];
+  isSpread: boolean;
+  isNativeWide: boolean;
+}

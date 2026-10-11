@@ -338,7 +338,7 @@ export default function Colecao() {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(130px,100%),1fr))] gap-3 sm:gap-6">
               {visibleShelf.map((item) => {
                 const imgKey = `${item.providerId}-${item.gibiId}`;
                 return (
@@ -361,16 +361,16 @@ export default function Colecao() {
 
                       <button
                         onClick={(e) => handleRemove(item, e)}
-                        className="absolute top-2 right-2 p-1.5 bg-red-600 border border-black rounded hover:bg-red-700 text-white transition-colors"
+                        className="absolute top-2 right-2 p-1.5 bg-red-600 border border-black rounded hover:bg-red-700 text-white transition-colors touch-target-44"
                         title="Remover da Estante"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
 
-                    <div className="p-4 flex-1 flex flex-col justify-between min-w-0 bg-white">
+                    <div className="p-3 sm:p-4 flex-1 flex flex-col justify-between min-w-0 bg-white">
                       <div>
-                        <h4 className="font-display text-base sm:text-lg text-black leading-tight group-hover:text-primary transition-colors line-clamp-2">
+                        <h4 className="font-display text-base sm:text-lg text-black leading-tight group-hover:text-primary transition-colors line-clamp-2 text-anywhere">
                           {item.title}
                         </h4>
                         
@@ -410,7 +410,7 @@ export default function Colecao() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(130px,100%),1fr))] gap-3 sm:gap-6">
               {visibleCompleted.map((item) => {
                 const imgKey = `done-${item.providerId}-${item.mangaId}-${item.chapterId}`;
                 return (
@@ -431,15 +431,15 @@ export default function Colecao() {
                       </span>
                       <button
                         onClick={(e) => handleRemoveCompleted(item, e)}
-                        className="absolute top-2 right-2 p-1.5 bg-red-600 border border-black rounded hover:bg-red-700 text-white transition-colors"
+                        className="absolute top-2 right-2 p-1.5 bg-red-600 border border-black rounded hover:bg-red-700 text-white transition-colors touch-target-44"
                         title="Remover dos Já Lidos"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
-                    <div className="p-4 flex-1 flex flex-col justify-between min-w-0 bg-white">
+                    <div className="p-3 sm:p-4 flex-1 flex flex-col justify-between min-w-0 bg-white">
                       <div>
-                        <h4 className="font-display text-base sm:text-lg text-black leading-tight group-hover:text-emerald-700 transition-colors line-clamp-2">
+                        <h4 className="font-display text-base sm:text-lg text-black leading-tight group-hover:text-emerald-700 transition-colors line-clamp-2 text-anywhere">
                           {item.title}
                         </h4>
                         <div className="mt-3 space-y-1">
@@ -480,7 +480,7 @@ export default function Colecao() {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(130px,100%),1fr))] gap-3 sm:gap-6">
               {visibleFavorites.map((item) => {
                 const imgKey = `fav-${item.providerId}-${item.mangaId}`;
                 return (
@@ -503,16 +503,16 @@ export default function Colecao() {
 
                       <button
                         onClick={(e) => handleRemoveFavorite(item, e)}
-                        className="absolute top-2 right-2 p-1.5 bg-red-600 border border-black rounded hover:bg-red-700 text-white transition-colors"
+                        className="absolute top-2 right-2 p-1.5 bg-red-600 border border-black rounded hover:bg-red-700 text-white transition-colors touch-target-44"
                         title="Remover dos Favoritos"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
 
-                    <div className="p-4 flex-1 flex flex-col justify-between min-w-0 bg-white">
+                    <div className="p-3 sm:p-4 flex-1 flex flex-col justify-between min-w-0 bg-white">
                       <div>
-                        <h4 className="font-display text-base sm:text-lg text-black leading-tight group-hover:text-primary transition-colors line-clamp-2">
+                        <h4 className="font-display text-base sm:text-lg text-black leading-tight group-hover:text-primary transition-colors line-clamp-2 text-anywhere">
                           {item.title}
                         </h4>
                         <p className="font-sans text-2xs text-gray-500 font-bold line-clamp-2 mt-2">

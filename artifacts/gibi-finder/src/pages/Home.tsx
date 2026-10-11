@@ -196,9 +196,9 @@ function SearchResultCard({
           )}
         </div>
 
-        <div className="p-4 flex-1 flex flex-col justify-between min-w-0">
+        <div className="p-3 sm:p-4 flex-1 flex flex-col justify-between min-w-0">
           <div>
-            <h4 className="font-display text-lg text-black leading-tight group-hover:text-primary transition-colors line-clamp-2">
+            <h4 className="font-display text-lg text-black leading-tight group-hover:text-primary transition-colors line-clamp-2 text-anywhere">
               {item.title}
             </h4>
             <p className="font-sans text-2xs text-gray-500 font-extrabold uppercase mt-1">
@@ -250,7 +250,7 @@ function SearchResultCard({
           type="button"
           onClick={(e) => onToggleFavorite(item, e)}
           className={cn(
-            "absolute top-2 right-2 p-1.5 border-2 border-black rounded-full transition-colors shadow-[2px_2px_0_rgba(0,0,0,1)]",
+            "absolute top-2 right-2 p-1.5 border-2 border-black rounded-full transition-colors shadow-[2px_2px_0_rgba(0,0,0,1)] touch-target-44",
             favorited ? "bg-secondary text-black" : "bg-white/90 text-gray-500 hover:bg-secondary hover:text-black"
           )}
           title={favorited ? "Remover dos favoritos" : "Adicionar aos favoritos"}
@@ -624,7 +624,7 @@ export default function Home() {
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(min(130px,100%),1fr))] gap-3 sm:gap-6">
                   {visibleResults.map((item) => {
                     void favoriteVersion; // isFavorite() reads localStorage directly, so this re-triggers the map on toggle
                     return (

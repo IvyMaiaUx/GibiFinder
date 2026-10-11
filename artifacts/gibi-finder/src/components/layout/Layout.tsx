@@ -11,7 +11,7 @@ export function Layout({ children, minimal = false }: { children: React.ReactNod
   useSuppressNsfwTheme(minimal);
 
   return (
-    <div className="min-h-[100dvh] flex flex-col pt-20 md:pt-24 px-safe">
+    <div className="min-h-[100dvh] flex flex-col pt-header-safe px-safe">
       <Header minimal={minimal} />
       {/* `pb-24` (96px) only just cleared the 56px tab bar; on a phone with a
           home indicator the bar grows by its safe-area inset and the last card

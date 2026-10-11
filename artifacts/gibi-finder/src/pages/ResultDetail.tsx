@@ -4,7 +4,8 @@ import { useGetResult } from "@workspace/api-client-react";
 import { ComicCard } from "@/components/results/ComicCard";
 import { FeedbackActions } from "@/components/results/FeedbackActions";
 import { MangaDexReader } from "@/components/results/MangaDexReader";
-import { Link2, AlertCircle, Loader2, Star, BookOpen, ExternalLink, ShoppingCart, ArrowLeft } from "lucide-react";
+import { IntegratedReader } from "@/components/reader/IntegratedReader";
+import { Link2, AlertCircle, Loader2, Star, BookOpen, ExternalLink, ShoppingCart, ArrowLeft, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn, translateToPt, cleanSynopsis, getGeneratedSynopsis } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
@@ -68,6 +69,17 @@ export default function ResultDetail() {
   const returnTo = searchParams.get("returnTo");
 
   const isOnlineResult = id === "online";
+
+  // O leitor LEGADO continua sendo o padrão para todos os usuários normais.
+  // O novo leitor só abre se houver ?novo=true na URL ou preferência local ativada.
+  const [useNewReader, setUseNewReader] = useState(() => {
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get("novo") === "true" || sp.get("reader") === "new") return true;
+      return localStorage.getItem("gibi-finder:use-new-reader") === "true";
+    }
+    return false;
+  });
 
   // State for online details
   const [onlineDetails, setOnlineDetails] = useState<any | null>(null);
@@ -413,13 +425,22 @@ export default function ResultDetail() {
                         />
                       </div>
                     </div>
-                  ) : (
+                  ) : !useNewReader ? (
                     <MangaDexReader 
                       mangaTitle={(resultData as any).revista || (resultData as any).titulo || ""} 
                       coverUrl={(resultData as any).coverUrl || (resultData as any).images?.[0]} 
                       description={(displayResult as any).sinopse || (displayResult as any).description}
                       initialProviderId={isOnlineResult ? providerId : undefined}
                       initialMangaId={isOnlineResult ? mangaId : undefined}
+                    />
+                  ) : (
+                    <IntegratedReader
+                      mangaId={mangaId || id}
+                      title={(resultData as any).revista || (resultData as any).titulo || "Leitor"}
+                      onSwitchToLegacy={() => {
+                        setUseNewReader(false);
+                        localStorage.setItem("gibi-finder:use-new-reader", "false");
+                      }}
                     />
                   )}
                 </div>

@@ -109,7 +109,7 @@ export function AdminShell({ active, onNavigate, onExit, badges = {}, title, sub
   );
 
   return (
-    <div className="min-h-screen bg-[#faf7f2]">
+    <div className="min-h-dvh bg-[#faf7f2]">
       {/* Desktop sidebar (fixed, collapsible) */}
       <aside className={`${collapsed ? "hidden" : "hidden lg:flex"} lg:flex-col lg:fixed lg:inset-y-0 lg:w-64 bg-white border-r-8 border-black z-40`}>
         <SidebarInner />
@@ -119,7 +119,7 @@ export function AdminShell({ active, onNavigate, onExit, badges = {}, title, sub
       {open && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
           <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
-          <aside className="relative w-72 max-w-[80%] bg-white border-r-8 border-black">
+          <aside className="relative w-72 max-w-[80%] bg-white border-r-8 border-black pt-safe pb-safe">
             <button onClick={() => setOpen(false)} className="absolute top-4 right-3 p-1 border-2 border-black bg-white z-10"><X className="w-5 h-5" strokeWidth={3} /></button>
             <SidebarInner onPick={() => setOpen(false)} />
           </aside>
@@ -127,7 +127,7 @@ export function AdminShell({ active, onNavigate, onExit, badges = {}, title, sub
       )}
 
       {/* Content */}
-      <div className={`${collapsed ? "" : "lg:pl-64"} flex flex-col min-h-screen`}>
+      <div className={`${collapsed ? "" : "lg:pl-64"} flex flex-col min-h-dvh`}>
         {/* Top bar */}
         <header className="sticky top-0 z-30 bg-[#faf7f2]/95 backdrop-blur border-b-4 border-black">
           <div className="flex items-center gap-3 px-4 sm:px-6 lg:px-8 py-4">

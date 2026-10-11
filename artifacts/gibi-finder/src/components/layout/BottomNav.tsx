@@ -2,6 +2,7 @@ import { useLocation } from "wouter";
 import { Search, Compass, BookMarked, Clock, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PrefetchLink } from "@/components/ui/PrefetchLink";
+import { useVisualViewport } from "@/hooks/use-visual-viewport";
 
 const ITEMS = [
   { path: "/", label: "Buscar", icon: Search },
@@ -15,6 +16,10 @@ const ITEMS = [
 // top nav). Sits above the home indicator via safe-area padding.
 export function BottomNav() {
   const [location] = useLocation();
+  const { isKeyboardOpen } = useVisualViewport();
+
+  if (isKeyboardOpen) return null;
+
   return (
     <nav
       className="lg:hidden fixed bottom-0 inset-x-0 z-50 bg-secondary border-t-4 border-black flex justify-around"

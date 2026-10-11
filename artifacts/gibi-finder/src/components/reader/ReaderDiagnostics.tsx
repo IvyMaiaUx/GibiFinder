@@ -169,7 +169,7 @@ export function ReaderDiagnostics({ open, onClose, diag, onReloadChapter, onClea
         ))}
       </div>
 
-      <div className="p-3 max-h-[60vh] overflow-y-auto overscroll-contain">
+      <div className="p-3 max-h-[60dvh] overflow-y-auto overscroll-contain">
         {tab === "reader" ? (
           <>
             <Group title="Leitor">

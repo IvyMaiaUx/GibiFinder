@@ -98,7 +98,7 @@ function EditModal({ gibi, adminKey, onClose, onSaved }: { gibi?: Gibi; adminKey
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
       <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-        className="relative bg-white comic-border comic-shadow max-w-2xl w-full max-h-[90vh] overflow-y-auto z-10">
+        className="relative bg-white comic-border comic-shadow max-w-2xl w-full max-h-[90dvh] overflow-y-auto z-10">
         <div className="bg-secondary border-b-4 border-black px-6 py-4 flex items-center justify-between">
           <h2 className="font-display text-2xl text-black">{gibi ? "EDITAR GIBI" : "ADICIONAR GIBI"}</h2>
           <button onClick={onClose}><X className="w-6 h-6" strokeWidth={3} /></button>

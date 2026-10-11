@@ -11,6 +11,7 @@ import { NHentaiProvider } from "./NHentaiProvider";
 import { OrionProvider } from "./OrionProvider";
 import { WordPressComicProvider } from "./WordPressComicProvider";
 import { SlimeReadProvider } from "./SlimeReadProvider";
+import { BodinhoYaoiProvider } from "./BodinhoYaoiProvider";
 import { CuratedComicsProvider } from "./CuratedComicsProvider";
 import { InternetArchiveProvider } from "./InternetArchiveProvider";
 import { normalizeTitleForMatch } from "./titleMatch";
@@ -73,7 +74,9 @@ export class ProviderManager {
     // (no other adult signal in title/genres) leaked into the general
     // catalog with isAdult: false. Verified live: explicit hentai titles
     // (e.g. "...BESTIALITY LOVE STORY") were returned with nsfw=false.
-    "tankouhentai"
+    "tankouhentai",
+    "bodinho-yaoi",
+    "bodinho"
   ]);
   // "loli"/"lolicon"/"shota"/"shotacon" were previously absent here despite
   // being surfaced as a featured browsable genre in the frontend — a title
@@ -151,13 +154,19 @@ export class ProviderManager {
   }
 
   private static instantiateProvider(item: { id: string; name: string; language: string; baseUrl: string; engine?: string | null }): Provider {
-    return item.engine === "wordpress-comic"
-      ? new WordPressComicProvider(item.id, item.name, item.language, item.baseUrl)
-      : item.engine === "orion"
-        ? new OrionProvider(item.id, item.name, item.language, item.baseUrl)
-        : item.engine === "slimeread"
-          ? new SlimeReadProvider(item.id, item.name, item.language, item.baseUrl)
-          : new MadaraProvider(item.id, item.name, item.language, item.baseUrl);
+    if (item.engine === "bodinho" || item.baseUrl.includes("bodinhoyaoi.com") || item.id.includes("bodinho")) {
+      return new BodinhoYaoiProvider(item.id, item.name, item.language, item.baseUrl);
+    }
+    if (item.engine === "wordpress-comic") {
+      return new WordPressComicProvider(item.id, item.name, item.language, item.baseUrl);
+    }
+    if (item.engine === "orion") {
+      return new OrionProvider(item.id, item.name, item.language, item.baseUrl);
+    }
+    if (item.engine === "slimeread") {
+      return new SlimeReadProvider(item.id, item.name, item.language, item.baseUrl);
+    }
+    return new MadaraProvider(item.id, item.name, item.language, item.baseUrl);
   }
 
   static loadCustomProviders() {
@@ -303,10 +312,15 @@ export class ProviderManager {
       throw new Error("Já existe um provedor com este nome/identificador.");
     }
 
-    const provider = new MadaraProvider(id, name, language, baseUrl);
+    const isBodinho = baseUrl.includes("bodinhoyaoi.com") || id.includes("bodinho");
+    const engine = isBodinho ? "bodinho" : null;
+    const provider: Provider = isBodinho
+      ? new BodinhoYaoiProvider(id, name, language, baseUrl)
+      : new MadaraProvider(id, name, language, baseUrl);
+
     this.registerProvider(provider);
     this.activeStates.set(id, true);
-    await this.persistOverride({ id, name, language, base_url: baseUrl, engine: null, active: true, deleted: false });
+    await this.persistOverride({ id, name, language, base_url: baseUrl, engine, active: true, deleted: false });
 
     // Best-effort for local dev — no-op on Vercel's read-only filesystem.
     try {
@@ -315,7 +329,7 @@ export class ProviderManager {
       if (fs.existsSync(filePath)) {
         list = JSON.parse(fs.readFileSync(filePath, "utf-8"));
       }
-      list.push({ id, name, language, baseUrl, active: true });
+      list.push({ id, name, language, baseUrl, engine, active: true });
       fs.writeFileSync(filePath, JSON.stringify(list, null, 2), "utf-8");
     } catch (err) {
       logger.error({ err: err }, "Failed to save custom provider:");
@@ -365,9 +379,9 @@ export class ProviderManager {
       name: p.name,
       language: p.language,
       active: this.activeStates.get(p.id) === true,
-      isCustom: p instanceof MadaraProvider || p instanceof WordPressComicProvider || p instanceof OrionProvider || p instanceof SlimeReadProvider,
-      engine: p instanceof WordPressComicProvider ? "WordPress Comic" : p instanceof OrionProvider ? "Orion" : p instanceof SlimeReadProvider ? "SlimeRead" : p instanceof MadaraProvider ? "Madara/WordPress" : "Nativo",
-      baseUrl: p instanceof MadaraProvider || p instanceof WordPressComicProvider || p instanceof OrionProvider || p instanceof SlimeReadProvider ? p.baseUrl : undefined
+      isCustom: p instanceof MadaraProvider || p instanceof WordPressComicProvider || p instanceof OrionProvider || p instanceof SlimeReadProvider || p instanceof BodinhoYaoiProvider,
+      engine: p instanceof BodinhoYaoiProvider ? "Bodinho Yaoi" : p instanceof WordPressComicProvider ? "WordPress Comic" : p instanceof OrionProvider ? "Orion" : p instanceof SlimeReadProvider ? "SlimeRead" : p instanceof MadaraProvider ? "Madara/WordPress" : "Nativo",
+      baseUrl: p instanceof MadaraProvider || p instanceof WordPressComicProvider || p instanceof OrionProvider || p instanceof SlimeReadProvider || p instanceof BodinhoYaoiProvider ? p.baseUrl : undefined
     }));
   }
 

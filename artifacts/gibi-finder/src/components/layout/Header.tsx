@@ -12,7 +12,10 @@ export function Header({ minimal = false }: { minimal?: boolean } = {}) {
   // Minimal variant (e.g. Admin): only the logo bar, no nav / auth / +18.
   if (minimal) {
     return (
-      <header className="fixed inset-x-0 top-0 z-50 bg-secondary border-b-8 border-black shadow-[0_8px_0_rgba(0,0,0,0.18)]">
+      <header
+        className="fixed inset-x-0 top-0 z-50 bg-secondary border-b-8 border-black shadow-[0_8px_0_rgba(0,0,0,0.18)]"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-20 md:h-24 flex items-center justify-between gap-2">
           <Link href="/" className="flex items-center gap-1.5 group comic-hover transition-transform shrink-0">
             <div className="bg-primary text-primary-foreground font-display text-lg sm:text-xl md:text-3xl px-2 md:px-4 py-1 md:py-2 rounded-lg border-2 sm:border-4 border-black comic-shadow transform -rotate-3 group-hover:rotate-0 transition-all">
@@ -83,7 +86,10 @@ export function Header({ minimal = false }: { minimal?: boolean } = {}) {
   ];
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 bg-secondary border-b-8 border-black shadow-[0_8px_0_rgba(0,0,0,0.18)] animate-in fade-in duration-100">
+    <header
+      className="fixed inset-x-0 top-0 z-50 bg-secondary border-b-8 border-black shadow-[0_8px_0_rgba(0,0,0,0.18)] animate-in fade-in duration-100"
+      style={{ paddingTop: "env(safe-area-inset-top)" }}
+    >
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-20 md:h-24 flex items-center justify-between gap-2">
         
         {/* Logo */}
@@ -175,26 +181,26 @@ export function Header({ minimal = false }: { minimal?: boolean } = {}) {
         {/* Mobile top-bar actions — main nav lives in the bottom bar (BottomNav) */}
         <nav className="lg:hidden flex items-center gap-1">
 
-          {/* +18 Mode Toggle (Mobile) — same active palette as the desktop toggle above. */}
+          {/* +18 Mode Toggle (Mobile) — minimum 44x44px touch target */}
           <button
             onClick={toggleNsfw}
             className={cn(
-              "p-1.5 sm:p-2 border-2 sm:border-[3px] rounded-lg transition-all flex items-center justify-center",
+              "min-w-11 min-h-11 p-1.5 sm:p-2 border-2 sm:border-[3px] rounded-lg transition-all flex items-center justify-center",
               isNsfw
                 ? "bg-[#0E0B0F] text-[#F5EDF1] border-[#24151D] shadow-[0_0_8px_rgba(224,68,120,0.5)]"
                 : "bg-white text-black border-black hover:bg-gray-100"
             )}
             title="Modo +18"
           >
-            <span className="text-xs sm:text-sm">🔞</span>
+            <span className="text-base sm:text-sm">🔞</span>
           </button>
 
-          {/* Auth Actions (Mobile) */}
+          {/* Auth Actions (Mobile) — minimum 44x44px touch target */}
           <div className="flex items-center border-l-2 border-black/10 pl-2 ml-1">
             {user ? (
               <Link 
                 href="/login"
-                className="w-8 h-8 rounded-full bg-primary border-2 border-black flex items-center justify-center text-white text-xs font-display select-none hover:translate-y-[-1px] transition-transform"
+                className="w-11 h-11 rounded-full bg-primary border-2 border-black flex items-center justify-center text-white text-xs font-display select-none hover:translate-y-[-1px] transition-transform"
                 title={`Conta de ${user.username}`}
               >
                 {user.username.charAt(0).toUpperCase()}
@@ -202,10 +208,10 @@ export function Header({ minimal = false }: { minimal?: boolean } = {}) {
             ) : (
               <Link 
                 href="/login"
-                className="p-1.5 border-2 border-black rounded-lg bg-primary text-white hover:bg-yellow-400 transition-colors flex items-center justify-center"
+                className="w-11 h-11 border-2 border-black rounded-lg bg-primary text-white hover:bg-yellow-400 transition-colors flex items-center justify-center"
                 title="Login"
               >
-                <User className="w-4.5 h-4.5" strokeWidth={3} />
+                <User className="w-5 h-5" strokeWidth={3} />
               </Link>
             )}
           </div>

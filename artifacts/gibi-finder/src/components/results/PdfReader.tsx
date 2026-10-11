@@ -490,7 +490,7 @@ export function PdfReader({
             <h4 className="font-display text-2xl uppercase mb-2">Não deu pra renderizar o PDF</h4>
             <p className="font-sans font-bold text-sm text-gray-600 mb-6">Abrindo no visualizador padrão. (Nesse modo não é possível salvar a página.)</p>
             {previewFallback ? (
-              <iframe src={previewFallback} className="w-full h-[60vh] border-4 border-black rounded" title={title} />
+              <iframe src={previewFallback} className="w-full h-[60dvh] border-4 border-black rounded" title={title} />
             ) : (
               <a href={rawUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 bg-primary text-white font-display px-6 py-3 border-2 border-black rounded hover:bg-yellow-400 hover:text-black">
                 ABRIR PDF <ExternalLink className="w-4 h-4" />

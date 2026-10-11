@@ -2318,10 +2318,10 @@ export function MangaDexReader({ mangaTitle, coverUrl, description, initialProvi
             onClick={usesViewport || zoom > 1 ? undefined : toggleChrome}
           >
             {getEmbedUrl(pages[currentPage]?.url) ? (
-              <div className="w-full max-w-5xl h-full min-h-[70vh] border-4 border-white/20 bg-zinc-900 rounded-lg overflow-hidden">
+              <div className="w-full max-w-5xl h-full min-h-[70dvh] border-4 border-white/20 bg-zinc-900 rounded-lg overflow-hidden">
                 <iframe
                   src={getEmbedUrl(pages[currentPage]?.url) || ""}
-                  className="w-full h-full min-h-[70vh] border-0"
+                  className="w-full h-full min-h-[70dvh] border-0"
                   allow="autoplay"
                   title={selectedResult?.title || mangaTitle}
                 />

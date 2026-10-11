@@ -98553,6 +98553,247 @@ var SlimeReadProvider = class {
   }
 };
 
+// src/providers/BodinhoYaoiProvider.ts
+init_logger();
+var BROWSER_HEADERS6 = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
+};
+var BodinhoYaoiProvider = class {
+  constructor(id = "bodinho-yaoi", name = "Bodinho Yaoi", language = "pt", baseUrl = "https://bodinhoyaoi.com/") {
+    this.id = id;
+    this.name = name;
+    this.language = language;
+    this.baseUrl = baseUrl;
+    if (!this.baseUrl.endsWith("/")) {
+      this.baseUrl += "/";
+    }
+  }
+  cleanText(str) {
+    return str.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+  }
+  async search(query, _nsfw = true) {
+    try {
+      const url = `${this.baseUrl}busca?q=${encodeURIComponent(query)}`;
+      const res = await fetch(url, { headers: BROWSER_HEADERS6 });
+      if (!res.ok) return [];
+      const html = await res.text();
+      const results = [];
+      const seen = /* @__PURE__ */ new Set();
+      const matchRegex = /<a[^>]+href=["'](\/obras\/([a-zA-Z0-9_-]+))["'][^>]*>([\s\S]*?)<\/a>/gi;
+      let match;
+      while ((match = matchRegex.exec(html)) !== null) {
+        const slug = match[2];
+        if (!slug || slug === "biblioteca" || seen.has(slug)) continue;
+        seen.add(slug);
+        const inner = match[3];
+        const imgMatch = inner.match(/<img[^>]+src=["']([^"']+)["'][^>]*alt=["']([^"']*)["']/i) || inner.match(/<img[^>]+src=["']([^"']+)["']/i);
+        const coverUrl = imgMatch ? imgMatch[1].startsWith("http") ? imgMatch[1] : `${this.baseUrl}${imgMatch[1].replace(/^\//, "")}` : void 0;
+        let title = imgMatch?.[2] || this.cleanText(inner);
+        title = title.replace(/(?:Em andamento|Completo|\d+[,\.]\d+)/gi, "").trim();
+        if (!title) title = slug.replace(/-/g, " ");
+        results.push({
+          id: slug,
+          title,
+          coverUrl,
+          providerId: this.id,
+          genres: ["Yaoi", "BL", "Manhwa"]
+        });
+      }
+      return results;
+    } catch (err) {
+      logger.error({ err, query }, "BodinhoYaoi search error");
+      return [];
+    }
+  }
+  async getDetails(id) {
+    try {
+      const slug = id.replace(/^\/obras\//, "").replace(/\/$/, "");
+      const url = `${this.baseUrl}obras/${slug}`;
+      const res = await fetch(url, { headers: BROWSER_HEADERS6 });
+      if (!res.ok) {
+        return { id: slug, title: slug, providerId: this.id };
+      }
+      const html = await res.text();
+      const titleMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i) || html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+      const title = titleMatch ? this.cleanText(titleMatch[1]).replace(/ - Bodinho Yaoi|Ler | em PT-BR/gi, "").trim() : slug;
+      const coverMatch = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i);
+      const coverUrl = coverMatch ? coverMatch[1] : void 0;
+      const descMatch = html.match(/<meta\s+property=["']og:description["']\s+content=["']([^"']+)["']/i) || html.match(/Sinopse:?([\s\S]*?)(?:<div|<h2|<\/p)/i);
+      const description = descMatch ? this.cleanText(descMatch[1]).replace(/^Sharpe & Rabbit - Sinopse:\s*/i, "").trim() : void 0;
+      const genres = ["Yaoi", "BL"];
+      const genreMatches = html.matchAll(/\/biblioteca\?genero=([^"'>\s]+)/gi);
+      for (const gm of genreMatches) {
+        const g = decodeURIComponent(gm[1]).replace(/-/g, " ");
+        if (!genres.includes(g)) genres.push(g);
+      }
+      return {
+        id: slug,
+        title,
+        coverUrl,
+        description,
+        providerId: this.id,
+        genres
+      };
+    } catch (err) {
+      logger.error({ err, id }, "BodinhoYaoi getDetails error");
+      return { id, title: id, providerId: this.id };
+    }
+  }
+  async getChapters(id) {
+    try {
+      const slug = id.replace(/^\/obras\//, "").replace(/\/$/, "");
+      const url = `${this.baseUrl}obras/${slug}`;
+      const res = await fetch(url, { headers: BROWSER_HEADERS6 });
+      if (!res.ok) return [];
+      const html = await res.text();
+      const chapters = [];
+      const seen = /* @__PURE__ */ new Set();
+      const nextDataMatch = html.match(/self\.__next_f\.push\(\[1,"([\s\S]*?)"\]\)/);
+      if (nextDataMatch) {
+        const rawJson = nextDataMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+        const chaptersJsonMatch = rawJson.match(/"chapters":\s*(\[\s*\{[\s\S]*?\}\s*\])/);
+        if (chaptersJsonMatch) {
+          try {
+            const list = JSON.parse(chaptersJsonMatch[1]);
+            for (const ch of list) {
+              const numStr = String(ch.number);
+              if (!seen.has(numStr)) {
+                seen.add(numStr);
+                chapters.push({
+                  id: `${slug}::${numStr}`,
+                  chapterNum: numStr,
+                  title: ch.title || `Cap\xEDtulo ${numStr}`,
+                  language: "pt",
+                  providerId: this.id
+                });
+              }
+            }
+            if (chapters.length > 0) return chapters;
+          } catch {
+          }
+        }
+      }
+      const linkRegex = new RegExp(`/obras/${slug}/capitulo/(\\d+)`, "gi");
+      let linkMatch;
+      while ((linkMatch = linkRegex.exec(html)) !== null) {
+        const numStr = linkMatch[1];
+        if (!seen.has(numStr)) {
+          seen.add(numStr);
+          chapters.push({
+            id: `${slug}::${numStr}`,
+            chapterNum: numStr,
+            title: `Cap\xEDtulo ${numStr}`,
+            language: "pt",
+            providerId: this.id
+          });
+        }
+      }
+      chapters.sort((a2, b) => Number(b.chapterNum) - Number(a2.chapterNum));
+      return chapters;
+    } catch (err) {
+      logger.error({ err, id }, "BodinhoYaoi getChapters error");
+      return [];
+    }
+  }
+  async getPages(chapterId) {
+    try {
+      let slug = "";
+      let chapterNum = "";
+      if (chapterId.includes("::")) {
+        const parts = chapterId.split("::");
+        slug = parts[0];
+        chapterNum = parts[1];
+      } else if (chapterId.includes("/")) {
+        const parts = chapterId.split("/");
+        slug = parts[0];
+        chapterNum = parts[parts.length - 1];
+      } else {
+        slug = chapterId;
+        chapterNum = "1";
+      }
+      const url = `${this.baseUrl}obras/${slug}/capitulo/${chapterNum}`;
+      const res = await fetch(url, { headers: BROWSER_HEADERS6 });
+      if (!res.ok) return [];
+      const html = await res.text();
+      const pages = [];
+      const nextDataMatch = html.match(/self\.__next_f\.push\(\[1,"([\s\S]*?)"\]\)/);
+      if (nextDataMatch) {
+        const rawJson = nextDataMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+        const pagesJsonMatch = rawJson.match(/"pages":\s*(\[\s*\{[\s\S]*?\}\s*\])/);
+        if (pagesJsonMatch) {
+          try {
+            const list = JSON.parse(pagesJsonMatch[1]);
+            for (let i2 = 0; i2 < list.length; i2++) {
+              const src = list[i2].src || list[i2].url;
+              if (src) {
+                pages.push({
+                  url: src,
+                  pageNumber: i2 + 1
+                });
+              }
+            }
+            if (pages.length > 0) return pages;
+          } catch {
+          }
+        }
+      }
+      const mediaRegex = new RegExp(`https://media\\.bodinhoyaoi\\.com/${slug}/chapters/${chapterNum}/[^"'>\\s\\]]+`, "gi");
+      const found = /* @__PURE__ */ new Set();
+      let m;
+      while ((m = mediaRegex.exec(html)) !== null) {
+        let src = m[0].replace(/[\\"',;]+$/, "");
+        if (!found.has(src)) {
+          found.add(src);
+          pages.push({
+            url: src,
+            pageNumber: pages.length + 1
+          });
+        }
+      }
+      return pages;
+    } catch (err) {
+      logger.error({ err, chapterId }, "BodinhoYaoi getPages error");
+      return [];
+    }
+  }
+  async getCatalog(listType = "latest", _nsfw = true) {
+    try {
+      const url = listType === "popular" ? `${this.baseUrl}ranking` : `${this.baseUrl}biblioteca?order=recent`;
+      const res = await fetch(url, { headers: BROWSER_HEADERS6 });
+      if (!res.ok) return [];
+      const html = await res.text();
+      const results = [];
+      const seen = /* @__PURE__ */ new Set();
+      const matchRegex = /<a[^>]+href=["'](\/obras\/([a-zA-Z0-9_-]+))["'][^>]*>([\s\S]*?)<\/a>/gi;
+      let match;
+      while ((match = matchRegex.exec(html)) !== null) {
+        const slug = match[2];
+        if (!slug || slug === "biblioteca" || seen.has(slug)) continue;
+        seen.add(slug);
+        const inner = match[3];
+        const imgMatch = inner.match(/<img[^>]+src=["']([^"']+)["'][^>]*alt=["']([^"']*)["']/i) || inner.match(/<img[^>]+src=["']([^"']+)["']/i);
+        const coverUrl = imgMatch ? imgMatch[1].startsWith("http") ? imgMatch[1] : `${this.baseUrl}${imgMatch[1].replace(/^\//, "")}` : void 0;
+        let title = imgMatch?.[2] || this.cleanText(inner);
+        title = title.replace(/(?:Em andamento|Completo|\d+[,\.]\d+)/gi, "").trim();
+        if (!title) title = slug.replace(/-/g, " ");
+        results.push({
+          id: slug,
+          title,
+          coverUrl,
+          providerId: this.id,
+          genres: ["Yaoi", "BL", "Manhwa"]
+        });
+      }
+      return results;
+    } catch (err) {
+      logger.error({ err, listType }, "BodinhoYaoi getCatalog error");
+      return [];
+    }
+  }
+};
+
 // src/providers/CuratedComicsProvider.ts
 init_logger();
 var CACHE_ROW_ID = "catalog-v3";
@@ -99398,7 +99639,9 @@ var ProviderManager = class {
     // (no other adult signal in title/genres) leaked into the general
     // catalog with isAdult: false. Verified live: explicit hentai titles
     // (e.g. "...BESTIALITY LOVE STORY") were returned with nsfw=false.
-    "tankouhentai"
+    "tankouhentai",
+    "bodinho-yaoi",
+    "bodinho"
   ]);
   // "loli"/"lolicon"/"shota"/"shotacon" were previously absent here despite
   // being surfaced as a featured browsable genre in the frontend — a title
@@ -99473,7 +99716,19 @@ var ProviderManager = class {
     return path.join(process.cwd(), "custom_providers.json");
   }
   static instantiateProvider(item) {
-    return item.engine === "wordpress-comic" ? new WordPressComicProvider(item.id, item.name, item.language, item.baseUrl) : item.engine === "orion" ? new OrionProvider(item.id, item.name, item.language, item.baseUrl) : item.engine === "slimeread" ? new SlimeReadProvider(item.id, item.name, item.language, item.baseUrl) : new MadaraProvider(item.id, item.name, item.language, item.baseUrl);
+    if (item.engine === "bodinho" || item.baseUrl.includes("bodinhoyaoi.com") || item.id.includes("bodinho")) {
+      return new BodinhoYaoiProvider(item.id, item.name, item.language, item.baseUrl);
+    }
+    if (item.engine === "wordpress-comic") {
+      return new WordPressComicProvider(item.id, item.name, item.language, item.baseUrl);
+    }
+    if (item.engine === "orion") {
+      return new OrionProvider(item.id, item.name, item.language, item.baseUrl);
+    }
+    if (item.engine === "slimeread") {
+      return new SlimeReadProvider(item.id, item.name, item.language, item.baseUrl);
+    }
+    return new MadaraProvider(item.id, item.name, item.language, item.baseUrl);
   }
   static loadCustomProviders() {
     try {
@@ -99590,17 +99845,19 @@ var ProviderManager = class {
     if (this.providers.has(id)) {
       throw new Error("J\xE1 existe um provedor com este nome/identificador.");
     }
-    const provider = new MadaraProvider(id, name, language, baseUrl);
+    const isBodinho = baseUrl.includes("bodinhoyaoi.com") || id.includes("bodinho");
+    const engine = isBodinho ? "bodinho" : null;
+    const provider = isBodinho ? new BodinhoYaoiProvider(id, name, language, baseUrl) : new MadaraProvider(id, name, language, baseUrl);
     this.registerProvider(provider);
     this.activeStates.set(id, true);
-    await this.persistOverride({ id, name, language, base_url: baseUrl, engine: null, active: true, deleted: false });
+    await this.persistOverride({ id, name, language, base_url: baseUrl, engine, active: true, deleted: false });
     try {
       const filePath = this.getCustomProvidersPath();
       let list = [];
       if (fs.existsSync(filePath)) {
         list = JSON.parse(fs.readFileSync(filePath, "utf-8"));
       }
-      list.push({ id, name, language, baseUrl, active: true });
+      list.push({ id, name, language, baseUrl, engine, active: true });
       fs.writeFileSync(filePath, JSON.stringify(list, null, 2), "utf-8");
     } catch (err) {
       logger.error({ err }, "Failed to save custom provider:");
@@ -99637,9 +99894,9 @@ var ProviderManager = class {
       name: p2.name,
       language: p2.language,
       active: this.activeStates.get(p2.id) === true,
-      isCustom: p2 instanceof MadaraProvider || p2 instanceof WordPressComicProvider || p2 instanceof OrionProvider || p2 instanceof SlimeReadProvider,
-      engine: p2 instanceof WordPressComicProvider ? "WordPress Comic" : p2 instanceof OrionProvider ? "Orion" : p2 instanceof SlimeReadProvider ? "SlimeRead" : p2 instanceof MadaraProvider ? "Madara/WordPress" : "Nativo",
-      baseUrl: p2 instanceof MadaraProvider || p2 instanceof WordPressComicProvider || p2 instanceof OrionProvider || p2 instanceof SlimeReadProvider ? p2.baseUrl : void 0
+      isCustom: p2 instanceof MadaraProvider || p2 instanceof WordPressComicProvider || p2 instanceof OrionProvider || p2 instanceof SlimeReadProvider || p2 instanceof BodinhoYaoiProvider,
+      engine: p2 instanceof BodinhoYaoiProvider ? "Bodinho Yaoi" : p2 instanceof WordPressComicProvider ? "WordPress Comic" : p2 instanceof OrionProvider ? "Orion" : p2 instanceof SlimeReadProvider ? "SlimeRead" : p2 instanceof MadaraProvider ? "Madara/WordPress" : "Nativo",
+      baseUrl: p2 instanceof MadaraProvider || p2 instanceof WordPressComicProvider || p2 instanceof OrionProvider || p2 instanceof SlimeReadProvider || p2 instanceof BodinhoYaoiProvider ? p2.baseUrl : void 0
     }));
   }
   // Normalizes a string to compare titles (e.g. "One Piece" -> "onepiece")

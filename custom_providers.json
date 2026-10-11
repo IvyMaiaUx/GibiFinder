@@ -229,5 +229,13 @@
     "baseUrl": "https://www.muitohentai.com/",
     "engine": "wordpress-comic",
     "active": false
+  },
+  {
+    "id": "bodinho-yaoi",
+    "name": "Bodinho Yaoi",
+    "language": "pt",
+    "baseUrl": "https://bodinhoyaoi.com/",
+    "engine": "bodinho",
+    "active": true
   }
 ]
