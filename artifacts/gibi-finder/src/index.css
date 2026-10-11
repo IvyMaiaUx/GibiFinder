@@ -317,45 +317,68 @@
    crimson did; the near-black "bordas" tone reads as a real border
    only against the badge's own dark fill, not as a sitewide comic-panel
    border, so it isn't reused for that. */
+/* ==========================================================================
+   Modo +18 (Cyber-Dark):
+   - Fundo em azul-noite profundo / navy (#0B0F19 e #070A12)
+   - Superfícies/Cards em índigo escuro e carvão (#111827 / #151A28)
+   - Acentos em rosa-cyber e lilás sutil (#E85D9E / #A78BFA)
+   - Bordas em índigo escuro com contorno luminoso suave (#262E4A e #818CF8)
+   - Tipografia off-white (#F1F5F9) e tons azul-acinzentados (#94A3B8)
+   ========================================================================== */
 html.nsfw {
-  --background: 285 15% 5%; /* #0E0B0F */
-  --foreground: 330 29% 95%; /* #F5EDF1 */
-  --border: 340 72% 57%; /* #E04478 magenta */
-  --input: 340 72% 57%;
-  --ring: 340 72% 57%;
-  --card: 328 22% 11%; /* elevated surface between background and the badge's #24151D border tone */
-  --card-foreground: 330 29% 95%;
-  --primary: 340 72% 57%; /* #E04478 magenta */
+  --background: 222 47% 7%; /* #090D16 midnight navy */
+  --foreground: 210 40% 96%; /* #F1F5F9 off-white */
+  --border: 226 50% 24%; /* #1E2947 */
+  --input: 226 50% 24%;
+  --ring: 330 75% 64%; /* #E85D9E cyber-pink */
+  --card: 224 45% 11%; /* #101626 dark indigo surface */
+  --card-foreground: 210 40% 96%;
+  --primary: 330 75% 64%; /* #E85D9E soft cyber-pink */
   --primary-foreground: 0 0% 100%;
-  --secondary: 328 11% 69%; /* #B9A8B1 */
-  --secondary-foreground: 285 15% 5%;
-  --muted: 328 20% 15%;
-  --muted-foreground: 328 11% 69%;
+  --secondary: 225 35% 18%; /* #1E263D */
+  --secondary-foreground: 210 40% 96%;
+  --muted: 225 30% 15%;
+  --muted-foreground: 217 25% 65%; /* #8B9BB4 */
 }
 
 html.nsfw body {
-  background-image: radial-gradient(hsl(340 72% 57% / 0.06) 15%, transparent 15%) !important;
-  background-color: hsl(285 15% 5%) !important;
-  color: hsl(330 29% 95%) !important;
+  background-image: radial-gradient(hsl(235 60% 50% / 0.08) 15%, transparent 15%) !important;
+  background-color: hsl(222 47% 7%) !important;
+  color: hsl(210 40% 96%) !important;
 }
 
+/* Header & BottomNav no modo +18 */
+html.nsfw header,
+html.nsfw nav.fixed.bottom-0 {
+  background-color: hsl(224 45% 10%) !important;
+  border-color: hsl(226 50% 22%) !important;
+  box-shadow: 0 8px 0 rgba(7, 10, 18, 0.8) !important;
+}
+
+/* Balão "Qual é o gibi?!" */
 html.nsfw .speech-bubble {
-  background-color: hsl(328 22% 11%) !important;
-  border-color: hsl(340 72% 57%) !important;
+  background-color: hsl(224 45% 11%) !important;
+  border: 4px solid #3B4268 !important;
+  box-shadow: 0 0 15px rgba(167, 139, 250, 0.25), 4px 4px 0 #070A12 !important;
+}
+
+html.nsfw .speech-bubble h1 {
+  color: #F472B6 !important;
+  text-shadow: 0 0 10px rgba(244, 114, 182, 0.4);
 }
 
 html.nsfw .speech-bubble:before {
-  border-right-color: hsl(328 22% 11%) !important;
+  border-right-color: hsl(224 45% 11%) !important;
 }
 
 html.nsfw .speech-bubble:after {
-  border-right-color: hsl(340 72% 57%) !important;
+  border-right-color: #3B4268 !important;
 }
 
-/* NSFW overrides for comic cards and layout components */
+/* Cards de obras, buscas e containers */
 html.nsfw .bg-white {
-  background-color: hsl(328 22% 11%) !important;
-  color: hsl(330 29% 95%) !important;
+  background-color: hsl(224 45% 11%) !important;
+  color: hsl(210 40% 96%) !important;
 }
 
 html.nsfw .text-black,
@@ -367,38 +390,53 @@ html.nsfw .text-gray-900,
 html.nsfw .text-gray-800,
 html.nsfw .text-gray-700,
 html.nsfw .text-gray-600 {
-  color: hsl(330 29% 95%) !important;
+  color: hsl(210 40% 96%) !important;
 }
 
 html.nsfw .text-zinc-500,
 html.nsfw .text-zinc-400,
 html.nsfw .text-gray-500,
 html.nsfw .text-gray-400 {
-  color: hsl(328 11% 69%) !important;
+  color: hsl(217 25% 65%) !important;
 }
 
 html.nsfw .border-black {
-  border-color: hsl(340 72% 57%) !important;
+  border-color: hsl(226 50% 24%) !important;
 }
 
 html.nsfw .border-black\/20 {
-  border-color: hsl(340 72% 57% / 0.2) !important;
+  border-color: hsl(226 50% 24% / 0.4) !important;
 }
 
 html.nsfw .border-black\/10 {
-  border-color: hsl(328 11% 69% / 0.15) !important;
+  border-color: hsl(226 50% 24% / 0.25) !important;
 }
 
 html.nsfw .comic-shadow,
 html.nsfw .comic-shadow-sm {
-  box-shadow: 4px 4px 0px hsl(340 72% 57%) !important;
+  box-shadow: 4px 4px 0px hsl(226 60% 12%) !important;
 }
 
 html.nsfw .hover\:shadow-\[8px_8px_0_rgba\(0\,0\,0\,1\)\]:hover {
-  box-shadow: 8px 8px 0px hsl(340 72% 57%) !important;
+  box-shadow: 6px 6px 0px hsl(330 75% 64% / 0.4) !important;
 }
 
 html.nsfw .hover\:bg-yellow-50:hover {
-  background-color: hsl(328 20% 15%) !important;
+  background-color: hsl(225 35% 16%) !important;
+}
+
+/* Botões ativos na navegação */
+html.nsfw .bg-primary {
+  background-color: hsl(330 75% 64%) !important;
+  color: #FFFFFF !important;
+}
+
+/* Banners de erro/aviso em ruby-dark translúcido e legível */
+html.nsfw .bg-destructive\/10,
+html.nsfw .bg-red-50,
+html.nsfw .bg-red-100 {
+  background-color: rgba(69, 10, 20, 0.6) !important;
+  border-color: #991B1B !important;
+  color: #FECDD3 !important;
 }
 
