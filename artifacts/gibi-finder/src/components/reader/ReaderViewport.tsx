@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { PageItem, ReaderMode, ReaderDirection, ReaderLayout, ReaderFit } from "./readerTypes";
 import { useSpreadNavigation } from "./useSpreadNavigation";
 import { useGestureViewport } from "./useGestureViewport";
+import { usePagePreload } from "./usePagePreload";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { AlertCircle, RotateCcw } from "lucide-react";
 
 interface ReaderViewportProps {
@@ -131,20 +133,35 @@ export function ReaderViewport({
     }
   };
 
+  // Phase 2: Asynchronous preloading with img.decode() prioritizing current, +2 ahead, -1 behind
+  usePagePreload(pages, currentIndex);
+
+  // Phase 2: Strict list virtualization for Webtoon mode with @tanstack/react-virtual
+  const webtoonVirtualizer = useVirtualizer({
+    count: mode === "webtoon" ? pages.length : 0,
+    getScrollElement: () => containerRef.current,
+    estimateSize: (idx) => {
+      const p = pages[idx];
+      if (p?.width && p?.height && p.width > 0) {
+        const estimatedW = Math.min(viewportDims.width, 672); // max-w-2xl ~ 672px
+        return Math.round((estimatedW * p.height) / p.width);
+      }
+      return 600; // default estimated page height in pixels
+    },
+    overscan: 2, // Keep 2 pages ahead and behind rendered in the DOM window
+  });
+
   // In Webtoon mode, scroll to currentIndex when mounted / loaded
   const hasInitialScrolledRef = useRef(false);
   useEffect(() => {
     if (mode !== "webtoon" || hasInitialScrolledRef.current || !containerRef.current) return;
     if (currentIndex > 0 && pages.length > currentIndex) {
-      const pageEl = containerRef.current.querySelector(`[data-page-index="${currentIndex}"]`) as HTMLElement | null;
-      if (pageEl) {
-        hasInitialScrolledRef.current = true;
-        pageEl.scrollIntoView({ block: "start" });
-      }
+      hasInitialScrolledRef.current = true;
+      webtoonVirtualizer.scrollToIndex(currentIndex, { align: "start" });
     } else {
       hasInitialScrolledRef.current = true;
     }
-  }, [mode, currentIndex, pages.length, containerRef]);
+  }, [mode, currentIndex, pages.length, webtoonVirtualizer]);
 
   // In Webtoon mode, use IntersectionObserver to identify most visible page and update currentPage
   const onPageChangeRef = useRef(onPageChange);
@@ -231,9 +248,14 @@ export function ReaderViewport({
         }`}
       >
         {mode === "webtoon" ? (
-          // Webtoon Mode: Vertical continuous flow
-          <div className="reader-webtoon-flow w-full max-w-2xl flex flex-col items-center gap-0">
-            {pages.map((p, idx) => {
+          // Webtoon Mode: Virtualized continuous vertical flow
+          <div
+            className="reader-webtoon-flow w-full max-w-2xl relative"
+            style={{ height: `${webtoonVirtualizer.getTotalSize()}px` }}
+          >
+            {webtoonVirtualizer.getVirtualItems().map((virtualRow) => {
+              const idx = virtualRow.index;
+              const p = pages[idx];
               const pid = p.id || `page-${idx}`;
               const isFailed = failedPages[pid];
               const ratio = p.width && p.height ? `${p.width} / ${p.height}` : "2 / 3";
@@ -241,9 +263,18 @@ export function ReaderViewport({
               if (isFailed) {
                 return (
                   <div
-                    key={pid}
+                    key={virtualRow.key}
+                    ref={webtoonVirtualizer.measureElement}
+                    data-index={virtualRow.index}
                     data-page-index={idx}
-                    style={{ aspectRatio: ratio }}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${virtualRow.start}px)`,
+                      aspectRatio: ratio,
+                    }}
                     className="w-full max-w-xl bg-zinc-900 border-2 border-red-500/40 rounded-lg flex flex-col items-center justify-center p-6 text-center text-white my-2"
                   >
                     <AlertCircle className="w-10 h-10 text-red-400 mb-2" />
@@ -261,9 +292,18 @@ export function ReaderViewport({
 
               return (
                 <div
-                  key={pid}
+                  key={virtualRow.key}
+                  ref={webtoonVirtualizer.measureElement}
+                  data-index={virtualRow.index}
                   data-page-index={idx}
-                  style={{ aspectRatio: ratio }}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualRow.start}px)`,
+                    aspectRatio: ratio,
+                  }}
                   className="w-full relative flex items-center justify-center bg-zinc-950 min-h-[300px]"
                 >
                   <img

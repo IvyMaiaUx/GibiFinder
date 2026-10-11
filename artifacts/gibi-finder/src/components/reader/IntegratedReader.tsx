@@ -18,9 +18,12 @@ import {
   Sparkles,
   Maximize,
   Minimize,
-  Maximize2
+  Maximize2,
+  Activity
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ReaderDiagnostics, DiagInfo } from "./ReaderDiagnostics";
+import { readerStats, resetReaderStats } from "./readerStats";
 
 interface IntegratedReaderProps {
   mangaId?: string;
@@ -28,6 +31,8 @@ interface IntegratedReaderProps {
   title?: string;
   pages?: PageItem[];
   initialPage?: number;
+  nextChapter?: { id: string; title?: string; coverUrl?: string; pages?: PageItem[] };
+  onPrefetchNextChapter?: (nextChapterId: string) => Promise<void> | void;
   onClose?: () => void;
   onSwitchToLegacy?: () => void;
 }
@@ -38,6 +43,8 @@ export function IntegratedReader({
   title = "Leitor Integrado",
   pages: initialPages,
   initialPage = 0,
+  nextChapter,
+  onPrefetchNextChapter,
   onClose,
   onSwitchToLegacy,
 }: IntegratedReaderProps) {
@@ -77,8 +84,28 @@ export function IntegratedReader({
   const [fit, setFit] = useState<ReaderFit>("fit-screen");
   const [chromeVisible, setChromeVisible] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [diagOpen, setDiagOpen] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Phase 2: Prefetch next chapter when reading progress reaches >= 80%
+  const hasPrefetchedNextChapterRef = useRef(false);
+  useEffect(() => {
+    if (!activePages || activePages.length === 0) return;
+    const progressRatio = (currentPage + 1) / activePages.length;
+    if (progressRatio >= 0.8 && !hasPrefetchedNextChapterRef.current) {
+      hasPrefetchedNextChapterRef.current = true;
+      if (nextChapter?.id && onPrefetchNextChapter) {
+        onPrefetchNextChapter(nextChapter.id);
+      }
+      // Silently prefetch the cover of the next chapter if provided
+      if (nextChapter?.coverUrl) {
+        const coverImg = new Image();
+        coverImg.src = getPageImageUrl(nextChapter.coverUrl);
+        if ("decode" in coverImg) coverImg.decode().catch(() => {});
+      }
+    }
+  }, [currentPage, activePages, nextChapter, onPrefetchNextChapter]);
 
   // Check if Fullscreen API is supported on current browser (e.g. absent on iPhone Safari)
   const isFullscreenSupported = useMemo(() => {
@@ -367,6 +394,19 @@ export function IntegratedReader({
             </button>
           )}
 
+          {/* Diagnostics HUD toggle (Phase 2) */}
+          <button
+            type="button"
+            onClick={() => setDiagOpen((v) => !v)}
+            className={cn(
+              "p-1.5 rounded-lg border border-white/20 text-white touch-target-44 transition-colors",
+              diagOpen ? "bg-emerald-600 text-white border-emerald-400" : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+            )}
+            title="Diagnóstico e Telemetria (HUD)"
+          >
+            <Activity className="w-4 h-4" />
+          </button>
+
           {/* Switch to Legacy reader */}
           {onSwitchToLegacy && (
             <button
@@ -522,6 +562,41 @@ export function IntegratedReader({
           </div>
         </div>
       </footer>
+
+      {/* Diagnostics HUD Panel (Phase 2) */}
+      <ReaderDiagnostics
+        open={diagOpen}
+        onClose={() => setDiagOpen(false)}
+        diag={{
+          mode,
+          direction,
+          fit,
+          theme: "black",
+          zoom: 1,
+          page: currentPage + 1,
+          total: activePages.length,
+          chapterNum: chapterId,
+          rendered: activePages.length > 0 ? (mode === "webtoon" ? 4 : 2) : 0,
+          virtualized: activePages.length,
+          preload: 3,
+          scrollVirtualized: mode === "webtoon",
+          doublePage: layout,
+          spreadDetected: false,
+          split: "none",
+          splitActive: false,
+          viewport: `${viewportDims.width}x${viewportDims.height}`,
+          aspect: Math.round((viewportDims.width / (viewportDims.height || 1)) * 100) / 100,
+          orientation: viewportDims.width > viewportDims.height ? "landscape" : "portrait",
+          resume: true,
+          perWork: true,
+          immersion: "normal",
+          fullscreen: isFullscreen,
+          cursorHidden: false,
+        }}
+        onReloadChapter={() => window.location.reload()}
+        onClearCache={() => resetReaderStats()}
+        onTestProvider={() => {}}
+      />
     </div>
   );
 }
