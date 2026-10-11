@@ -19,17 +19,39 @@ import {
   Maximize,
   Minimize,
   Maximize2,
-  Activity
+  Activity,
+  List,
+  Download,
+  Loader2,
+  Check,
+  AlertCircle
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, buildStoreZip, toPdfPageImage, buildImagesPdf, mapWithConcurrency, proxyCoverUrl } from "@/lib/utils";
 import { ReaderDiagnostics, DiagInfo } from "./ReaderDiagnostics";
-import { readerStats, resetReaderStats } from "./readerStats";
+import { resetReaderStats, logRequest } from "./readerStats";
+import { saveReadingState, markChapterCompleted } from "@/lib/user-history";
+import { cacheChapterPages, isChapterCachedOffline } from "./offlineCache";
+import { ChapterItem } from "./readerTypes";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+const CONTENT_TYPE_EXT: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/avif": "avif",
+};
 
 interface IntegratedReaderProps {
+  providerId?: string;
   mangaId?: string;
   chapterId?: string;
   title?: string;
+  coverUrl?: string;
   pages?: PageItem[];
+  chapters?: ChapterItem[];
   initialPage?: number;
   nextChapter?: { id: string; title?: string; coverUrl?: string; pages?: PageItem[] };
   onPrefetchNextChapter?: (nextChapterId: string) => Promise<void> | void;
@@ -38,10 +60,13 @@ interface IntegratedReaderProps {
 }
 
 export function IntegratedReader({
+  providerId,
   mangaId = "demo",
-  chapterId = "ch1",
+  chapterId: initialChapterId,
   title = "Leitor Integrado",
+  coverUrl,
   pages: initialPages,
+  chapters: propChapters,
   initialPage = 0,
   nextChapter,
   onPrefetchNextChapter,
@@ -49,6 +74,25 @@ export function IntegratedReader({
   onSwitchToLegacy,
 }: IntegratedReaderProps) {
   const isDev = import.meta.env.DEV;
+
+  // Chapters list state
+  const [chapters, setChapters] = useState<ChapterItem[]>(propChapters || []);
+  const [loadingChapters, setLoadingChapters] = useState(false);
+  const [selectedChapter, setSelectedChapter] = useState<ChapterItem | null>(null);
+
+  // Pages state
+  const [pages, setPages] = useState<PageItem[]>(initialPages || []);
+  const [loadingPages, setLoadingPages] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Active chapter ID
+  const currentChapterId = selectedChapter?.id || initialChapterId || "ch1";
+
+  // Drawer / UI toggles
+  const [chapterListOpen, setChapterListOpen] = useState(false);
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<{ done: number; total: number; format: string } | null>(null);
+  const [isOfflineCached, setIsOfflineCached] = useState(false);
 
   // Read initial page from ?p= deep link query param
   const getInitialPageFromUrl = () => {
@@ -65,8 +109,8 @@ export function IntegratedReader({
   const [useMock, setUseMock] = useState(false);
   const rawPages = useMemo(() => {
     if (isDev && useMock) return MOCK_READER_PAGES;
-    return initialPages || [];
-  }, [isDev, useMock, initialPages]);
+    return pages.length > 0 ? pages : (initialPages || []);
+  }, [isDev, useMock, pages, initialPages]);
 
   // Apply stable breakpoint image URLs memoized to prevent reallocations
   const activePages = useMemo(() => {
@@ -88,6 +132,95 @@ export function IntegratedReader({
 
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Phase 3.1: Fetch chapters from real provider if providerId and mangaId are present
+  useEffect(() => {
+    if (propChapters && propChapters.length > 0) {
+      setChapters(propChapters);
+      return;
+    }
+    if (!providerId || !mangaId || mangaId === "demo") return;
+
+    let cancelled = false;
+    async function fetchChapters() {
+      setLoadingChapters(true);
+      try {
+        const res = await fetch(`${BASE}/api/providers/chapters?providerId=${providerId}&id=${encodeURIComponent(mangaId)}`);
+        if (!res.ok) throw new Error("Falha ao carregar capítulos");
+        const data = await res.json() as ChapterItem[];
+        if (!cancelled) {
+          setChapters(data);
+          if (data.length > 0) {
+            const current = initialChapterId 
+              ? data.find(c => c.id === initialChapterId) || data[0]
+              : data[0];
+            setSelectedChapter(current);
+          }
+        }
+      } catch (err) {
+        console.error("Erro ao buscar capítulos:", err);
+      } finally {
+        if (!cancelled) setLoadingChapters(false);
+      }
+    }
+    fetchChapters();
+    return () => { cancelled = true; };
+  }, [providerId, mangaId, propChapters, initialChapterId]);
+
+  // Phase 3.2: Fetch pages when selectedChapter changes
+  const loadChapterPages = useCallback(async (targetChapter: ChapterItem) => {
+    if (!providerId || !targetChapter.id) return;
+    setLoadingPages(true);
+    setError(null);
+    try {
+      const url = `${BASE}/api/providers/pages?providerId=${providerId}&chapterId=${encodeURIComponent(targetChapter.id)}`;
+      const t0 = performance.now();
+      const res = await fetch(url);
+      const ms = Math.round(performance.now() - t0);
+      logRequest({ url, kind: "pages", ms, status: res.status, at: Date.now() });
+      if (!res.ok) throw new Error("Erro ao carregar páginas do capítulo");
+      const data = await res.json() as { url: string; pageNumber?: number }[];
+      if (!data || data.length === 0) {
+        throw new Error("Nenhuma página retornada para este capítulo");
+      }
+      const mappedPages: PageItem[] = data.map((p, idx) => ({
+        id: `p-${idx + 1}`,
+        url: p.url
+      }));
+      setPages(mappedPages);
+      
+      // Check offline status
+      isChapterCachedOffline(providerId, mangaId, targetChapter.id).then(setIsOfflineCached);
+    } catch (err: any) {
+      console.error("Falha ao carregar páginas:", err);
+      setError(err?.message || "Não foi possível carregar as páginas do capítulo.");
+    } finally {
+      setLoadingPages(false);
+    }
+  }, [providerId, mangaId]);
+
+  useEffect(() => {
+    if (selectedChapter) {
+      loadChapterPages(selectedChapter);
+    }
+  }, [selectedChapter, loadChapterPages]);
+
+  // Switch to another chapter cleanly: reset page & query params
+  const handleSelectChapter = (ch: ChapterItem) => {
+    if (ch.id === selectedChapter?.id) {
+      setChapterListOpen(false);
+      return;
+    }
+    setSelectedChapter(ch);
+    setCurrentPage(0);
+    setIsReady(false);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("p");
+      window.history.replaceState(null, "", url.toString());
+    }
+    setChapterListOpen(false);
+  };
+
   // Phase 2: Prefetch next chapter when reading progress reaches >= 80%
   const hasPrefetchedNextChapterRef = useRef(false);
   useEffect(() => {
@@ -98,7 +231,6 @@ export function IntegratedReader({
       if (nextChapter?.id && onPrefetchNextChapter) {
         onPrefetchNextChapter(nextChapter.id);
       }
-      // Silently prefetch the cover of the next chapter if provided
       if (nextChapter?.coverUrl) {
         const coverImg = new Image();
         coverImg.src = getPageImageUrl(nextChapter.coverUrl);
@@ -107,7 +239,7 @@ export function IntegratedReader({
     }
   }, [currentPage, activePages, nextChapter, onPrefetchNextChapter]);
 
-  // Check if Fullscreen API is supported on current browser (e.g. absent on iPhone Safari)
+  // Check if Fullscreen API is supported on current browser
   const isFullscreenSupported = useMemo(() => {
     if (typeof document === "undefined") return false;
     const doc = document as any;
@@ -121,7 +253,7 @@ export function IntegratedReader({
       if (mangaId) {
         const [prefs, progress] = await Promise.all([
           getReaderPreferences(mangaId),
-          chapterId ? getReaderProgress(mangaId, chapterId) : null,
+          currentChapterId ? getReaderProgress(mangaId, currentChapterId) : null,
         ]);
         if (!cancelled && prefs) {
           if (prefs.mode) setMode(prefs.mode);
@@ -143,9 +275,9 @@ export function IntegratedReader({
     }
     loadStoredState();
     return () => { cancelled = true; };
-  }, [mangaId, chapterId]);
+  }, [mangaId, currentChapterId]);
 
-  // Sync ?p= deep link via history.replaceState and persist chapter progress to IndexedDB
+  // Sync ?p= deep link and persist chapter progress to IndexedDB and Reading History
   const handlePageChange = useCallback((newPage: number) => {
     setCurrentPage(newPage);
     if (typeof window !== "undefined") {
@@ -153,10 +285,53 @@ export function IntegratedReader({
       url.searchParams.set("p", String(newPage + 1));
       window.history.replaceState(null, "", url.toString());
     }
-    if (mangaId && chapterId) {
-      saveReaderProgress(mangaId, chapterId, newPage);
+    if (mangaId && currentChapterId) {
+      saveReaderProgress(mangaId, currentChapterId, newPage);
+
+      // Phase 3: Save reading history sync
+      const progressKey = `${providerId || "local"}-${mangaId}`;
+      saveReadingState(
+        progressKey,
+        {
+          chapterId: currentChapterId,
+          chapterNum: selectedChapter?.chapterNum || "1",
+          pageNumber: newPage + 1,
+          totalPages: activePages.length,
+          title,
+          coverUrl,
+          providerId,
+          mangaId,
+          readerMode: mode === "webtoon" ? "scroll" : "page",
+          updatedAt: new Date().toISOString()
+        },
+        {
+          id: `${mangaId}-${currentChapterId}`,
+          title,
+          coverUrl,
+          chapterId: currentChapterId,
+          chapterNum: selectedChapter?.chapterNum || "1",
+          chapterTitle: selectedChapter?.title,
+          providerId: providerId || "local",
+          mangaId,
+          pageNumber: newPage + 1,
+          timestamp: Date.now()
+        }
+      );
+
+      // Check if last page reached: mark completed
+      if (newPage + 1 >= activePages.length && activePages.length > 0) {
+        markChapterCompleted({
+          providerId: providerId || "local",
+          mangaId,
+          title,
+          coverUrl,
+          chapterId: currentChapterId,
+          chapterNum: selectedChapter?.chapterNum || "1",
+          completedAt: new Date().toISOString()
+        });
+      }
     }
-  }, [mangaId, chapterId]);
+  }, [mangaId, currentChapterId, providerId, selectedChapter, title, coverUrl, activePages.length, mode]);
 
   // Spread navigation hook for Keyboard shortcuts
   const [viewportDims, setViewportDims] = useState(() => ({
@@ -252,14 +427,109 @@ export function IntegratedReader({
     }
   };
 
+  // Download chapter as CBZ or PDF
+  const handleDownload = async (format: "cbz" | "pdf") => {
+    if (downloadProgress || activePages.length === 0) return;
+    setDownloadProgress({ done: 0, total: activePages.length, format });
+
+    const safeTitle = (title || "capitulo").replace(/[\\/:*?"<>|]+/g, "_").trim();
+    const chapterLabel = selectedChapter?.chapterNum ? `_cap${selectedChapter.chapterNum}` : "";
+    const padLength = String(activePages.length).length;
+
+    try {
+      const fetchOne = async (page: { url: string }, index: number) => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 20000);
+        try {
+          const fetchUrl = proxyCoverUrl(page.url) || page.url;
+          const res = await fetch(fetchUrl, { signal: controller.signal });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const contentType = res.headers.get("content-type") || "image/jpeg";
+          const blob = await res.blob();
+          setDownloadProgress((prev) => prev ? { ...prev, done: prev.done + 1 } : null);
+          return { index, blob, contentType };
+        } catch (e) {
+          console.error(`Erro ao baixar página ${index + 1}:`, e);
+          setDownloadProgress((prev) => prev ? { ...prev, done: prev.done + 1 } : null);
+          return null;
+        } finally {
+          clearTimeout(timeout);
+        }
+      };
+
+      const fetched = await mapWithConcurrency(activePages, 4, fetchOne);
+      const valid = fetched.filter((f): f is { index: number; blob: Blob; contentType: string } => f !== null);
+      valid.sort((a, b) => a.index - b.index);
+
+      if (valid.length === 0) {
+        alert("Não foi possível baixar nenhuma página do capítulo.");
+        return;
+      }
+
+      if (format === "cbz") {
+        const withBytes = await mapWithConcurrency(valid, 4, async ({ index, blob, contentType }) => ({
+          name: `${String(index + 1).padStart(padLength, "0")}.${CONTENT_TYPE_EXT[contentType] || "jpg"}`,
+          data: new Uint8Array(await blob.arrayBuffer()),
+        }));
+        const zipBlob = buildStoreZip(withBytes);
+        const objUrl = URL.createObjectURL(zipBlob);
+        const a = document.createElement("a");
+        a.href = objUrl;
+        a.download = `${safeTitle}${chapterLabel}.cbz`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(objUrl);
+      } else {
+        const images = await mapWithConcurrency(valid, 4, (f) => toPdfPageImage(f.blob, f.contentType));
+        const pdfBlob = buildImagesPdf(images);
+        const objUrl = URL.createObjectURL(pdfBlob);
+        const a = document.createElement("a");
+        a.href = objUrl;
+        a.download = `${safeTitle}${chapterLabel}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(objUrl);
+      }
+    } catch (err) {
+      console.error(`Erro ao gerar ${format}:`, err);
+      alert(`Falha ao gerar o arquivo .${format}`);
+    } finally {
+      setDownloadProgress(null);
+      setDownloadModalOpen(false);
+    }
+  };
+
+  // Phase 3: Cache chapter for offline reading
+  const handleSaveOffline = async () => {
+    if (!providerId || !selectedChapter || activePages.length === 0) return;
+    setDownloadProgress({ done: 0, total: activePages.length, format: "offline" });
+    try {
+      await cacheChapterPages(
+        providerId,
+        mangaId,
+        selectedChapter.id,
+        selectedChapter.chapterNum,
+        title,
+        activePages,
+        (done, total) => {
+          setDownloadProgress({ done, total, format: "offline" });
+        }
+      );
+      setIsOfflineCached(true);
+    } catch (err) {
+      console.error("Erro ao salvar offline:", err);
+    } finally {
+      setDownloadProgress(null);
+    }
+  };
+
   // Keyboard navigation shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if user is typing in an interactive form control
       const target = e.target as HTMLElement;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
-
-      // Ignore shortcuts if modifier keys (Ctrl/Cmd/Alt) are pressed
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
       const isRtl = direction === "rtl";
@@ -270,11 +540,8 @@ export function IntegratedReader({
         case "A":
           if (mode === "paginated") {
             e.preventDefault();
-            if (isRtl) {
-              navHandleNext();
-            } else {
-              navHandlePrev();
-            }
+            if (isRtl) navHandleNext();
+            else navHandlePrev();
           }
           break;
 
@@ -283,28 +550,22 @@ export function IntegratedReader({
         case "D":
           if (mode === "paginated") {
             e.preventDefault();
-            if (isRtl) {
-              navHandlePrev();
-            } else {
-              navHandleNext();
-            }
+            if (isRtl) navHandlePrev();
+            else navHandleNext();
           }
           break;
 
-        case " ": // Space
+        case " ":
           if (mode === "paginated") {
             e.preventDefault();
             navHandleNext();
           }
-          // In webtoon, allow default space behavior (native page scroll)
           break;
 
         case "f":
         case "F":
           e.preventDefault();
-          if (isFullscreenSupported) {
-            toggleFullscreen();
-          }
+          if (isFullscreenSupported) toggleFullscreen();
           break;
 
         case "Escape":
@@ -312,6 +573,8 @@ export function IntegratedReader({
           if (doc.fullscreenElement || doc.webkitFullscreenElement) {
             if (doc.exitFullscreen) doc.exitFullscreen().catch(() => {});
             else if (doc.webkitExitFullscreen) doc.webkitExitFullscreen();
+          } else if (chapterListOpen) {
+            setChapterListOpen(false);
           } else if (onClose) {
             onClose();
           }
@@ -321,9 +584,9 @@ export function IntegratedReader({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [mode, direction, navHandleNext, navHandlePrev, isFullscreenSupported, onClose]);
+  }, [mode, direction, navHandleNext, navHandlePrev, isFullscreenSupported, onClose, chapterListOpen]);
 
-  if (!isReady) {
+  if (!isReady && !loadingPages) {
     return (
       <div className="relative w-full h-[100dvh] bg-black flex items-center justify-center text-zinc-500 font-display text-sm tracking-widest">
         CARREGANDO LEITOR...
@@ -359,14 +622,47 @@ export function IntegratedReader({
             <h2 className="font-display text-lg sm:text-xl truncate text-white leading-tight">
               {title}
             </h2>
-            <p className="font-sans text-xs text-zinc-400 font-bold truncate">
-              {mode === "webtoon" ? "Modo Webtoon (Vertical)" : `Página ${currentPage + 1} de ${activePages.length}`}
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="font-sans text-xs text-zinc-400 font-bold truncate">
+                {selectedChapter?.chapterNum ? `Capítulo ${selectedChapter.chapterNum}` : "Capítulo"}
+                {mode === "webtoon" ? " · Webtoon" : ` · Página ${currentPage + 1} de ${activePages.length}`}
+              </p>
+              {isOfflineCached && (
+                <span className="text-[10px] font-display bg-emerald-950 text-emerald-400 border border-emerald-600 px-1.5 py-0.2 rounded">
+                  OFFLINE
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Mock toggle for testing — ONLY SHOWN IN DEV ENVIRONMENT */}
+          {/* Chapter Drawer Toggle */}
+          {chapters.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setChapterListOpen((v) => !v)}
+              className="px-2.5 py-1.5 rounded-md font-display text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-white/20 flex items-center gap-1.5 touch-target-44"
+              title="Lista de Capítulos"
+            >
+              <List className="w-4 h-4" />
+              <span className="hidden sm:inline">CAPÍTULOS</span>
+            </button>
+          )}
+
+          {/* Download Button */}
+          {activePages.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setDownloadModalOpen(true)}
+              className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white border border-white/20 touch-target-44"
+              title="Baixar Capítulo (CBZ / PDF)"
+            >
+              <Download className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* Mock toggle for testing — DEV ONLY */}
           {isDev && (
             <button
               type="button"
@@ -382,7 +678,7 @@ export function IntegratedReader({
             </button>
           )}
 
-          {/* Fullscreen toggle (rendered only if API is supported by the browser) */}
+          {/* Fullscreen toggle */}
           {isFullscreenSupported && (
             <button
               type="button"
@@ -394,7 +690,7 @@ export function IntegratedReader({
             </button>
           )}
 
-          {/* Diagnostics HUD toggle (Phase 2) */}
+          {/* Diagnostics HUD toggle */}
           <button
             type="button"
             onClick={() => setDiagOpen((v) => !v)}
@@ -424,7 +720,30 @@ export function IntegratedReader({
 
       {/* Main Viewport */}
       <main className="flex-1 w-full h-full relative">
-        {activePages.length === 0 ? (
+        {loadingPages ? (
+          <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center text-zinc-400">
+            <Loader2 className="w-10 h-10 mb-3 text-primary animate-spin" />
+            <p className="font-display text-lg text-white">CARREGANDO CAPÍTULO...</p>
+            <p className="font-sans text-xs text-zinc-400 max-w-sm mt-1">
+              Buscando páginas do provedor oficial.
+            </p>
+          </div>
+        ) : error ? (
+          <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center text-zinc-400">
+            <AlertCircle className="w-12 h-12 mb-3 text-red-500" />
+            <p className="font-display text-lg text-white">FALHA AO ABRIR CAPÍTULO</p>
+            <p className="font-sans text-xs text-red-400 max-w-sm mt-1">{error}</p>
+            {chapters.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setChapterListOpen(true)}
+                className="mt-4 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white font-display text-xs rounded border border-white/20"
+              >
+                ESCOLHER OUTRO CAPÍTULO
+              </button>
+            )}
+          </div>
+        ) : activePages.length === 0 ? (
           <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center text-zinc-400">
             <BookOpen className="w-12 h-12 mb-3 text-zinc-600 animate-pulse" />
             <p className="font-display text-lg text-white">NENHUMA PÁGINA CARREGADA</p>
@@ -454,114 +773,123 @@ export function IntegratedReader({
           />
         )}
       </main>
-
-      {/* Bottom Bar Chrome */}
-      <footer
-        className={cn(
-          "absolute bottom-0 inset-x-0 z-40 bg-black/90 backdrop-blur-md border-t-2 border-white/20 transition-transform duration-300 px-4 py-3",
-          !chromeVisible && "translate-y-full pointer-events-none"
-        )}
-        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
-      >
-        <div className="max-w-3xl mx-auto flex flex-col gap-2">
-          {/* Scrubber slider for paginated mode */}
-          {mode === "paginated" && activePages.length > 1 && (
-            <div className="flex items-center gap-3">
-              <span className="font-display text-xs text-zinc-400 w-8 text-right">
-                {currentPage + 1}
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={activePages.length - 1}
-                value={currentPage}
-                onChange={(e) => handlePageChange(Number(e.target.value))}
-                className="flex-1 accent-primary h-2 bg-zinc-800 rounded-lg cursor-pointer"
-              />
-              <span className="font-display text-xs text-zinc-400 w-8">
-                {activePages.length}
-              </span>
-            </div>
-          )}
-
-          {/* Quick Toolbar Toggles */}
-          <div className="flex items-center justify-between gap-1 overflow-x-auto no-scrollbar pt-1">
-            {/* Mode: Paginated vs Webtoon */}
-            <div className="flex items-center bg-zinc-900 border border-white/20 rounded-lg p-0.5">
+      {/* Chapters Drawer / Modal */}
+      {chapterListOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex justify-end animate-in fade-in">
+          <div className="w-full max-w-md h-full bg-zinc-950 border-l border-white/20 flex flex-col p-4">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <h3 className="font-display text-lg text-white">CAPÍTULOS ({chapters.length})</h3>
               <button
                 type="button"
-                onClick={() => updateMode("paginated")}
-                className={cn(
-                  "px-2.5 py-1 rounded text-xs font-display flex items-center gap-1 transition-colors touch-target-44",
-                  mode === "paginated" ? "bg-primary text-white" : "text-zinc-400 hover:text-white"
-                )}
+                onClick={() => setChapterListOpen(false)}
+                className="p-1 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white"
               >
-                <BookOpen className="w-3.5 h-3.5" /> Paginado
-              </button>
-              <button
-                type="button"
-                onClick={() => updateMode("webtoon")}
-                className={cn(
-                  "px-2.5 py-1 rounded text-xs font-display flex items-center gap-1 transition-colors touch-target-44",
-                  mode === "webtoon" ? "bg-primary text-white" : "text-zinc-400 hover:text-white"
-                )}
-              >
-                <ScrollText className="w-3.5 h-3.5" /> Webtoon
+                <X className="w-5 h-5" />
               </button>
             </div>
+            <div className="flex-1 overflow-y-auto py-2 space-y-1">
+              {loadingChapters ? (
+                <div className="p-8 text-center text-zinc-500 font-display text-xs">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-primary" />
+                  CARREGANDO CAPÍTULOS...
+                </div>
+              ) : chapters.map((ch) => (
+                <button
+                  key={ch.id}
+                  type="button"
+                  onClick={() => handleSelectChapter(ch)}
+                  className={cn(
+                    "w-full text-left p-3 rounded-lg flex items-center justify-between transition-colors border",
+                    ch.id === selectedChapter?.id
+                      ? "bg-primary/20 border-primary text-white"
+                      : "bg-zinc-900/60 border-white/5 hover:bg-zinc-850 text-zinc-300"
+                  )}
+                >
+                  <div>
+                    <div className="font-display text-sm">
+                      Capítulo {ch.chapterNum} {ch.title ? `· ${ch.title}` : ""}
+                    </div>
+                    {ch.language && (
+                      <span className="text-[10px] text-zinc-500 font-sans uppercase">
+                        Idioma: {ch.language}
+                      </span>
+                    )}
+                  </div>
+                  {ch.id === selectedChapter?.id && (
+                    <Check className="w-4 h-4 text-primary shrink-0" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
-            {/* Fit mode selector */}
-            <div className="flex items-center bg-zinc-900 border border-white/20 rounded-lg p-0.5">
+      {/* Download / Offline Modal */}
+      {downloadModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-zinc-950 border border-white/20 rounded-xl p-5 comic-shadow">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <h3 className="font-display text-lg text-white">BAIXAR CAPÍTULO</h3>
               <button
                 type="button"
-                onClick={() => {
-                  const modes: ReaderFit[] = ["fit-screen", "fit-width", "fit-height", "original"];
-                  const nextFit = modes[(modes.indexOf(fit) + 1) % modes.length];
-                  updateFit(nextFit);
-                }}
-                className="px-2.5 py-1 rounded text-xs font-display flex items-center gap-1 text-zinc-300 hover:text-white touch-target-44"
-                title="Ajuste de imagem: Tela / Largura / Altura / Original"
+                onClick={() => setDownloadModalOpen(false)}
+                disabled={!!downloadProgress}
+                className="p-1 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white"
               >
-                <Maximize2 className="w-3.5 h-3.5" />
-                <span className="capitalize">{fit.replace("fit-", "")}</span>
+                <X className="w-5 h-5" />
               </button>
             </div>
-
-            {/* Layout and Direction (only in Paginated) */}
-            {mode === "paginated" && (
-              <div className="flex items-center gap-1.5">
-                {/* Direction: LTR vs RTL */}
+            
+            {downloadProgress ? (
+              <div className="py-6 text-center space-y-3">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
+                <p className="font-display text-sm text-white">
+                  {downloadProgress.format === "offline" ? "SALVANDO OFFLINE..." : `GERANDO .${downloadProgress.format.toUpperCase()}...`}
+                </p>
+                <div className="w-full bg-zinc-800 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="bg-primary h-full transition-all duration-300"
+                    style={{ width: `${Math.round((downloadProgress.done / downloadProgress.total) * 100)}%` }}
+                  />
+                </div>
+                <p className="text-xs text-zinc-400 font-sans">
+                  {downloadProgress.done} de {downloadProgress.total} páginas
+                </p>
+              </div>
+            ) : (
+              <div className="py-4 space-y-2.5">
                 <button
                   type="button"
-                  onClick={() => updateDirection(direction === "ltr" ? "rtl" : "ltr")}
-                  className="px-2.5 py-1 rounded bg-zinc-900 border border-white/20 text-xs font-display flex items-center gap-1 hover:bg-zinc-800 transition-colors touch-target-44"
-                  title="Sentido de leitura: LTR (Ocidental) / RTL (Mangá)"
+                  onClick={() => handleDownload("cbz")}
+                  className="w-full py-2.5 px-4 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-white/10 font-display text-xs text-white flex items-center justify-between"
                 >
-                  <ArrowLeftRight className="w-3.5 h-3.5" />
-                  <span>{direction.toUpperCase()}</span>
+                  <span>Baixar em .CBZ (Padrão de Quadrinhos)</span>
+                  <Download className="w-4 h-4 text-primary" />
                 </button>
 
-                {/* Layout: Auto / Single / Double */}
                 <button
                   type="button"
-                  onClick={() => {
-                    updateLayout(layout === "auto" ? "double" : layout === "double" ? "single" : "auto");
-                  }}
-                  className="px-2.5 py-1 rounded bg-zinc-900 border border-white/20 text-xs font-display flex items-center gap-1 hover:bg-zinc-800 transition-colors touch-target-44"
-                  title="Layout: Automático / Duplo / Página Única"
+                  onClick={() => handleDownload("pdf")}
+                  className="w-full py-2.5 px-4 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-white/10 font-display text-xs text-white flex items-center justify-between"
                 >
-                  {layout === "single" ? (
-                    <Square className="w-3.5 h-3.5" />
-                  ) : (
-                    <Columns2 className="w-3.5 h-3.5" />
-                  )}
-                  <span className="capitalize">{layout}</span>
+                  <span>Baixar em .PDF</span>
+                  <Download className="w-4 h-4 text-primary" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveOffline}
+                  className="w-full py-2.5 px-4 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-600/40 font-display text-xs text-emerald-300 flex items-center justify-between"
+                >
+                  <span>Salvar para Leitura Offline (Cache Local)</span>
+                  <Check className="w-4 h-4 text-emerald-400" />
                 </button>
               </div>
             )}
           </div>
         </div>
-      </footer>
+      )}
 
       {/* Diagnostics HUD Panel (Phase 2) */}
       <ReaderDiagnostics
@@ -575,7 +903,7 @@ export function IntegratedReader({
           zoom: 1,
           page: currentPage + 1,
           total: activePages.length,
-          chapterNum: chapterId,
+          chapterNum: selectedChapter?.chapterNum || currentChapterId,
           rendered: activePages.length > 0 ? (mode === "webtoon" ? 4 : 2) : 0,
           virtualized: activePages.length,
           preload: 3,
@@ -593,7 +921,7 @@ export function IntegratedReader({
           fullscreen: isFullscreen,
           cursorHidden: false,
         }}
-        onReloadChapter={() => window.location.reload()}
+        onReloadChapter={() => selectedChapter && loadChapterPages(selectedChapter)}
         onClearCache={() => resetReaderStats()}
         onTestProvider={() => {}}
       />

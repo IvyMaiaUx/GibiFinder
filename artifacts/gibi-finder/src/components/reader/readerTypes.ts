@@ -1,4 +1,4 @@
-﻿export type ReaderMode = "paginated" | "webtoon";
+export type ReaderMode = "paginated" | "webtoon";
 export type ReaderDirection = "ltr" | "rtl";
 export type ReaderLayout = "single" | "double" | "auto";
 export type ReaderTheme = "dark" | "black" | "light" | "sepia";
@@ -23,4 +23,12 @@ export interface SpreadGroup {
   pages: PageItem[];
   isSpread: boolean;
   isNativeWide: boolean;
+}
+
+export interface ChapterItem {
+  id: string;
+  chapterNum: string;
+  title?: string;
+  language?: string;
+  providerId?: string;
 }

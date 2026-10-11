@@ -435,8 +435,10 @@ export default function ResultDetail() {
                     />
                   ) : (
                     <IntegratedReader
+                      providerId={isOnlineResult ? providerId : undefined}
                       mangaId={mangaId || id}
                       title={(resultData as any).revista || (resultData as any).titulo || "Leitor"}
+                      coverUrl={(resultData as any).coverUrl || (resultData as any).images?.[0]}
                       onSwitchToLegacy={() => {
                         setUseNewReader(false);
                         localStorage.setItem("gibi-finder:use-new-reader", "false");
