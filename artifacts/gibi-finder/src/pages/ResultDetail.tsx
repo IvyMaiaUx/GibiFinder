@@ -70,15 +70,17 @@ export default function ResultDetail() {
 
   const isOnlineResult = id === "online";
 
-  // O leitor LEGADO continua sendo o padrão para todos os usuários normais.
-  // O novo leitor só abre se houver ?novo=true na URL ou preferência local ativada.
+  // O NOVO LEITOR agora é o padrão para todos os usuários!
+  // Caso alguém queira voltar ao leitor legado, pode usar o botão no HUD ou ?legacy=true na URL.
   const [useNewReader, setUseNewReader] = useState(() => {
     if (typeof window !== "undefined") {
       const sp = new URLSearchParams(window.location.search);
-      if (sp.get("novo") === "true" || sp.get("reader") === "new") return true;
-      return localStorage.getItem("gibi-finder:use-new-reader") === "true";
+      if (sp.get("legacy") === "true" || sp.get("reader") === "legacy") return false;
+      const pref = localStorage.getItem("gibi-finder:use-new-reader");
+      if (pref === "false") return false;
+      return true;
     }
-    return false;
+    return true;
   });
 
   // State for online details
