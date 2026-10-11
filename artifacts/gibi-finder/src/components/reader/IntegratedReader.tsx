@@ -29,7 +29,8 @@ import {
   Moon,
   Palette,
   Sliders,
-  Scan
+  Scan,
+  FolderOpen
 } from "lucide-react";
 import { cn, buildStoreZip, toPdfPageImage, buildImagesPdf, mapWithConcurrency, proxyCoverUrl } from "@/lib/utils";
 import { ReaderDiagnostics, DiagInfo } from "./ReaderDiagnostics";
@@ -37,6 +38,7 @@ import { resetReaderStats, logRequest } from "./readerStats";
 import { saveReadingState, markChapterCompleted } from "@/lib/user-history";
 import { cacheChapterPages, isChapterCachedOffline } from "./offlineCache";
 import { ChapterItem, ReaderTheme, PanelBox } from "./readerTypes";
+import { parseLocalCbzFile } from "./cbzParser";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -142,6 +144,32 @@ export function IntegratedReader({
   const [diagOpen, setDiagOpen] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Phase 6: Handle local .cbz / .zip file upload
+  const handleLocalFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLoadingPages(true);
+    setError(null);
+    try {
+      const result = await parseLocalCbzFile(file);
+      setPages(result.pages);
+      setSelectedChapter({
+        id: "local-cbz",
+        chapterNum: "1",
+        title: result.title,
+      });
+      setCurrentPage(0);
+      setPanelIndex(0);
+    } catch (err: any) {
+      console.error("Erro ao abrir arquivo CBZ:", err);
+      setError(err?.message || "Não foi possível ler o arquivo .cbz");
+    } finally {
+      setLoadingPages(false);
+      if (e.target) e.target.value = "";
+    }
+  };
 
   // Phase 4.1: Screen Wake Lock API — keep screen awake while reader is active
   useEffect(() => {
@@ -711,6 +739,23 @@ export function IntegratedReader({
               <Download className="w-4 h-4" />
             </button>
           )}
+
+          {/* Open Local CBZ file button (Phase 6) */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".cbz,.zip"
+            onChange={handleLocalFileUpload}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white border border-white/20 touch-target-44"
+            title="Abrir arquivo local .CBZ / .ZIP"
+          >
+            <FolderOpen className="w-4 h-4" />
+          </button>
 
           {/* Mock toggle for testing — DEV ONLY */}
           {isDev && (
