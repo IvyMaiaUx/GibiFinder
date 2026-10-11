@@ -28,14 +28,15 @@ import {
   Sun,
   Moon,
   Palette,
-  Sliders
+  Sliders,
+  Scan
 } from "lucide-react";
 import { cn, buildStoreZip, toPdfPageImage, buildImagesPdf, mapWithConcurrency, proxyCoverUrl } from "@/lib/utils";
 import { ReaderDiagnostics, DiagInfo } from "./ReaderDiagnostics";
 import { resetReaderStats, logRequest } from "./readerStats";
 import { saveReadingState, markChapterCompleted } from "@/lib/user-history";
 import { cacheChapterPages, isChapterCachedOffline } from "./offlineCache";
-import { ChapterItem, ReaderTheme } from "./readerTypes";
+import { ChapterItem, ReaderTheme, PanelBox } from "./readerTypes";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -133,6 +134,9 @@ export function IntegratedReader({
   const [theme, setTheme] = useState<ReaderTheme>("black");
   const [brightness, setBrightness] = useState<number>(100);
   const [themeModalOpen, setThemeModalOpen] = useState(false);
+  const [panelMode, setPanelMode] = useState<boolean>(false);
+  const [panelIndex, setPanelIndex] = useState<number>(0);
+  const [pagePanels, setPagePanels] = useState<PanelBox[]>([]);
   const [chromeVisible, setChromeVisible] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [diagOpen, setDiagOpen] = useState(false);
@@ -724,6 +728,24 @@ export function IntegratedReader({
             </button>
           )}
 
+          {/* Guided View / Panel Reading toggle (Phase 5) */}
+          {mode === "paginated" && (
+            <button
+              type="button"
+              onClick={() => {
+                setPanelMode((v) => !v);
+                setPanelIndex(0);
+              }}
+              className={cn(
+                "p-1.5 rounded-lg border border-white/20 text-white touch-target-44 transition-colors",
+                panelMode ? "bg-primary text-black border-yellow-300 font-bold" : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+              )}
+              title="Leitura Quadro a Quadro (Guided View)"
+            >
+              <Scan className="w-4 h-4" />
+            </button>
+          )}
+
           {/* Theme & Display Settings toggle */}
           <button
             type="button"
@@ -829,7 +851,13 @@ export function IntegratedReader({
             fit={fit}
             theme={theme}
             brightness={brightness}
-            onPageChange={handlePageChange}
+            panelMode={panelMode}
+            panelIndex={panelIndex}
+            onPanelsDetected={(panels) => setPagePanels(panels)}
+            onPageChange={(idx) => {
+              setPanelIndex(0);
+              handlePageChange(idx);
+            }}
             onToggleChrome={toggleChrome}
           />
         )}

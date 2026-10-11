@@ -1,9 +1,10 @@
-import { PageItem, ReaderMode, ReaderDirection, ReaderLayout, ReaderFit, ReaderTheme } from "./readerTypes";
+import { PageItem, ReaderMode, ReaderDirection, ReaderLayout, ReaderFit, ReaderTheme, PanelBox } from "./readerTypes";
 import { useSpreadNavigation } from "./useSpreadNavigation";
 import { useGestureViewport } from "./useGestureViewport";
 import { usePagePreload } from "./usePagePreload";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { AlertCircle, RotateCcw } from "lucide-react";
+import { detectPanelsInImage } from "./panelDetector";
 
 interface ReaderViewportProps {
   pages: PageItem[];
@@ -14,6 +15,9 @@ interface ReaderViewportProps {
   fit: ReaderFit;
   theme?: ReaderTheme;
   brightness?: number;
+  panelMode?: boolean;
+  panelIndex?: number;
+  onPanelsDetected?: (panels: PanelBox[]) => void;
   onPageChange: (newIndex: number) => void;
   onToggleChrome: () => void;
 }
@@ -27,6 +31,9 @@ export function ReaderViewport({
   fit,
   theme = "black",
   brightness = 100,
+  panelMode = false,
+  panelIndex = 0,
+  onPanelsDetected,
   onPageChange,
   onToggleChrome,
 }: ReaderViewportProps) {
@@ -118,6 +125,30 @@ export function ReaderViewport({
   const handleRetry = (pageId: string) => {
     setFailedPages((prev) => ({ ...prev, [pageId]: false }));
   };
+
+  // Phase 5: Panel detection & guided navigation
+  const [detectedPanels, setDetectedPanels] = useState<PanelBox[]>([]);
+  const currentImgRef = useRef<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    if (!panelMode || mode !== "paginated") {
+      setDetectedPanels([]);
+      return;
+    }
+
+    const currentPageItem = activeGroup.pages[0];
+    if (!currentPageItem) return;
+
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = currentPageItem.url;
+    img.onload = async () => {
+      currentImgRef.current = img;
+      const panels = await detectPanelsInImage(img);
+      setDetectedPanels(panels);
+      if (onPanelsDetected) onPanelsDetected(panels);
+    };
+  }, [panelMode, mode, activeGroup.pages, onPanelsDetected]);
 
   // Determine CSS class based on Fit Mode
   // Note: in fit-width and original, image might exceed viewport height even at 1x;
@@ -365,17 +396,30 @@ export function ReaderViewport({
                 );
               }
 
+              const currentPanel = panelMode && detectedPanels.length > 0 ? detectedPanels[panelIndex] : null;
+
               return (
                 <div
                   key={pid}
-                  style={{ aspectRatio: fit === "fit-screen" ? ratio : undefined }}
-                  className={`relative flex items-center justify-center bg-zinc-950/40 rounded shadow-2xl shrink min-w-0 ${
-                    fit === "fit-screen" ? "max-h-[92dvh] max-w-full overflow-hidden" : ""
+                  style={{ 
+                    aspectRatio: fit === "fit-screen" ? ratio : undefined,
+                  }}
+                  className={`relative flex items-center justify-center bg-zinc-950/40 rounded shadow-2xl shrink min-w-0 overflow-hidden ${
+                    fit === "fit-screen" ? "max-h-[92dvh] max-w-full" : ""
                   }`}
                 >
                   <img
                     src={p.url}
                     alt={`Página ${pages.indexOf(p) + 1}`}
+                    style={
+                      currentPanel
+                        ? {
+                            transformOrigin: `${(currentPanel.x + currentPanel.width / 2) * 100}% ${(currentPanel.y + currentPanel.height / 2) * 100}%`,
+                            transform: `scale(${Math.max(1.2, 1 / Math.max(0.2, currentPanel.height))})`,
+                            transition: "transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1)",
+                          }
+                        : undefined
+                    }
                     onError={() => setFailedPages((prev) => ({ ...prev, [pid]: true }))}
                     className={`${getFitClasses()} pointer-events-none block`}
                   />

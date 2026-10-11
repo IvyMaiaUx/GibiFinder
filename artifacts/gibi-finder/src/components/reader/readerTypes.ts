@@ -32,3 +32,14 @@ export interface ChapterItem {
   language?: string;
   providerId?: string;
 }
+
+export interface PanelBox {
+  x: number;      // 0 to 1 (proportional)
+  y: number;      // 0 to 1
+  width: number;  // 0 to 1
+  height: number; // 0 to 1
+}
+
+export interface PanelDetectionResult {
+  panels: PanelBox[];
+}
