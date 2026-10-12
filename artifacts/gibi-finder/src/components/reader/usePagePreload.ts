@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { PageItem } from "./readerTypes";
 import { bumpStat } from "./readerStats";
 
@@ -22,7 +22,9 @@ export function usePagePreload(pages: PageItem[], currentIndex: number) {
     if (currentIndex + 2 < pages.length) targets.push(currentIndex + 2);
     if (currentIndex - 1 >= 0) targets.push(currentIndex - 1);
 
-    const urlsToPreload = targets.map((idx) => pages[idx]?.url).filter(Boolean);
+    const urlsToPreload = targets
+      .map((idx) => pages[idx]?.url)
+      .filter((url): url is string => Boolean(url) && !url.startsWith("pdf:"));
 
     urlsToPreload.forEach((url) => {
       if (decodedUrlsCache.has(url) || activeJobsRef.current.has(url)) {

@@ -6,6 +6,7 @@ import { usePagePreload } from "./usePagePreload";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { AlertCircle, RotateCcw } from "lucide-react";
 import { detectPanelsInImage } from "./panelDetector";
+import { proxyCoverUrl } from "@/lib/utils";
 
 interface ReaderViewportProps {
   pages: PageItem[];
@@ -138,16 +139,23 @@ export function ReaderViewport({
     }
 
     const currentPageItem = activeGroup.pages[0];
-    if (!currentPageItem) return;
+    if (!currentPageItem || !currentPageItem.url || currentPageItem.url.startsWith("pdf:")) return;
 
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.src = currentPageItem.url;
+    img.src = proxyCoverUrl(currentPageItem.url) || currentPageItem.url;
     img.onload = async () => {
       currentImgRef.current = img;
-      const panels = await detectPanelsInImage(img);
-      setDetectedPanels(panels);
-      if (onPanelsDetected) onPanelsDetected(panels);
+      try {
+        const panels = await detectPanelsInImage(img);
+        setDetectedPanels(panels);
+        if (onPanelsDetected) onPanelsDetected(panels);
+      } catch {
+        // Ignore detection errors silently
+      }
+    };
+    img.onerror = () => {
+      // Gracefully ignore CORS or decoding issues on panel detection
     };
   }, [panelMode, mode, activeGroup.pages, onPanelsDetected]);
 
@@ -357,7 +365,7 @@ export function ReaderViewport({
                   className="w-full relative flex items-center justify-center bg-zinc-950 min-h-[300px]"
                 >
                   <img
-                    src={p.url}
+                    src={p.url?.startsWith("pdf:") ? "" : p.url}
                     alt={`Página ${idx + 1}`}
                     loading="lazy"
                     onError={() => setFailedPages((prev) => ({ ...prev, [pid]: true }))}
@@ -410,7 +418,7 @@ export function ReaderViewport({
                   }`}
                 >
                   <img
-                    src={p.url}
+                    src={p.url?.startsWith("pdf:") ? "" : p.url}
                     alt={`Página ${pages.indexOf(p) + 1}`}
                     style={
                       currentPanel

@@ -32,13 +32,15 @@ import {
   Scan,
   FolderOpen
 } from "lucide-react";
-import { cn, buildStoreZip, toPdfPageImage, buildImagesPdf, mapWithConcurrency, proxyCoverUrl } from "@/lib/utils";
+import { cn, buildStoreZip, toPdfPageImage, buildImagesPdf, mapWithConcurrency, proxyCoverUrl, proxyPdfUrl } from "@/lib/utils";
 import { ReaderDiagnostics, DiagInfo } from "./ReaderDiagnostics";
 import { resetReaderStats, logRequest } from "./readerStats";
 import { saveReadingState, markChapterCompleted } from "@/lib/user-history";
 import { cacheChapterPages, isChapterCachedOffline } from "./offlineCache";
 import { ChapterItem, ReaderTheme, PanelBox } from "./readerTypes";
 import { parseLocalCbzFile } from "./cbzParser";
+
+const PdfReader = React.lazy(() => import("@/components/results/PdfReader").then(m => ({ default: m.PdfReader })));
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -869,6 +871,32 @@ export function IntegratedReader({
               </button>
             )}
           </div>
+        ) : activePages.length > 0 && activePages[0]?.url?.startsWith("pdf:") ? (
+          <React.Suspense
+            fallback={
+              <div className="w-full h-full flex items-center justify-center text-white">
+                <Loader2 className="w-10 h-10 animate-spin text-primary" />
+              </div>
+            }
+          >
+            <PdfReader
+              fileUrl={proxyPdfUrl(activePages[0].url.slice(4))}
+              rawUrl={activePages[0].url.slice(4)}
+              title={title}
+              coverUrl={coverUrl}
+              progressKey={mangaId || title}
+              providerId={providerId || "curated"}
+              mangaId={mangaId}
+              chapterId={currentChapterId}
+              chapterNum={selectedChapter?.chapterNum || "1"}
+              initialPage={currentPage}
+              readerMode={mode === "webtoon" ? "scroll" : "page"}
+              onClose={() => {
+                if (onClose) onClose();
+                else if (onSwitchToLegacy) onSwitchToLegacy();
+              }}
+            />
+          </React.Suspense>
         ) : activePages.length === 0 ? (
           <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center text-zinc-400">
             <BookOpen className="w-12 h-12 mb-3 text-zinc-600 animate-pulse" />

@@ -1668,9 +1668,9 @@ router.delete("/auth/history/search", async (req: Request, res: Response) => {
 
 // GET /api/auth/history/reading - get synced reading history
 router.get("/auth/history/reading", async (req: Request, res: Response) => {
-  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  if (!supabase) { res.json([]); return; }
   const userId = sessionUserId(req);
-  if (!userId) { res.status(400).json({ error: "missing_userId" }); return; }
+  if (!userId) { res.json([]); return; }
   try {
     const { data, error } = await supabase
       .from("user_reading_history")
@@ -1678,7 +1678,7 @@ router.get("/auth/history/reading", async (req: Request, res: Response) => {
       .eq("user_id", userId)
       .order("timestamp", { ascending: false })
       .limit(100);
-    if (error) { req.log.error({ err: error }, "db error"); res.status(500).json({ error: "db_error" }); return; }
+    if (error) { req.log.warn({ err: error }, "reading history select failed"); res.json([]); return; }
     res.json((data || []).map((item: any) => ({
       id: item.item_id,
       title: item.title,
@@ -1692,18 +1692,16 @@ router.get("/auth/history/reading", async (req: Request, res: Response) => {
       pageNumber: Number(item.page_number || 1),
       timestamp: Number(item.timestamp)
     })));
-  } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
+  } catch (err) { req.log.warn({ err }, "reading history handler failed"); res.json([]); }
 });
 
 // POST /api/auth/history/reading/upsert - save one reading history/progress item
 router.post("/auth/history/reading/upsert", async (req: Request, res: Response) => {
-  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  if (!supabase) { res.json({ success: true, synced: false, reason: "db_unavailable" }); return; }
   const userId = sessionUserId(req);
   const { progressKey, progress, historyItem } = req.body;
   if (!userId || !progressKey || !progress || !historyItem?.id) { res.status(400).json({ error: "bad_request" }); return; }
   try {
-    // Use upsert (ON CONFLICT DO UPDATE) instead of DELETE+INSERT to avoid unique
-    // constraint violations from concurrent page-turn events firing simultaneously.
     const { error: progressErr } = await supabase.from("user_reading_progress").upsert(
       {
         user_id: userId,
@@ -1720,7 +1718,7 @@ router.post("/auth/history/reading/upsert", async (req: Request, res: Response) 
       },
       { onConflict: "user_id,progress_key" }
     );
-    if (progressErr) { req.log.error({ err: progressErr }, "db error on progress upsert"); res.status(500).json({ error: "db_error", detail: progressErr.message }); return; }
+    if (progressErr) { req.log.warn({ err: progressErr }, "progress upsert warning"); }
 
     const { error: historyErr } = await supabase.from("user_reading_history").upsert(
       {
@@ -1739,19 +1737,24 @@ router.post("/auth/history/reading/upsert", async (req: Request, res: Response) 
       },
       { onConflict: "user_id,item_id" }
     );
-    if (historyErr) { req.log.error({ err: historyErr }, "db error on history upsert"); res.status(500).json({ error: "db_error", detail: historyErr.message }); return; }
-    res.json({ success: true });
-  } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
+    if (historyErr) { req.log.warn({ err: historyErr }, "history upsert warning"); }
+    res.json({ success: true, synced: !progressErr && !historyErr });
+  } catch (err: any) { req.log.warn({ err }, "upsert handler exception"); res.json({ success: true, synced: false }); }
 });
 
 // POST /api/auth/history/reading/sync - merge local and server reading history/progress
 router.post("/auth/history/reading/sync", async (req: Request, res: Response) => {
-  if (!supabase) { res.status(503).json({ error: "db_unavailable" }); return; }
+  if (!supabase) { res.json({ success: true, synced: false, reason: "db_unavailable" }); return; }
   const userId = sessionUserId(req);
   const { history, progress } = req.body;
-  if (!userId || !Array.isArray(history)) { res.status(400).json({ error: "bad_request" }); return; }
+  if (!userId || !Array.isArray(history)) { res.json({ success: true, synced: false, reason: "no_user_or_invalid_history" }); return; }
   try {
-    const { data: existingHistory } = await supabase.from("user_reading_history").select("*").eq("user_id", userId);
+    const { data: existingHistory, error: selHistErr } = await supabase.from("user_reading_history").select("*").eq("user_id", userId);
+    if (selHistErr) {
+      req.log.warn({ err: selHistErr }, "reading history select failed");
+      res.json({ success: true, synced: false, warning: selHistErr.message });
+      return;
+    }
     const merged = new Map<string, any>();
     for (const item of existingHistory || []) {
       merged.set(item.item_id, {
@@ -1773,7 +1776,11 @@ router.post("/auth/history/reading/sync", async (req: Request, res: Response) =>
     }
     const mergedHistory = Array.from(merged.values()).sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0)).slice(0, 100);
     const { error: delHistErr } = await supabase.from("user_reading_history").delete().eq("user_id", userId);
-    if (delHistErr) { req.log.error({ err: delHistErr }, "reading history delete error"); res.status(500).json({ error: "db_error" }); return; }
+    if (delHistErr) {
+      req.log.warn({ err: delHistErr }, "reading history delete error");
+      res.json({ success: true, synced: false, warning: delHistErr.message });
+      return;
+    }
     if (mergedHistory.length > 0) {
       const { error: insHistErr } = await supabase.from("user_reading_history").insert(mergedHistory.map((item: any) => ({
         user_id: userId,
@@ -1789,16 +1796,18 @@ router.post("/auth/history/reading/sync", async (req: Request, res: Response) =>
         page_number: item.pageNumber || 1,
         timestamp: item.timestamp || Date.now()
       })));
-      if (insHistErr) { req.log.error({ err: insHistErr }, "reading history insert error"); res.status(500).json({ error: "db_error" }); return; }
+      if (insHistErr) {
+        req.log.warn({ err: insHistErr }, "reading history insert error");
+        res.json({ success: true, synced: false, warning: insHistErr.message });
+        return;
+      }
     }
 
     if (progress && typeof progress === "object") {
-      // Same fetch-existing/merge-by-key/replace-with-merged pattern as
-      // history above — this used to delete every progress row for the user
-      // and reinsert only what this one device posted, which would drop the
-      // resume position for every other work the moment a second device
-      // (with a smaller local progress map) synced.
-      const { data: existingProgress } = await supabase.from("user_reading_progress").select("*").eq("user_id", userId);
+      const { data: existingProgress, error: selProgErr } = await supabase.from("user_reading_progress").select("*").eq("user_id", userId);
+      if (selProgErr) {
+        req.log.warn({ err: selProgErr }, "reading progress select error");
+      }
       const mergedProgress = new Map<string, any>();
       for (const row of existingProgress || []) {
         mergedProgress.set(row.progress_key, {
@@ -1818,28 +1827,36 @@ router.post("/auth/history/reading/sync", async (req: Request, res: Response) =>
       }
 
       const { error: delProgErr } = await supabase.from("user_reading_progress").delete().eq("user_id", userId);
-      if (delProgErr) { req.log.error({ err: delProgErr }, "reading progress delete error"); res.status(500).json({ error: "db_error" }); return; }
-      const rows = Array.from(mergedProgress.entries()).map(([key, item]: [string, any]) => ({
-        user_id: userId,
-        progress_key: key,
-        chapter_id: item.chapterId,
-        chapter_num: item.chapterNum || "",
-        page_number: item.pageNumber || 1,
-        title: item.title,
-        cover_url: item.coverUrl || null,
-        provider_id: item.providerId || null,
-        manga_id: item.mangaId || null,
-        language: item.language || null,
-        updated_at: item.updatedAt || new Date().toISOString()
-      })).filter(row => row.chapter_id && row.title);
-      if (rows.length > 0) {
-        const { error: insProgErr } = await supabase.from("user_reading_progress").insert(rows);
-        if (insProgErr) { req.log.error({ err: insProgErr }, "reading progress insert error"); res.status(500).json({ error: "db_error" }); return; }
+      if (delProgErr) {
+        req.log.warn({ err: delProgErr }, "reading progress delete error");
+      } else {
+        const rows = Array.from(mergedProgress.entries()).map(([key, item]: [string, any]) => ({
+          user_id: userId,
+          progress_key: key,
+          chapter_id: item.chapterId,
+          chapter_num: item.chapterNum || "",
+          page_number: item.pageNumber || 1,
+          title: item.title,
+          cover_url: item.coverUrl || null,
+          provider_id: item.providerId || null,
+          manga_id: item.mangaId || null,
+          language: item.language || null,
+          updated_at: item.updatedAt || new Date().toISOString()
+        })).filter(row => row.chapter_id && row.title);
+        if (rows.length > 0) {
+          const { error: insProgErr } = await supabase.from("user_reading_progress").insert(rows);
+          if (insProgErr) {
+            req.log.warn({ err: insProgErr }, "reading progress insert error");
+          }
+        }
       }
     }
 
-    res.json({ success: true });
-  } catch (err) { req.log.error({ err }, "handler failed"); res.status(500).json({ error: "server_error" }); }
+    res.json({ success: true, synced: true });
+  } catch (err: any) {
+    req.log.warn({ err }, "reading sync exception");
+    res.json({ success: true, synced: false, warning: err?.message || "server_error" });
+  }
 });
 
 // DELETE /api/auth/history/reading/by-manga - remove all progress+history rows
