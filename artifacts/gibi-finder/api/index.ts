@@ -28,12 +28,18 @@ app.get("/api/providers", async (_req, res) => {
 // GET /api/providers/search
 app.get("/api/providers/search", async (req, res) => {
   const query = req.query.query as string;
+  const nsfw = req.query.nsfw === "true";
+  const providers = typeof req.query.providers === "string" && req.query.providers
+    ? req.query.providers.split(",").map(p => p.trim()).filter(Boolean)
+    : undefined;
+
   if (!query) {
     res.status(400).json({ error: "missing_query" });
     return;
   }
   try {
-    const results = await ProviderManager.search(query);
+    await ProviderManager.ensureOverridesLoaded();
+    const { results } = await ProviderManager.searchWithMetadata(query, nsfw, providers);
     res.json(results);
   } catch (err) {
     res.status(500).json({ error: "search_failed", message: err instanceof Error ? err.message : String(err) });
@@ -43,8 +49,10 @@ app.get("/api/providers/search", async (req, res) => {
 // GET /api/providers/catalog
 app.get("/api/providers/catalog", async (req, res) => {
   const listType = (req.query.listType as "popular" | "latest") || "popular";
+  const nsfw = req.query.nsfw === "true";
   try {
-    const items = await ProviderManager.getCatalog(listType);
+    await ProviderManager.ensureOverridesLoaded();
+    const items = await ProviderManager.getCatalog(listType, nsfw);
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: "catalog_failed", message: err instanceof Error ? err.message : String(err) });
