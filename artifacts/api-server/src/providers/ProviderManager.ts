@@ -138,6 +138,8 @@ export class ProviderManager {
     ["nhentai", true],
     ["biblioteca-br", true],
     ["internet-archive", true],
+    ["mangaonline", true],
+    ["manga-livre", true],
     ["bato", false],
     ["hqnow", false]
   ]);
@@ -158,7 +160,7 @@ export class ProviderManager {
     if (item.engine === "bodinho" || item.baseUrl.includes("bodinhoyaoi.com") || item.id.includes("bodinho")) {
       return new BodinhoYaoiProvider(item.id, item.name, item.language, item.baseUrl);
     }
-    if (item.engine === "mangaonline" || item.baseUrl.includes("mangaonline.love") || item.id.includes("mangaonline")) {
+    if (item.engine === "mangaonline" || item.baseUrl.includes("mangaonline.love") || item.baseUrl.includes("mangalivre.lat") || item.id === "manga-livre" || item.id.includes("mangaonline")) {
       return new MangaOnlineProvider(item.id, item.name, item.language, item.baseUrl);
     }
     if (item.engine === "wordpress-comic") {
@@ -263,8 +265,8 @@ export class ProviderManager {
     this.registerProvider(new EightMusesProvider());
     this.registerProvider(new NHentaiProvider());
     this.registerProvider(new CuratedComicsProvider("biblioteca-br", "Biblioteca BR", "pt"));
-    this.registerProvider(new InternetArchiveProvider());
-    this.registerProvider(new MangaOnlineProvider());
+    this.registerProvider(new MangaOnlineProvider("mangaonline", "Manga Online", "pt", "https://mangaonline.love"));
+    this.registerProvider(new MangaOnlineProvider("manga-livre", "Manga Livre", "pt", "https://mangalivre.lat"));
 
     // Register stub/future providers
     this.registerProvider(new StubProvider("bato", "Bato", "multi"));

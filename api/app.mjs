@@ -98855,8 +98855,10 @@ var MangaOnlineProvider = class {
       const res = await fetch(url, { headers: BROWSER_HEADERS7 });
       if (!res.ok) throw new Error(`Details failed with ${res.status}`);
       const html = await res.text();
-      const titleMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-      const cleanTitle2 = titleMatch ? this.decodeHtml(titleMatch[1].replace(/<[^>]+>/g, "").trim()) : slug.replace(/-/g, " ");
+      const titleMatch = html.match(/<h1[^>]*class=["'][^"']*manga-title[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i) || html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) || html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+      let rawTitle = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "").trim() : slug.replace(/-/g, " ");
+      rawTitle = rawTitle.replace(/\s+(?:Ler\s+)?Mang[áa]\s+Online.*$/i, "").replace(/\s*\|\s*Manga\s+Livre.*$/i, "").trim();
+      const cleanTitle2 = this.decodeHtml(rawTitle);
       const coverMatch = html.match(/<img[^>]+class="[^"]*(?:poster|cover|thumb|wp-post-image)[^"]*"[^>]+(?:src|data-src)="([^"]+)"/i) || html.match(/<div[^>]+class="[^"]*(?:poster|cover|thumb)[^"]*"[^>]*>[\s\S]*?<img[^>]+(?:src|data-src)="([^"]+)"/i);
       const coverUrl = coverMatch ? coverMatch[1] : void 0;
       const synopsisMatch = html.match(/<div[^>]+class="[^"]*(?:synopsis|sinopse|description|resumo)[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
@@ -99564,126 +99566,6 @@ var CuratedComicsProvider = class {
   }
 };
 
-// src/providers/InternetArchiveProvider.ts
-init_logger();
-var IA = "https://archive.org";
-function coverOf(id) {
-  return `${IA}/services/img/${id}`;
-}
-function scalarStr(v) {
-  if (!v) return void 0;
-  return Array.isArray(v) ? v[0] : v;
-}
-function scalarStrArr(v) {
-  if (!v) return void 0;
-  return Array.isArray(v) ? v : [v];
-}
-var InternetArchiveProvider = class {
-  id = "internet-archive";
-  name = "Internet Archive";
-  language = "pt";
-  async search(query) {
-    try {
-      const q = `(${query}) AND mediatype:texts AND subject:(quadrinhos OR gibi OR comics)`;
-      const res = await fetch(
-        `${IA}/advancedsearch.php?q=${encodeURIComponent(q)}&fl[]=identifier&fl[]=title&fl[]=description&rows=30&output=json&sort=downloads+desc`
-      );
-      if (!res.ok) return [];
-      const data = await res.json();
-      return (data.response?.docs ?? []).map((doc) => ({
-        id: doc.identifier,
-        title: scalarStr(doc.title) ?? doc.identifier,
-        coverUrl: coverOf(doc.identifier),
-        description: scalarStr(doc.description),
-        providerId: this.id,
-        genres: ["Internet Archive"]
-      }));
-    } catch (err) {
-      logger.error({ err }, "IA search failed");
-      return [];
-    }
-  }
-  async getCatalog() {
-    try {
-      const q = `mediatype:texts AND subject:(quadrinhos OR gibi) AND language:(pt OR por)`;
-      const res = await fetch(
-        `${IA}/advancedsearch.php?q=${encodeURIComponent(q)}&fl[]=identifier&fl[]=title&fl[]=description&rows=40&output=json&sort=downloads+desc`
-      );
-      if (!res.ok) return [];
-      const data = await res.json();
-      return (data.response?.docs ?? []).map((doc) => ({
-        id: doc.identifier,
-        title: scalarStr(doc.title) ?? doc.identifier,
-        coverUrl: coverOf(doc.identifier),
-        description: scalarStr(doc.description),
-        providerId: this.id,
-        genres: ["Internet Archive"]
-      }));
-    } catch (err) {
-      logger.error({ err }, "IA catalog failed");
-      return [];
-    }
-  }
-  async getDetails(id) {
-    const meta = await this.fetchMeta(id);
-    const m = meta.metadata;
-    return {
-      id,
-      title: scalarStr(m.title) ?? id,
-      description: scalarStr(m.description),
-      coverUrl: coverOf(id),
-      authors: scalarStrArr(m.creator),
-      providerId: this.id,
-      genres: ["Internet Archive"]
-    };
-  }
-  async getChapters(id) {
-    const meta = await this.fetchMeta(id);
-    const title = scalarStr(meta.metadata.title) ?? id;
-    return [{
-      id,
-      chapterNum: "1",
-      title,
-      language: "pt",
-      providerId: this.id
-    }];
-  }
-  async getPages(chapterId) {
-    const meta = await this.fetchMeta(chapterId);
-    const imgFiles = meta.files.filter((f2) => /\.(jpg|jpeg|png)$/i.test(f2.name) && !/(_thumb\d*|_cover)\.(jpg|jpeg|png)$/i.test(f2.name)).sort((a2, b) => a2.name.localeCompare(b.name, void 0, { numeric: true }));
-    if (imgFiles.length > 1) {
-      return imgFiles.map((f2, i2) => ({
-        url: `${IA}/download/${chapterId}/${encodeURIComponent(f2.name)}`,
-        pageNumber: i2 + 1
-      }));
-    }
-    const jp2ZipName = meta.files.find((f2) => f2.name.endsWith("_jp2.zip"))?.name;
-    const jp2Files = meta.files.filter((f2) => f2.name.endsWith(".jp2")).sort((a2, b) => a2.name.localeCompare(b.name, void 0, { numeric: true }));
-    if (jp2ZipName && jp2Files.length > 0) {
-      return jp2Files.map((f2, i2) => ({
-        url: `https://${meta.server}/BookReader/BookReaderImages.php?zip=${meta.dir}/${jp2ZipName}&file=${encodeURIComponent(f2.name)}&id=${chapterId}&scale=2&rotate=0`,
-        pageNumber: i2 + 1
-      }));
-    }
-    const imageCount = parseInt(String(meta.metadata.imagecount ?? "0"), 10);
-    if (imageCount > 0 && jp2ZipName) {
-      return Array.from({ length: imageCount }, (_, i2) => {
-        const n2 = String(i2 + 1).padStart(4, "0");
-        return {
-          url: `https://${meta.server}/BookReader/BookReaderImages.php?zip=${meta.dir}/${jp2ZipName}&file=${chapterId}_jp2/${chapterId}_${n2}.jp2&id=${chapterId}&scale=2&rotate=0`,
-          pageNumber: i2 + 1
-        };
-      });
-    }
-    return [];
-  }
-  async fetchMeta(id) {
-    const res = await fetch(`${IA}/metadata/${encodeURIComponent(id)}`);
-    if (!res.ok) throw new Error(`IA metadata ${id}: ${res.status}`);
-    return res.json();
-  }
-};
-
 // src/providers/CoverEnrichment.ts
 init_logger();
 var FETCH_TIMEOUT_MS = 3500;
@@ -99881,6 +99763,8 @@ var ProviderManager = class {
     ["nhentai", true],
     ["biblioteca-br", true],
     ["internet-archive", true],
+    ["mangaonline", true],
+    ["manga-livre", true],
     ["bato", false],
     ["hqnow", false]
   ]);
@@ -99898,7 +99782,7 @@ var ProviderManager = class {
     if (item.engine === "bodinho" || item.baseUrl.includes("bodinhoyaoi.com") || item.id.includes("bodinho")) {
       return new BodinhoYaoiProvider(item.id, item.name, item.language, item.baseUrl);
     }
-    if (item.engine === "mangaonline" || item.baseUrl.includes("mangaonline.love") || item.id.includes("mangaonline")) {
+    if (item.engine === "mangaonline" || item.baseUrl.includes("mangaonline.love") || item.baseUrl.includes("mangalivre.lat") || item.id === "manga-livre" || item.id.includes("mangaonline")) {
       return new MangaOnlineProvider(item.id, item.name, item.language, item.baseUrl);
     }
     if (item.engine === "wordpress-comic") {
@@ -99992,8 +99876,8 @@ var ProviderManager = class {
     this.registerProvider(new EightMusesProvider());
     this.registerProvider(new NHentaiProvider());
     this.registerProvider(new CuratedComicsProvider("biblioteca-br", "Biblioteca BR", "pt"));
-    this.registerProvider(new InternetArchiveProvider());
-    this.registerProvider(new MangaOnlineProvider());
+    this.registerProvider(new MangaOnlineProvider("mangaonline", "Manga Online", "pt", "https://mangaonline.love"));
+    this.registerProvider(new MangaOnlineProvider("manga-livre", "Manga Livre", "pt", "https://mangalivre.lat"));
     this.registerProvider(new StubProvider("bato", "Bato", "multi"));
     this.registerProvider(new StubProvider("hqnow", "HQ Now", "pt"));
     this.loadCustomProviders();

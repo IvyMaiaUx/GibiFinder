@@ -89,8 +89,12 @@ export class MangaOnlineProvider implements Provider {
       if (!res.ok) throw new Error(`Details failed with ${res.status}`);
       const html = await res.text();
 
-      const titleMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-      const cleanTitle = titleMatch ? this.decodeHtml(titleMatch[1].replace(/<[^>]+>/g, "").trim()) : slug.replace(/-/g, " ");
+      const titleMatch = html.match(/<h1[^>]*class=["'][^"']*manga-title[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i)
+        || html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)
+        || html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+      let rawTitle = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "").trim() : slug.replace(/-/g, " ");
+      rawTitle = rawTitle.replace(/\s+(?:Ler\s+)?Mang[áa]\s+Online.*$/i, "").replace(/\s*\|\s*Manga\s+Livre.*$/i, "").trim();
+      const cleanTitle = this.decodeHtml(rawTitle);
 
       const coverMatch = html.match(/<img[^>]+class="[^"]*(?:poster|cover|thumb|wp-post-image)[^"]*"[^>]+(?:src|data-src)="([^"]+)"/i)
         || html.match(/<div[^>]+class="[^"]*(?:poster|cover|thumb)[^"]*"[^>]*>[\s\S]*?<img[^>]+(?:src|data-src)="([^"]+)"/i);
