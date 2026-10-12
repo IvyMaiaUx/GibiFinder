@@ -179,7 +179,7 @@ const PAGE_SIZE = 48;
 // Brazilian-gibi title hints — fallback when an item carries no genre tag.
 const GIBI_TITLE_HINTS = ["monica", "mônica", "cebolinha", "magali", "cascao", "cascão", "chico bento", "almanaque", "turma da", "penadinho", "pelezinho", "ronaldinho", "menino maluquinho", "disney", "mickey", "pato donald", "tio patinhas"];
 
-const MANGA_PROVIDER_IDS = ["mangadex", "mangaplus", "mangafire", "mugiwaras", "slimeread", "bato", "hqnow"];
+const MANGA_PROVIDER_IDS = ["mangadex", "mangaplus", "mangafire", "mugiwaras", "slimeread", "mangaonline", "bato", "hqnow"];
 
 // Mirrors the app's Explore typeOf: a biblioteca-br item is HQ when tagged "hq",
 // otherwise it's a Gibi (with a title-hint fallback for untagged items). Items

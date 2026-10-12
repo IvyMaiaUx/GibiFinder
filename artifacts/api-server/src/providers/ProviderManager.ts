@@ -12,6 +12,7 @@ import { OrionProvider } from "./OrionProvider";
 import { WordPressComicProvider } from "./WordPressComicProvider";
 import { SlimeReadProvider } from "./SlimeReadProvider";
 import { BodinhoYaoiProvider } from "./BodinhoYaoiProvider";
+import { MangaOnlineProvider } from "./MangaOnlineProvider";
 import { CuratedComicsProvider } from "./CuratedComicsProvider";
 import { InternetArchiveProvider } from "./InternetArchiveProvider";
 import { normalizeTitleForMatch } from "./titleMatch";
@@ -157,6 +158,9 @@ export class ProviderManager {
     if (item.engine === "bodinho" || item.baseUrl.includes("bodinhoyaoi.com") || item.id.includes("bodinho")) {
       return new BodinhoYaoiProvider(item.id, item.name, item.language, item.baseUrl);
     }
+    if (item.engine === "mangaonline" || item.baseUrl.includes("mangaonline.love") || item.id.includes("mangaonline")) {
+      return new MangaOnlineProvider(item.id, item.name, item.language, item.baseUrl);
+    }
     if (item.engine === "wordpress-comic") {
       return new WordPressComicProvider(item.id, item.name, item.language, item.baseUrl);
     }
@@ -260,6 +264,7 @@ export class ProviderManager {
     this.registerProvider(new NHentaiProvider());
     this.registerProvider(new CuratedComicsProvider("biblioteca-br", "Biblioteca BR", "pt"));
     this.registerProvider(new InternetArchiveProvider());
+    this.registerProvider(new MangaOnlineProvider());
 
     // Register stub/future providers
     this.registerProvider(new StubProvider("bato", "Bato", "multi"));

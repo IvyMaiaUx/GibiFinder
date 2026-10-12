@@ -1,5 +1,13 @@
 [
   {
+    "id": "mangaonline",
+    "name": "Manga Online",
+    "language": "pt",
+    "baseUrl": "https://mangaonline.love/",
+    "active": true,
+    "engine": "mangaonline"
+  },
+  {
     "id": "brasuka-mangas",
     "name": "Brasuka Mangás",
     "language": "pt",
