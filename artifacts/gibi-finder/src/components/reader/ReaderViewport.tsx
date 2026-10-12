@@ -1,3 +1,4 @@
+import { useState, useEffect, useRef } from "react";
 import { PageItem, ReaderMode, ReaderDirection, ReaderLayout, ReaderFit, ReaderTheme, PanelBox } from "./readerTypes";
 import { useSpreadNavigation } from "./useSpreadNavigation";
 import { useGestureViewport } from "./useGestureViewport";
